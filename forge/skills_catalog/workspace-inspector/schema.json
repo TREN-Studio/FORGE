@@ -1,0 +1,26 @@
+{
+  "input_schema": {
+    "type": "object",
+    "required": ["request", "objective"],
+    "properties": {
+      "request": { "type": "string" },
+      "objective": { "type": "string" }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": ["status", "workspace_summary", "tree", "key_files"],
+    "properties": {
+      "status": { "type": "string", "enum": ["completed", "dry_run"] },
+      "workspace_summary": { "type": "string" },
+      "tree": {
+        "type": "array",
+        "items": { "type": "string" }
+      },
+      "key_files": {
+        "type": "array",
+        "items": { "type": "string" }
+      }
+    }
+  }
+}

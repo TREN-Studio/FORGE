@@ -1,0 +1,23 @@
+{
+  "output_schema": {
+    "type": "object",
+    "required": ["status", "summary", "analysis_markdown", "files_reviewed", "evidence"],
+    "properties": {
+      "status": { "type": "string", "enum": ["completed", "partial"] },
+      "summary": { "type": "string" },
+      "analysis_markdown": { "type": "string" },
+      "files_reviewed": {
+        "type": "array",
+        "items": { "type": "string" }
+      },
+      "evidence": {
+        "type": "array",
+        "items": { "type": "string" }
+      },
+      "search_terms": {
+        "type": "array",
+        "items": { "type": "string" }
+      }
+    }
+  }
+}

@@ -1,0 +1,171 @@
+"""
+FORGE Session
+==============
+The unified entry point. One object that ties everything together:
+router + quota guardian + discovery + memory + all providers.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from pathlib import Path
+
+from forge.core.discovery import SelfDiscoveryEngine
+from forge.core.models import ForgeResponse, Message, TaskType
+from forge.core.quota import QuotaGuardian
+from forge.core.router import ForgeRouter
+from forge.memory.graph import MemoryGraph
+from forge.providers import iter_provider_classes
+
+logger = logging.getLogger("forge.session")
+
+
+def _load_providers(router: ForgeRouter, guardian: QuotaGuardian) -> None:
+    """Auto-register all built-in providers that are usable right now."""
+    for cls in iter_provider_classes():
+        try:
+            provider = cls()
+            if provider.is_available or cls.__name__ == "OllamaProvider":
+                router.register(provider)
+                guardian.register_provider(provider.name)
+                logger.info(f"  âœ“ {provider.name}")
+        except Exception as exc:
+            logger.debug(f"  âœ— {cls.__name__}: {exc}")
+
+
+class ForgeSession:
+    """
+    One session = one complete FORGE environment.
+    Manages conversation state, memory, routing, and discovery.
+
+    Synchronous wrapper around the async core so normal
+    Python scripts work without `await`.
+    """
+
+    def __init__(
+        self,
+        system_prompt: str | None = None,
+        memory: bool = True,
+        db_path: Path | None = None,
+    ) -> None:
+        self._router = ForgeRouter()
+        self._guardian = QuotaGuardian(self._router)
+        self._discovery = SelfDiscoveryEngine(self._router)
+        self._memory = MemoryGraph(db_path) if memory else None
+        self._system = system_prompt or self._default_system()
+        self._conv_id: str | None = None
+        self._history: list[Message] = []
+
+        try:
+            self._loop = asyncio.get_event_loop()
+            if self._loop.is_closed():
+                raise RuntimeError
+        except RuntimeError:
+            self._loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self._loop)
+
+        logger.info("FORGE booting â€” registering providers...")
+        _load_providers(self._router, self._guardian)
+        logger.info(f"Ready. {self._router.status()['models_online']} models available.")
+
+    def ask(
+        self,
+        prompt: str,
+        task_type: str | TaskType = TaskType.GENERAL,
+        max_tokens: int = 2048,
+        temperature: float = 0.7,
+        remember: bool = True,
+    ) -> str:
+        """Send a message. Returns the response text."""
+        return self._loop.run_until_complete(
+            self._ask_async(prompt, task_type, max_tokens, temperature, remember)
+        )
+
+    def reset(self) -> None:
+        """Clear conversation history while keeping the persistent graph."""
+        self._history.clear()
+        self._conv_id = None
+
+    def leaderboard(self, task_type: str = "general") -> list[dict]:
+        """Show current model rankings."""
+        return self._router.leaderboard(TaskType(task_type))
+
+    def quota_health(self) -> dict:
+        """Show quota status for all providers."""
+        return self._guardian.get_health()
+
+    def memory_stats(self) -> dict:
+        return self._memory.stats() if self._memory else {}
+
+    def discover_models(self) -> dict:
+        """Run discovery now and attach compatible models to live providers."""
+        return self._loop.run_until_complete(self._discover_models_async())
+
+    async def _ask_async(
+        self,
+        prompt: str,
+        task_type: str | TaskType,
+        max_tokens: int,
+        temperature: float,
+        remember: bool,
+    ) -> str:
+        if isinstance(task_type, str):
+            try:
+                task_type = TaskType(task_type)
+            except ValueError:
+                task_type = TaskType.GENERAL
+
+        if self._conv_id is None and self._memory:
+            self._conv_id = self._memory.new_conversation()
+
+        messages: list[Message] = []
+
+        system = self._system
+        if self._memory:
+            mem_ctx = self._memory.recall_all(limit=20)
+            if mem_ctx:
+                system = f"{system}\n\n{mem_ctx}"
+
+        messages.append(Message(role="system", content=system))
+        messages.extend(self._history[-20:])
+        messages.append(Message(role="user", content=prompt))
+
+        response: ForgeResponse = await self._router.route(
+            messages=messages,
+            task_type=task_type,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+
+        self._guardian.record_usage(response.provider, response.total_tokens)
+
+        self._history.append(Message(role="user", content=prompt))
+        self._history.append(Message(role="assistant", content=response.content))
+
+        if self._memory and self._conv_id and remember:
+            self._memory.log_message(self._conv_id, "user", prompt)
+            self._memory.log_message(
+                self._conv_id,
+                "assistant",
+                response.content,
+                model_used=response.model_id,
+                provider_used=response.provider,
+                latency_ms=response.latency_ms,
+                tokens=response.total_tokens,
+            )
+
+        return response.content
+
+    async def _discover_models_async(self) -> dict:
+        return await self._discovery.run_once()
+
+    @staticmethod
+    def _default_system() -> str:
+        return (
+            "You are FORGE â€” an expert AI agent. "
+            "You are precise, direct, and deeply capable. "
+            "When writing code, write production-quality code with no placeholders. "
+            "When answering questions, be thorough but concise. "
+            "You have access to tools and can execute code when needed."
+        )

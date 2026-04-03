@@ -1,0 +1,21 @@
+{
+  "input_schema": {
+    "type": "object",
+    "required": ["request", "objective"],
+    "properties": {
+      "request": { "type": "string" },
+      "objective": { "type": "string" },
+      "prior_results": { "type": "object" }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": ["status", "artifact_path", "bytes_written", "artifact_preview"],
+    "properties": {
+      "status": { "type": "string", "enum": ["completed", "dry_run"] },
+      "artifact_path": { "type": "string" },
+      "bytes_written": { "type": "number" },
+      "artifact_preview": { "type": "string" }
+    }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "input_schema": {
+    "type": "object",
+    "required": ["request", "objective"],
+    "properties": {
+      "request": { "type": "string" },
+      "objective": { "type": "string" },
+      "prior_results": { "type": "object" }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": ["status", "article_markdown", "publish_ready"],
+    "properties": {
+      "status": { "type": "string", "enum": ["completed", "dry_run"] },
+      "article_markdown": { "type": "string" },
+      "publish_ready": { "type": "boolean" }
+    }
+  }
+}
