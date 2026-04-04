@@ -134,3 +134,34 @@ MIT
 
 - Website: https://www.trenstudio.com/FORGE
 - Organization: https://github.com/TREN-Studio
+- Repository: https://github.com/TREN-Studio/FORGE
+
+## Production Deployment
+
+FORGE now keeps the public website bundle inside [`site/`](site), which makes GitHub the source of truth for `https://www.trenstudio.com/FORGE`.
+
+### Auto-Deploy Pipeline
+
+GitHub Actions workflow: [`.github/workflows/deploy_forge_site.yml`](.github/workflows/deploy_forge_site.yml)
+
+Deployment script: [`tools/deploy_hostinger_site.py`](tools/deploy_hostinger_site.py)
+
+Required GitHub repository secrets:
+
+- `HOSTINGER_HOST`
+- `HOSTINGER_PORT`
+- `HOSTINGER_USERNAME`
+- `HOSTINGER_PASSWORD`
+- `HOSTINGER_REMOTE_ROOT`
+
+Recommended `HOSTINGER_REMOTE_ROOT` value:
+
+```text
+domains/trenstudio.com/public_html/FORGE
+```
+
+Manual local deploy remains available:
+
+```bash
+python tools/deploy_hostinger_site.py
+```

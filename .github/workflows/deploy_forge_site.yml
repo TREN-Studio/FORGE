@@ -1,0 +1,35 @@
+name: Deploy FORGE Site
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "site/**"
+      - "tools/deploy_hostinger_site.py"
+      - ".github/workflows/deploy_forge_site.yml"
+  workflow_dispatch:
+
+jobs:
+  deploy-site:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deploy dependency
+        run: python -m pip install --upgrade pip paramiko
+
+      - name: Deploy FORGE site bundle to Hostinger
+        env:
+          HOSTINGER_HOST: ${{ secrets.HOSTINGER_HOST }}
+          HOSTINGER_PORT: ${{ secrets.HOSTINGER_PORT }}
+          HOSTINGER_USERNAME: ${{ secrets.HOSTINGER_USERNAME }}
+          HOSTINGER_PASSWORD: ${{ secrets.HOSTINGER_PASSWORD }}
+          HOSTINGER_REMOTE_ROOT: ${{ secrets.HOSTINGER_REMOTE_ROOT }}
+        run: python tools/deploy_hostinger_site.py

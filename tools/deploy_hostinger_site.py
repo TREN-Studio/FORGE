@@ -1,0 +1,151 @@
+from __future__ import annotations
+
+import argparse
+import os
+import posixpath
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+
+import paramiko
+
+
+@dataclass(slots=True)
+class DeployConfig:
+    host: str
+    port: int
+    username: str
+    password: str
+    local_root: Path
+    remote_root: str
+    backup_index: bool = True
+    dry_run: bool = False
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Deploy the FORGE static site bundle to Hostinger over SFTP.")
+    parser.add_argument("--local-root", default=os.getenv("FORGE_SITE_LOCAL_ROOT", "site"))
+    parser.add_argument(
+        "--remote-root",
+        default=os.getenv("HOSTINGER_REMOTE_ROOT", "domains/trenstudio.com/public_html/FORGE"),
+    )
+    parser.add_argument("--host", default=os.getenv("HOSTINGER_HOST"))
+    parser.add_argument("--port", type=int, default=int(os.getenv("HOSTINGER_PORT", "22")))
+    parser.add_argument("--username", default=os.getenv("HOSTINGER_USERNAME"))
+    parser.add_argument("--password", default=os.getenv("HOSTINGER_PASSWORD"))
+    parser.add_argument("--no-backup-index", action="store_true")
+    parser.add_argument("--dry-run", action="store_true")
+    return parser
+
+
+def require(value: str | None, label: str) -> str:
+    if value:
+        return value
+    raise ValueError(f"Missing required deployment setting: {label}")
+
+
+def load_config(args: argparse.Namespace) -> DeployConfig:
+    local_root = Path(args.local_root).resolve()
+    if not local_root.exists():
+        raise FileNotFoundError(f"Local site root does not exist: {local_root}")
+    if args.dry_run:
+        return DeployConfig(
+            host=args.host or "dry-run.local",
+            port=int(args.port),
+            username=args.username or "dry-run",
+            password=args.password or "dry-run",
+            local_root=local_root,
+            remote_root=args.remote_root.strip("/"),
+            backup_index=not args.no_backup_index,
+            dry_run=True,
+        )
+    return DeployConfig(
+        host=require(args.host, "HOSTINGER_HOST"),
+        port=int(args.port),
+        username=require(args.username, "HOSTINGER_USERNAME"),
+        password=require(args.password, "HOSTINGER_PASSWORD"),
+        local_root=local_root,
+        remote_root=args.remote_root.strip("/"),
+        backup_index=not args.no_backup_index,
+        dry_run=bool(args.dry_run),
+    )
+
+
+def iter_site_files(local_root: Path) -> list[Path]:
+    return sorted(path for path in local_root.rglob("*") if path.is_file())
+
+
+def ensure_remote_dir(sftp: paramiko.SFTPClient, remote_dir: str) -> None:
+    current = ""
+    for part in remote_dir.split("/"):
+        if not part:
+            continue
+        current = f"{current}/{part}" if current else part
+        try:
+            sftp.stat(current)
+        except FileNotFoundError:
+            sftp.mkdir(current)
+
+
+def maybe_backup_index(sftp: paramiko.SFTPClient, remote_root: str) -> str | None:
+    remote_index = posixpath.join(remote_root, "index.html")
+    try:
+        sftp.stat(remote_index)
+    except FileNotFoundError:
+        return None
+    timestamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
+    backup_path = posixpath.join(remote_root, f"index.html.bak-{timestamp}")
+    sftp.rename(remote_index, backup_path)
+    return backup_path
+
+
+def deploy(config: DeployConfig) -> list[tuple[str, int]]:
+    uploaded: list[tuple[str, int]] = []
+    if config.dry_run:
+        for local_path in iter_site_files(config.local_root):
+            relative = local_path.relative_to(config.local_root).as_posix()
+            uploaded.append((posixpath.join(config.remote_root, relative), local_path.stat().st_size))
+        return uploaded
+
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    client.connect(
+        config.host,
+        port=config.port,
+        username=config.username,
+        password=config.password,
+        timeout=30,
+    )
+    sftp = client.open_sftp()
+    try:
+        ensure_remote_dir(sftp, config.remote_root)
+        if config.backup_index:
+            backup_path = maybe_backup_index(sftp, config.remote_root)
+            if backup_path:
+                print(f"Backed up existing index.html -> {backup_path}")
+
+        for local_path in iter_site_files(config.local_root):
+            relative = local_path.relative_to(config.local_root).as_posix()
+            remote_path = posixpath.join(config.remote_root, relative)
+            ensure_remote_dir(sftp, posixpath.dirname(remote_path))
+            sftp.put(str(local_path), remote_path)
+            size = sftp.stat(remote_path).st_size
+            uploaded.append((remote_path, size))
+            print(f"Uploaded {relative} -> {remote_path} ({size} bytes)")
+    finally:
+        sftp.close()
+        client.close()
+    return uploaded
+
+
+def main() -> None:
+    parser = build_parser()
+    args = parser.parse_args()
+    config = load_config(args)
+    uploaded = deploy(config)
+    total_bytes = sum(size for _, size in uploaded)
+    print(f"Deployment completed. Uploaded {len(uploaded)} file(s), {total_bytes} byte(s).")
+
+
+if __name__ == "__main__":
+    main()
