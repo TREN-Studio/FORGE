@@ -1,0 +1,25 @@
+{
+  "input_schema": {
+    "type": "object",
+    "required": ["request", "objective"],
+    "properties": {
+      "request": { "type": "string" },
+      "objective": { "type": "string" },
+      "command": { "type": "string" },
+      "timeout_seconds": { "type": "number" }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": ["status", "summary", "command", "stdout", "stderr"],
+    "properties": {
+      "status": { "type": "string", "enum": ["completed", "dry_run"] },
+      "summary": { "type": "string" },
+      "command": { "type": "string" },
+      "stdout": { "type": "string" },
+      "stderr": { "type": "string" },
+      "exit_code": { "type": "number" },
+      "duration_ms": { "type": "number" }
+    }
+  }
+}

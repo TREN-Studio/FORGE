@@ -15,10 +15,10 @@ Thumbs.db
 
 .forge_artifacts/
 forge/memory/persistent.db
+.forge_mission_tests/mock_*request.json
+.forge_mission_tests/mock_*state.json
 
 dist/
 build/
 *.egg-info/
-
-{forge/
-
+release-assets/installer-output/

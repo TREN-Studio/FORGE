@@ -35,8 +35,24 @@ class BaseProvider(ABC):
         self._model_map: dict[str, ModelSpec] = {model.id: model for model in self.models}
 
     def _load_key(self) -> str | None:
-        env_name = f"FORGE_{self.name.upper()}_KEY"
-        return os.environ.get(env_name) or self._read_keyfile()
+        for env_name in self._candidate_env_names():
+            value = os.environ.get(env_name)
+            if value:
+                return value
+        return self._read_keyfile()
+
+    def _candidate_env_names(self) -> list[str]:
+        upper = self.name.upper()
+        alias_map = {
+            "gemini": ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
+            "groq": ["GROQ_API_KEY"],
+            "deepseek": ["DEEPSEEK_API_KEY"],
+            "openrouter": ["OPENROUTER_API_KEY"],
+            "ollama": ["OLLAMA_API_KEY"],
+        }
+        names = [f"FORGE_{upper}_KEY", f"{upper}_API_KEY", f"{upper}_KEY"]
+        names.extend(alias_map.get(self.name, []))
+        return list(dict.fromkeys(names))
 
     def _read_keyfile(self) -> str | None:
         from pathlib import Path

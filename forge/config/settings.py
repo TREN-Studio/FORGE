@@ -22,6 +22,13 @@ class OperatorSettings:
     memory_recall_limit: int = 6
     skill_score_threshold: float = 0.45
     artifact_dir_name: str = ".forge_artifacts"
+    shell_timeout_seconds: int = 30
+    shell_max_output_chars: int = 12000
+    prompt_injection_max_chars: int = 6000
+    browser_timeout_seconds: int = 20
+    browser_snapshot_limit: int = 18
+    browser_text_limit: int = 24
+    browser_headless: bool = True
 
     @property
     def artifact_root(self) -> Path:

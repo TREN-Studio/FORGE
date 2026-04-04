@@ -7,6 +7,7 @@ from typing import Any
 from forge.config.settings import OperatorSettings
 from forge.core.session import ForgeSession
 from forge.memory.context import ContextMemory
+from forge.safety.sanitizer import PromptInjectionFirewall
 from forge.skills.contracts import SkillDefinition
 
 
@@ -16,6 +17,7 @@ class SkillExecutionContext:
     session: ForgeSession
     memory: ContextMemory | None = None
     dry_run: bool = False
+    sanitizer: PromptInjectionFirewall | None = None
     state: dict[str, Any] = field(default_factory=dict)
 
 
@@ -28,7 +30,7 @@ class SkillRuntime:
         payload: dict[str, Any],
         context: SkillExecutionContext,
     ) -> Any:
-        if context.dry_run:
+        if context.dry_run and not self._supports_executor_dry_run(skill):
             return {
                 "status": "dry_run",
                 "skill": skill.name,
@@ -39,7 +41,7 @@ class SkillRuntime:
         if skill.executor is not None:
             return skill.executor(payload, context)
 
-        prompt = self._build_prompt(skill, payload)
+        prompt = self._build_prompt(skill, self._sanitize_payload(payload, context))
         task_type = self._task_type(skill.category)
         content = context.session.ask(prompt, task_type=task_type, remember=False)
         return {
@@ -58,6 +60,19 @@ class SkillRuntime:
             f"Response style: {skill.response_style}\n\n"
             f"Inputs:\n{payload}\n"
         )
+
+    @staticmethod
+    def _supports_executor_dry_run(skill: SkillDefinition) -> bool:
+        return str(skill.metadata.get("dry_run_executor", "false")).lower() == "true"
+
+    @staticmethod
+    def _sanitize_payload(payload: dict[str, Any], context: SkillExecutionContext) -> dict[str, Any]:
+        if context.sanitizer is None:
+            return payload
+        return {
+            key: context.sanitizer.sanitize_value(value, source=f"skill_payload.{key}")
+            for key, value in payload.items()
+        }
 
     @staticmethod
     def _task_type(category: str) -> str:

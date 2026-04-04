@@ -1,0 +1,32 @@
+{
+  "input_schema": {
+    "type": "object",
+    "required": ["request", "objective"],
+    "properties": {
+      "request": { "type": "string" },
+      "objective": { "type": "string" },
+      "target_path": { "type": "string" },
+      "edit_mode": {
+        "type": "string",
+        "enum": ["create", "write", "append", "prepend", "replace"]
+      },
+      "content": { "type": "string" },
+      "find_text": { "type": "string" },
+      "replace_text": { "type": "string" }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": ["status", "summary", "edited_path", "operation", "changed", "created", "diff"],
+    "properties": {
+      "status": { "type": "string", "enum": ["completed", "dry_run"] },
+      "summary": { "type": "string" },
+      "edited_path": { "type": "string" },
+      "operation": { "type": "string" },
+      "changed": { "type": "boolean" },
+      "created": { "type": "boolean" },
+      "diff": { "type": "string" },
+      "bytes_written": { "type": "number" }
+    }
+  }
+}

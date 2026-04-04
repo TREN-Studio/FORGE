@@ -1,0 +1,43 @@
+{
+  "input_schema": {
+    "type": "object",
+    "required": ["request", "objective"],
+    "properties": {
+      "request": { "type": "string" },
+      "objective": { "type": "string" },
+      "start_url": { "type": "string" },
+      "browser_actions": {
+        "type": "array",
+        "items": {
+          "type": "object"
+        }
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": ["status", "summary", "current_url", "title", "action_results", "page_state", "snapshot_text"],
+    "properties": {
+      "status": { "type": "string", "enum": ["completed", "dry_run"] },
+      "summary": { "type": "string" },
+      "current_url": { "type": "string" },
+      "title": { "type": "string" },
+      "snapshot_text": { "type": "string" },
+      "action_results": {
+        "type": "array",
+        "items": { "type": "object" }
+      },
+      "page_state": {
+        "type": "object",
+        "required": ["headings", "buttons", "inputs", "links", "text"],
+        "properties": {
+          "headings": { "type": "array", "items": { "type": "object" } },
+          "buttons": { "type": "array", "items": { "type": "object" } },
+          "inputs": { "type": "array", "items": { "type": "object" } },
+          "links": { "type": "array", "items": { "type": "object" } },
+          "text": { "type": "array", "items": { "type": "object" } }
+        }
+      }
+    }
+  }
+}

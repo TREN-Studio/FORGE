@@ -38,9 +38,9 @@ class GeminiProvider(BaseProvider):
     def models(self) -> list[ModelSpec]:
         return [
             ModelSpec(
-                id="gemini-2.0-flash",
+                id="gemini-2.5-flash",
                 provider="gemini",
-                display_name="Gemini 2.0 Flash",
+                display_name="Gemini 2.5 Flash",
                 tier=ModelTier.ULTRA,
                 context_window=1_048_576,
                 max_output_tokens=8_192,
@@ -50,9 +50,9 @@ class GeminiProvider(BaseProvider):
                 tags=["large-context", "vision", "instruct", "fast"],
             ),
             ModelSpec(
-                id="gemini-1.5-flash",
+                id="gemini-2.0-flash",
                 provider="gemini",
-                display_name="Gemini 1.5 Flash",
+                display_name="Gemini 2.0 Flash",
                 tier=ModelTier.PRO,
                 context_window=1_048_576,
                 max_output_tokens=8_192,
@@ -62,9 +62,9 @@ class GeminiProvider(BaseProvider):
                 tags=["large-context", "vision", "instruct"],
             ),
             ModelSpec(
-                id="gemini-1.5-flash-8b",
+                id="gemini-2.0-flash-lite",
                 provider="gemini",
-                display_name="Gemini 1.5 Flash 8B",
+                display_name="Gemini 2.0 Flash Lite",
                 tier=ModelTier.FAST,
                 context_window=1_048_576,
                 max_output_tokens=8_192,

@@ -21,7 +21,31 @@ INTENT_TO_CATEGORY: dict[IntentKind, tuple[str, ...]] = {
 }
 
 WORKSPACE_TERMS = {"repo", "repository", "project", "codebase", "workspace", "file", "files", "path", "مشروع", "ملف", "مسار"}
-PATH_HINTS = ("/", "\\", ".py", ".ts", ".tsx", ".js", ".json", ".md", ".yml", ".yaml", ".toml")
+SYSTEM_TERMS = {
+    "system",
+    "computer",
+    "machine",
+    "device",
+    "host",
+    "operating",
+    "os",
+    "windows",
+    "linux",
+    "macos",
+    "hardware",
+    "cpu",
+    "ram",
+    "disk",
+    "حاسوب",
+    "جهاز",
+    "نظام",
+    "تشغيل",
+    "مواصفات",
+}
+PATH_HINTS = ("/", "\\", ".py", ".ts", ".tsx", ".js", ".json", ".md", ".yml", ".yaml", ".toml", ".html", ".htm")
+EDIT_TERMS = {"write", "edit", "modify", "create", "update", "append", "prepend", "replace", "patch", "save", "اكتب", "حرر", "حدث", "بدل", "اضف"}
+COMMAND_TERMS = {"run", "execute", "command", "shell", "terminal", "compile", "pytest", "git", "rg", "نفذ", "شغل", "امر", "ترمنال"}
+BROWSER_TERMS = {"browse", "visit", "website", "web", "page", "url", "browser", "navigate", "click", "fill", "form", "link", "site", "open", "extract", "افتح", "تصفح", "موقع", "صفحة", "رابط", "اضغط", "املأ", "متصفح", "استخرج"}
 
 
 class SkillRouter:
@@ -59,10 +83,12 @@ class SkillRouter:
 
         selected = self._select_pipeline(intent, viable)
         selected_names = [match.skill_name for match in selected]
-        fallbacks = [match.skill_name for match in viable if match.skill_name not in selected_names]
-        fallbacks = fallbacks[: self._settings.max_fallback_skills]
+        fallback_matches = [match for match in viable if match.skill_name not in selected_names]
+        fallback_matches.sort(key=lambda match: self._fallback_priority(intent, match))
+        fallbacks = [match.skill_name for match in fallback_matches[: self._settings.max_fallback_skills]]
         mode = "pipeline" if len(selected_names) > 1 else "single_skill"
-        reasons = []
+
+        reasons: list[str] = []
         for match in selected:
             reasons.extend(match.reasons)
 
@@ -75,10 +101,23 @@ class SkillRouter:
         )
 
     def _select_pipeline(self, intent: TaskIntent, matches: list[SkillMatch]) -> list[SkillMatch]:
+        if self._has_term_overlap(intent.raw_request, EDIT_TERMS) and self._has_term_overlap(intent.raw_request, COMMAND_TERMS):
+            pipeline = self._specific_pipeline(matches, ("file-editor", "shell-executor"))
+            if pipeline:
+                return pipeline
+
+        if self._has_term_overlap(intent.raw_request, BROWSER_TERMS) or self._has_url_hint(intent.raw_request):
+            pipeline = self._specific_pipeline(matches, ("browser-executor",))
+            if pipeline:
+                return pipeline
+
+        if matches and matches[0].skill_name.lower() in {"file-editor", "shell-executor", "browser-executor"}:
+            return [matches[0]]
+
         if len(intent.intents) == 1:
             return [matches[0]]
 
-        desired_categories = []
+        desired_categories: list[str] = []
         for item in intent.intents:
             desired_categories.extend(INTENT_TO_CATEGORY.get(item, ("general",)))
 
@@ -92,8 +131,11 @@ class SkillRouter:
                     selected.append(match)
                     used_names.add(match.skill_name)
                     break
+
         if not selected:
             selected.append(matches[0])
+            used_names.add(matches[0].skill_name)
+
         target_count = min(max(2, len(intent.intents)), self._settings.max_plan_steps, len(matches))
         for match in matches:
             if len(selected) >= target_count:
@@ -103,6 +145,45 @@ class SkillRouter:
             selected.append(match)
             used_names.add(match.skill_name)
         return selected[: self._settings.max_plan_steps]
+
+    @staticmethod
+    def _specific_pipeline(matches: list[SkillMatch], names: tuple[str, ...]) -> list[SkillMatch]:
+        selected: list[SkillMatch] = []
+        for target in names:
+            for match in matches:
+                if match.skill_name.lower() == target:
+                    selected.append(match)
+                    break
+        return selected
+
+    def _fallback_priority(self, intent: TaskIntent, match: SkillMatch) -> tuple[int, float, str]:
+        lowered = match.skill_name.lower()
+
+        if self._is_system_task(intent.raw_request):
+            if "system" in lowered:
+                return (0, -match.score, lowered)
+            if any(token in lowered for token in ("workspace", "codebase", "file")):
+                return (1, -match.score, lowered)
+            if "browser" in lowered:
+                return (2, -match.score, lowered)
+            return (4, -match.score, lowered)
+
+        if self._has_term_overlap(intent.raw_request, BROWSER_TERMS) or self._has_url_hint(intent.raw_request):
+            if "browser" in lowered:
+                return (0, -match.score, lowered)
+            if any(token in lowered for token in ("research", "writer", "artifact")):
+                return (4, -match.score, lowered)
+            return (2, -match.score, lowered)
+
+        if self._is_workspace_task(intent.raw_request):
+            if any(token in lowered for token in ("workspace", "codebase", "file")):
+                return (0, -match.score, lowered)
+            if "browser" in lowered:
+                return (1, -match.score, lowered)
+            if any(token in lowered for token in ("research", "affiliate", "writer")):
+                return (3, -match.score, lowered)
+
+        return (2, -match.score, lowered)
 
     def _score_skill(self, intent: TaskIntent, skill: SkillDefinition) -> SkillMatch:
         reasons: list[str] = []
@@ -122,8 +203,7 @@ class SkillRouter:
 
         overlap = self._keyword_overlap(intent.raw_request, skill.searchable_text)
         if overlap:
-            overlap_score = min(0.25, overlap / 8)
-            score += overlap_score
+            score += min(0.25, overlap / 8)
             reasons.append("Strong overlap with skill contract.")
 
         if intent.requested_output.lower() in skill.searchable_text:
@@ -134,20 +214,53 @@ class SkillRouter:
             score += 0.15
             reasons.append("Skill mentions the detected intent directly.")
 
-        if self._is_workspace_task(intent.raw_request) and any(term in skill.searchable_text for term in WORKSPACE_TERMS):
+        if self._is_workspace_task(intent.raw_request) and self._has_term_overlap(skill.searchable_text, WORKSPACE_TERMS):
             score += 0.14
             reasons.append("Workspace-aware skill fits the local project task.")
 
-        if self._has_explicit_path(intent.raw_request) and any(term in skill.searchable_text for term in {"file", "path", "line", "excerpt", "ملف", "مسار"}):
+        if self._has_explicit_path(intent.raw_request) and self._has_term_overlap(skill.searchable_text, {"file", "path", "line", "excerpt", "ملف", "مسار"}):
             score += 0.12
             reasons.append("Skill can operate on an explicit file reference.")
-            if any(term in skill.searchable_text for term in {"explicit", "specific file", "specific files"}):
+            if "explicit" in skill.searchable_text or "specific file" in skill.searchable_text or "specific files" in skill.searchable_text:
                 score += 0.10
                 reasons.append("Skill is specialized for explicit file inspection.")
-        elif any(term in intent.raw_request.lower() for term in {"repo", "repository", "project", "codebase", "workspace", "مشروع"}):
-            if any(term in skill.searchable_text for term in {"repo", "repository", "project", "codebase", "workspace", "مشروع"}):
+        elif self._has_term_overlap(intent.raw_request, {"repo", "repository", "project", "codebase", "workspace", "مشروع"}):
+            if self._has_term_overlap(skill.searchable_text, {"repo", "repository", "project", "codebase", "workspace", "مشروع"}):
                 score += 0.06
                 reasons.append("Skill is specialized for repo-wide inspection.")
+
+        if self._is_system_task(intent.raw_request):
+            system_specialist = self._is_system_specialist(skill)
+            if system_specialist:
+                score += 0.32
+                reasons.append("Skill is specialized for local system inspection.")
+            elif self._has_term_overlap(skill.searchable_text, SYSTEM_TERMS):
+                score += 0.06
+                reasons.append("Skill has partial system-inspection relevance.")
+            else:
+                score -= 0.16
+                reasons.append("General skill is less precise than a host-specific inspection skill.")
+            if self._has_term_overlap(skill.searchable_text, WORKSPACE_TERMS):
+                score -= 0.12
+                reasons.append("Workspace-oriented skill is less precise for a host inspection request.")
+
+        lowered_name = skill.name.lower()
+        if "file-editor" in lowered_name and self._has_term_overlap(intent.raw_request, EDIT_TERMS):
+            score += 0.30
+            reasons.append("Skill is specialized for safe file mutation.")
+        if "shell-executor" in lowered_name and self._has_term_overlap(intent.raw_request, COMMAND_TERMS):
+            score += 0.30
+            reasons.append("Skill is specialized for guarded command execution.")
+        if "browser-executor" in lowered_name and (
+            self._has_term_overlap(intent.raw_request, BROWSER_TERMS) or self._has_url_hint(intent.raw_request)
+        ):
+            score += 0.34
+            reasons.append("Skill is specialized for live browser execution.")
+        elif (
+            self._has_term_overlap(intent.raw_request, BROWSER_TERMS) or self._has_url_hint(intent.raw_request)
+        ) and any(token in lowered_name for token in ("writer", "artifact", "reader")):
+            score -= 0.08
+            reasons.append("Non-browser skill is less precise for a live web task.")
 
         if skill.trusted:
             score += 0.10
@@ -170,10 +283,40 @@ class SkillRouter:
 
     @staticmethod
     def _is_workspace_task(text: str) -> bool:
-        lowered = text.lower()
-        return any(term in lowered for term in WORKSPACE_TERMS)
+        return SkillRouter._has_term_overlap(text, WORKSPACE_TERMS)
+
+    @staticmethod
+    def _is_system_task(text: str) -> bool:
+        return SkillRouter._has_term_overlap(text, SYSTEM_TERMS)
+
+    @staticmethod
+    def _is_system_specialist(skill: SkillDefinition) -> bool:
+        searchable = skill.searchable_text
+        name = skill.name.lower()
+        specialist_markers = {
+            "system-inspector",
+            "local machine",
+            "operating system",
+            "local computer",
+            "computer",
+            "host",
+            "device",
+            "hardware",
+        }
+        return any(marker in name or marker in searchable for marker in specialist_markers)
 
     @staticmethod
     def _has_explicit_path(text: str) -> bool:
         lowered = text.lower()
         return any(hint in lowered for hint in PATH_HINTS)
+
+    @staticmethod
+    def _has_url_hint(text: str) -> bool:
+        lowered = text.lower()
+        return "http://" in lowered or "https://" in lowered or "file://" in lowered or "data:text/html" in lowered
+
+    @staticmethod
+    def _has_term_overlap(text: str, terms: set[str]) -> bool:
+        tokens = set(re.findall(r"[\w/-]+", text.lower(), flags=re.UNICODE))
+        normalized_terms = {term.lower() for term in terms}
+        return bool(tokens.intersection(normalized_terms))

@@ -20,6 +20,10 @@ class RecoveryManager:
 
     def for_exception(self, attempt: int, error: Exception, fallback_skill: str | None = None) -> RecoveryDecision:
         message = str(error).lower()
+        if isinstance(error, PermissionError):
+            return RecoveryDecision(action="abort", reason="Execution blocked by safety policy.")
+        if isinstance(error, (ValueError, FileNotFoundError, FileExistsError, IsADirectoryError)):
+            return RecoveryDecision(action="abort", reason="Execution request was invalid or incomplete.")
         if attempt < self._max_retries_per_step and any(
             token in message for token in ("timeout", "temporary", "rate", "connection")
         ):

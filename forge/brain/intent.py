@@ -11,20 +11,35 @@ INTENT_RULES: dict[IntentKind, tuple[str, ...]] = {
         "investigate",
         "find",
         "search",
+        "browse",
+        "visit",
+        "website",
+        "web",
+        "page",
+        "url",
         "locate",
         "compare",
         "study",
         "summarize",
         "ابحث",
         "بحث",
+        "تصفح",
+        "افتح",
+        "موقع",
+        "صفحة",
+        "رابط",
         "قارن",
         "لخص",
     ),
     IntentKind.WRITING: (
         "write",
+        "create",
+        "update",
+        "modify",
         "draft",
         "rewrite",
         "edit",
+        "patch",
         "compose",
         "document",
         "اكتب",
@@ -48,7 +63,33 @@ INTENT_RULES: dict[IntentKind, tuple[str, ...]] = {
         "صدر",
         "تصدير",
     ),
-    IntentKind.AUTOMATION: ("automate", "schedule", "sync", "watch", "monitor", "أتمت", "راقب"),
+    IntentKind.AUTOMATION: (
+        "automate",
+        "schedule",
+        "sync",
+        "watch",
+        "monitor",
+        "run",
+        "execute",
+        "command",
+        "terminal",
+        "shell",
+        "compile",
+        "test",
+        "click",
+        "fill",
+        "browser",
+        "navigate",
+        "أتمت",
+        "راقب",
+        "نفذ",
+        "شغل",
+        "أمر",
+        "ترمنال",
+        "اضغط",
+        "املأ",
+        "متصفح",
+    ),
     IntentKind.ORCHESTRATION: (
         "orchestrate",
         "pipeline",
@@ -59,7 +100,20 @@ INTENT_RULES: dict[IntentKind, tuple[str, ...]] = {
         "خطط",
         "خطوات",
     ),
-    IntentKind.DEBUGGING: ("debug", "fix", "error", "trace", "issue", "broken", "اصلح", "خطأ", "مشكلة"),
+    IntentKind.DEBUGGING: (
+        "debug",
+        "fix",
+        "error",
+        "trace",
+        "issue",
+        "broken",
+        "test",
+        "compile",
+        "patch",
+        "اصلح",
+        "خطأ",
+        "مشكلة",
+    ),
     IntentKind.ANALYSIS: (
         "analyze",
         "score",
@@ -93,7 +147,35 @@ INTENT_RULES: dict[IntentKind, tuple[str, ...]] = {
 
 RISK_RULES: dict[RiskLevel, tuple[str, ...]] = {
     RiskLevel.HIGH: ("delete", "drop", "overwrite", "destroy", "shutdown", "transfer", "buy", "pay", "احذف", "امسح", "دمر", "ادفع"),
-    RiskLevel.MEDIUM: ("publish", "deploy", "execute", "credentials", "secret", "token", "account", "انشر", "نفذ", "سر", "توكن", "حساب"),
+    RiskLevel.MEDIUM: (
+        "publish",
+        "deploy",
+        "execute",
+        "run",
+        "command",
+        "shell",
+        "terminal",
+        "write",
+        "modify",
+        "create",
+        "replace",
+        "append",
+        "patch",
+        "credentials",
+        "secret",
+        "token",
+        "account",
+        "انشر",
+        "نفذ",
+        "شغل",
+        "اكتب",
+        "حدث",
+        "بدل",
+        "أضف",
+        "سر",
+        "توكن",
+        "حساب",
+    ),
 }
 
 
@@ -101,8 +183,10 @@ class IntentResolver:
     """Resolve user intent into a compact execution profile."""
 
     def resolve(self, request: str, memory_context: str = "") -> TaskIntent:
-        normalized = request.strip()
-        request_tokens = self._tokens(request)
+        intent_text = self._strip_runtime_context(request)
+        normalized = intent_text.strip() or request.strip()
+        routing_text = self._strip_embedded_code(normalized)
+        request_tokens = self._tokens(routing_text)
         matched_intents = self._match_intents(request_tokens)
         if not matched_intents:
             matched_intents = [IntentKind.CONVERSATION]
@@ -115,7 +199,7 @@ class IntentResolver:
         requested_output = self._requested_output(request_tokens)
 
         return TaskIntent(
-            raw_request=normalized,
+            raw_request=routing_text,
             objective=self._objective(normalized),
             primary_intent=primary,
             intents=matched_intents,
@@ -230,3 +314,15 @@ class IntentResolver:
                     normalized.add(variant[2:])
                 normalized.add(variant)
         return normalized
+
+    @staticmethod
+    def _strip_runtime_context(text: str) -> str:
+        marker = "[FORGE runtime context]"
+        if marker in text:
+            return text.split(marker, 1)[0]
+        return text
+
+    @staticmethod
+    def _strip_embedded_code(text: str) -> str:
+        without_blocks = re.sub(r"```.*?```", " ", text, flags=re.DOTALL)
+        return re.sub(r"`[^`]+`", " ", without_blocks)

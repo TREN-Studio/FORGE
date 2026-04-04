@@ -37,6 +37,37 @@ class ResponseComposer:
                 result.best_next_action,
             ]
         )
+        if result.mission_trace:
+            lines.extend(
+                [
+                    "",
+                    "7. Execution trace",
+                ]
+            )
+            lines.extend(f"- {item}" for item in result.mission_trace[:16])
+        if result.mission_id or result.audit_log_path:
+            lines.extend(
+                [
+                    "",
+                    "8. Mission audit",
+                ]
+            )
+            if result.mission_id:
+                lines.append(f"- Mission ID: {result.mission_id}")
+            if result.audit_log_path:
+                lines.append(f"- Audit log: {result.audit_log_path}")
+            if result.resumed_from_step:
+                lines.append(f"- Resumed from: {result.resumed_from_step}")
+        if result.agent_reviews:
+            lines.extend(
+                [
+                    "",
+                    "9. Agent reviews",
+                ]
+            )
+            for review in result.agent_reviews[:6]:
+                confidence = f" ({review.confidence:.2f})" if review.confidence is not None else ""
+                lines.append(f"- {review.agent}{confidence}: {' | '.join(review.notes[:2])}")
         return "\n".join(lines)
 
     def best_next_action(self, status: CompletionState) -> str:

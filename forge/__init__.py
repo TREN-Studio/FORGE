@@ -21,6 +21,7 @@ from forge.core.router   import ForgeRouter
 from forge.core.session  import ForgeSession
 from forge.brain.operator import ForgeOperator
 from forge.memory.graph  import MemoryGraph
+from forge.runtime import ForgeAgentRuntime
 
 # One-line convenience API
 _default_session: ForgeSession | None = None
@@ -53,6 +54,7 @@ __all__ = [
     "ForgeRouter",
     "ForgeSession",
     "ForgeOperator",
+    "ForgeAgentRuntime",
     "MemoryGraph",
     "ask",
     "code",

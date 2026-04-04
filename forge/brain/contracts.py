@@ -61,10 +61,16 @@ class PlanStep(BaseModel):
     id: str
     action: str
     skill: str | None = None
+    tool: str | None = None
+    input_spec: dict[str, Any] = Field(default_factory=dict)
     expected_output: str
     validation: str
     risk_note: str = ""
     fallback_skill: str | None = None
+    depends_on: list[str] = Field(default_factory=list)
+    retry_limit: int = 2
+    stop_on_failure: bool = True
+    rollback_on_failure: bool = False
 
 
 class ExecutionPlan(BaseModel):
@@ -79,13 +85,26 @@ class ExecutionPlan(BaseModel):
 class StepExecutionResult(BaseModel):
     step_id: str
     skill: str | None = None
+    tool: str | None = None
     status: CompletionState
     output: Any = None
     evidence: list[str] = Field(default_factory=list)
     validation_status: CompletionState = CompletionState.FAILED
     validation_notes: list[str] = Field(default_factory=list)
     attempts: int = 1
+    input_snapshot: dict[str, Any] = Field(default_factory=dict)
+    trace: list[str] = Field(default_factory=list)
+    rolled_back: bool = False
+    rollback_notes: list[str] = Field(default_factory=list)
+    agent_reviews: list[str] = Field(default_factory=list)
     error: str = ""
+
+
+class AgentReview(BaseModel):
+    agent: str
+    status: CompletionState
+    notes: list[str] = Field(default_factory=list)
+    confidence: float | None = None
 
 
 class OperatorResult(BaseModel):
@@ -99,3 +118,8 @@ class OperatorResult(BaseModel):
     plan: ExecutionPlan
     step_results: list[StepExecutionResult] = Field(default_factory=list)
     artifacts: dict[str, Any] = Field(default_factory=dict)
+    mission_trace: list[str] = Field(default_factory=list)
+    mission_id: str = ""
+    audit_log_path: str = ""
+    resumed_from_step: str | None = None
+    agent_reviews: list[AgentReview] = Field(default_factory=list)

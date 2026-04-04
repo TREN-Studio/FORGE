@@ -4,7 +4,9 @@ from typing import Any
 
 from forge.brain.composer import ResponseComposer
 from forge.brain.contracts import CompletionState, OperatorResult, StepExecutionResult
+from forge.brain.mission_store import MissionAuditStore
 from forge.brain.intent import IntentResolver
+from forge.brain.orchestrator import MissionOrchestrator
 from forge.brain.planner import PlanningEngine
 from forge.brain.prompt import CORE_BRAIN_PROMPT
 from forge.config.settings import OperatorSettings
@@ -12,6 +14,7 @@ from forge.core.session import ForgeSession
 from forge.memory.context import ContextMemory
 from forge.recovery.manager import RecoveryManager
 from forge.safety.guard import SafetyDecision, SafetyGuard
+from forge.safety.sanitizer import PromptInjectionFirewall
 from forge.skills.registry import SkillRegistry
 from forge.skills.router import SkillRouter
 from forge.skills.runtime import SkillExecutionContext, SkillRuntime
@@ -37,10 +40,21 @@ class ForgeOperator:
         self.intent_resolver = IntentResolver()
         self.skill_router = SkillRouter(self.settings)
         self.safety_guard = SafetyGuard(self.settings)
+        self.sanitizer = PromptInjectionFirewall(max_chars=self.settings.prompt_injection_max_chars)
         self.planner = PlanningEngine()
         self.runtime = SkillRuntime()
         self.validator = ResultValidator()
         self.recovery = RecoveryManager(max_retries_per_step=self.settings.max_retries_per_step)
+        self.audit_store = MissionAuditStore(self.settings)
+        self.orchestrator = MissionOrchestrator(
+            self.registry,
+            self.runtime,
+            self.validator,
+            self.recovery,
+            self.audit_store,
+            compact_prior_results=self._compact_prior_results,
+            extract_evidence=self._extract_evidence,
+        )
         self.composer = ResponseComposer()
 
     def handle(
@@ -48,8 +62,13 @@ class ForgeOperator:
         request: str,
         confirmed: bool = False,
         dry_run: bool = False,
+        resume_mission_id: str | None = None,
+        memory_context_override: str | None = None,
     ) -> OperatorResult:
-        memory_context = self.memory.build_context(request, self.settings.memory_recall_limit) if self.memory else ""
+        if memory_context_override is not None:
+            memory_context = memory_context_override
+        else:
+            memory_context = self.memory.build_context(request, self.settings.memory_recall_limit) if self.memory else ""
         intent = self.intent_resolver.resolve(request, memory_context=memory_context)
         skills = self.registry.list()
         routing = self.skill_router.route(intent, skills)
@@ -63,10 +82,26 @@ class ForgeOperator:
             confirmed=confirmed,
             dry_run_requested=dry_run,
         )
-        plan = self.planner.build(intent, routing, safety, max_steps=self.settings.max_plan_steps)
+        plan = self.planner.build(intent, routing, safety, request=request, max_steps=self.settings.max_plan_steps)
+        mission_id, audit_log_path, resume_state = self.audit_store.begin(
+            request,
+            plan,
+            resume_mission_id=resume_mission_id,
+        )
 
         if safety.blocked:
             status = CompletionState.NEEDS_HUMAN_CONFIRMATION if safety.requires_confirmation else CompletionState.FAILED
+            self.audit_store.save_progress(
+                mission_id,
+                audit_log_path,
+                request=request,
+                plan=plan,
+                status=status.value,
+                step_results=[],
+                artifacts={"mission_audit": {"mission_id": mission_id, "audit_log_path": audit_log_path}},
+                mission_trace=["Execution blocked in SafetyGuard before any skill ran."],
+                resumed_from_step=resume_state.resumed_from_step if resume_state else None,
+            )
             return OperatorResult(
                 objective=intent.objective,
                 approach_taken=[
@@ -82,6 +117,9 @@ class ForgeOperator:
                 plan=plan,
                 step_results=[],
                 artifacts={},
+                mission_id=mission_id,
+                audit_log_path=audit_log_path,
+                resumed_from_step=resume_state.resumed_from_step if resume_state else None,
             )
 
         runtime_context = SkillExecutionContext(
@@ -89,126 +127,30 @@ class ForgeOperator:
             session=self.session,
             memory=self.memory,
             dry_run=safety.use_dry_run,
-            state={"memory_context": memory_context},
+            sanitizer=self.sanitizer,
+            state={"memory_context": memory_context, "confirmed": confirmed, "mission_id": mission_id},
         )
 
-        step_results: list[StepExecutionResult] = []
-        artifacts: dict[str, Any] = {}
-        prior_results: dict[str, Any] = {}
+        mission = self.orchestrator.execute(
+            request=request,
+            intent=intent,
+            plan=plan,
+            runtime_context=runtime_context,
+            mission_id=mission_id,
+            audit_log_path=audit_log_path,
+            resume_state=resume_state,
+            confirmed=confirmed,
+            memory_context=memory_context,
+            remember_execution=(
+                (lambda skill_name, note: self.memory.remember_execution(skill_name, note))
+                if self.memory and not safety.use_dry_run
+                else None
+            ),
+        )
 
-        for step in plan.steps:
-            if step.skill is None:
-                reasoning_output = self.session.ask(request, task_type=intent.task_type, remember=False)
-                validation = self.validator.validate_step(None, reasoning_output, step.expected_output, request)
-                step_results.append(
-                    StepExecutionResult(
-                        step_id=step.id,
-                        skill=None,
-                        status=validation.status,
-                        output=reasoning_output,
-                        evidence=[],
-                        validation_status=validation.status,
-                        validation_notes=validation.notes,
-                        attempts=1,
-                    )
-                )
-                artifacts["reasoning"] = reasoning_output
-                break
-
-            current_skill = self.registry.get(step.skill)
-            if current_skill is None:
-                step_results.append(
-                    StepExecutionResult(
-                        step_id=step.id,
-                        skill=step.skill,
-                        status=CompletionState.FAILED,
-                        output=None,
-                        validation_status=CompletionState.FAILED,
-                        validation_notes=[f"Skill `{step.skill}` is missing from the registry."],
-                        attempts=0,
-                        error="missing_skill",
-                    )
-                )
-                continue
-
-            attempt = 0
-            while True:
-                attempt += 1
-                payload = self._build_payload(
-                    request=request,
-                    intent=intent,
-                    memory_context=memory_context,
-                    prior_results=prior_results,
-                )
-                try:
-                    output = self.runtime.execute(current_skill, payload, runtime_context)
-                    validation = self.validator.validate_step(current_skill, output, step.expected_output, request)
-                    if validation.status == CompletionState.FINISHED:
-                        step_result = StepExecutionResult(
-                            step_id=step.id,
-                            skill=current_skill.name,
-                            status=CompletionState.FINISHED,
-                            output=output,
-                            evidence=self._extract_evidence(output),
-                            validation_status=validation.status,
-                            validation_notes=validation.notes,
-                            attempts=attempt,
-                        )
-                        step_results.append(step_result)
-                        prior_results[current_skill.name] = output
-                        artifacts[current_skill.name] = output
-                        if self.memory and not safety.use_dry_run:
-                            self.memory.remember_execution(current_skill.name, f"Completed objective: {intent.objective}")
-                        break
-
-                    recovery = self.recovery.for_validation(attempt, validation.status, step.fallback_skill)
-                    if recovery.action == "retry":
-                        continue
-                    if recovery.action == "fallback" and recovery.fallback_skill:
-                        fallback = self.registry.get(recovery.fallback_skill)
-                        if fallback is not None:
-                            current_skill = fallback
-                            continue
-                    step_results.append(
-                        StepExecutionResult(
-                            step_id=step.id,
-                            skill=current_skill.name,
-                            status=validation.status,
-                            output=output,
-                            evidence=self._extract_evidence(output),
-                            validation_status=validation.status,
-                            validation_notes=validation.notes + [recovery.reason],
-                            attempts=attempt,
-                        )
-                    )
-                    break
-                except Exception as exc:
-                    recovery = self.recovery.for_exception(attempt, exc, step.fallback_skill)
-                    if recovery.action == "retry":
-                        continue
-                    if recovery.action == "fallback" and recovery.fallback_skill:
-                        fallback = self.registry.get(recovery.fallback_skill)
-                        if fallback is not None:
-                            current_skill = fallback
-                            continue
-                    step_results.append(
-                        StepExecutionResult(
-                            step_id=step.id,
-                            skill=current_skill.name,
-                            status=CompletionState.FAILED,
-                            output=None,
-                            evidence=[],
-                            validation_status=CompletionState.FAILED,
-                            validation_notes=[recovery.reason],
-                            attempts=attempt,
-                            error=str(exc),
-                        )
-                    )
-                    break
-
-        final_status = self.validator.evaluate_plan(plan, step_results)
-        result_text = self._summarize_artifacts(artifacts, step_results)
-        risks = list(dict.fromkeys(safety.reasons + self._step_risks(step_results)))
+        final_status = self.validator.evaluate_plan(plan, mission.step_results)
+        result_text = self._summarize_artifacts(mission.artifacts, mission.step_results)
+        risks = list(dict.fromkeys(safety.reasons + self._step_risks(mission.step_results)))
         best_next_action = (
             "Review the dry-run output, then rerun without dry-run when approved."
             if safety.use_dry_run
@@ -223,29 +165,32 @@ class ForgeOperator:
             best_next_action=best_next_action,
             intent=intent,
             plan=plan,
-            step_results=step_results,
-            artifacts=artifacts,
+            step_results=mission.step_results,
+            artifacts=mission.artifacts,
+            mission_trace=mission.mission_trace,
+            mission_id=mission.mission_id,
+            audit_log_path=mission.audit_log_path,
+            resumed_from_step=mission.resumed_from_step,
+            agent_reviews=mission.agent_reviews,
         )
 
-    def handle_as_text(self, request: str, confirmed: bool = False, dry_run: bool = False) -> str:
-        return self.composer.compose(self.handle(request, confirmed=confirmed, dry_run=dry_run))
-
-    def _build_payload(
+    def handle_as_text(
         self,
         request: str,
-        intent,
-        memory_context: str,
-        prior_results: dict[str, Any],
-    ) -> dict[str, Any]:
-        return {
-            "request": request,
-            "objective": intent.objective,
-            "task_type": intent.task_type,
-            "hidden_intent": intent.hidden_intent,
-            "requested_output": intent.requested_output,
-            "memory_context": memory_context,
-            "prior_results": self._compact_prior_results(prior_results),
-        }
+        confirmed: bool = False,
+        dry_run: bool = False,
+        resume_mission_id: str | None = None,
+        memory_context_override: str | None = None,
+    ) -> str:
+        return self.composer.compose(
+            self.handle(
+                request,
+                confirmed=confirmed,
+                dry_run=dry_run,
+                resume_mission_id=resume_mission_id,
+                memory_context_override=memory_context_override,
+            )
+        )
 
     @staticmethod
     def _step_risks(step_results: list[StepExecutionResult]) -> list[str]:
@@ -265,6 +210,8 @@ class ForgeOperator:
         ]
         if routing.selected_skills:
             lines.append(f"Selected skills: {', '.join(routing.selected_skills)}.")
+        if len(getattr(intent, "intents", [])) > 1:
+            lines.append("Mission decomposed into multiple sub-tasks.")
         if safety.use_dry_run:
             lines.append("Executed in dry-run mode.")
         return lines
@@ -275,6 +222,12 @@ class ForgeOperator:
             lowered = name.lower()
             if "inspector" in lowered or "research" in lowered or "analyzer" in lowered:
                 return (10, lowered)
+            if "browser" in lowered:
+                return (30, lowered)
+            if "editor" in lowered:
+                return (40, lowered)
+            if "shell" in lowered:
+                return (60, lowered)
             if "writer" in lowered or "publish" in lowered:
                 return (90, lowered)
             return (50, lowered)
@@ -302,12 +255,6 @@ class ForgeOperator:
                 compact[skill_name] = {"scorecard_markdown": result.get("scorecard_markdown")}
             elif "content" in result:
                 compact[skill_name] = {"content": result.get("content")}
-            elif "summary" in result:
-                compact[skill_name] = {
-                    "summary": result.get("summary"),
-                    "files_reviewed": result.get("files_reviewed", [])[:8],
-                    "evidence": result.get("evidence", [])[:8],
-                }
             elif "analysis_markdown" in result:
                 compact[skill_name] = {
                     "analysis_markdown": result.get("analysis_markdown"),
@@ -317,6 +264,38 @@ class ForgeOperator:
             elif "file_excerpt_markdown" in result:
                 compact[skill_name] = {
                     "file_excerpt_markdown": result.get("file_excerpt_markdown"),
+                    "files_reviewed": result.get("files_reviewed", [])[:8],
+                    "evidence": result.get("evidence", [])[:8],
+                }
+            elif "edited_path" in result:
+                compact[skill_name] = {
+                    "summary": result.get("summary"),
+                    "edited_path": result.get("edited_path"),
+                    "operation": result.get("operation"),
+                    "diff": result.get("diff"),
+                }
+            elif "command" in result:
+                compact[skill_name] = {
+                    "summary": result.get("summary"),
+                    "command": result.get("command"),
+                    "exit_code": result.get("exit_code"),
+                    "stdout": result.get("stdout"),
+                    "stderr": result.get("stderr"),
+                }
+            elif "page_state" in result:
+                compact[skill_name] = {
+                    "summary": result.get("summary"),
+                    "current_url": result.get("current_url"),
+                    "title": result.get("title"),
+                    "action_trace": result.get("action_trace"),
+                    "snapshot_text": result.get("snapshot_text"),
+                    "research_summary_markdown": result.get("research_summary_markdown"),
+                    "verification": result.get("verification"),
+                    "confidence": result.get("confidence"),
+                }
+            elif "summary" in result:
+                compact[skill_name] = {
+                    "summary": result.get("summary"),
                     "files_reviewed": result.get("files_reviewed", [])[:8],
                     "evidence": result.get("evidence", [])[:8],
                 }
@@ -331,9 +310,7 @@ class ForgeOperator:
             for key, value in artifacts.items():
                 lines.append(f"[{key}]")
                 if isinstance(value, dict):
-                    if "summary" in value:
-                        lines.append(str(value["summary"]))
-                    elif "analysis_markdown" in value:
+                    if "analysis_markdown" in value:
                         lines.append(str(value["analysis_markdown"]))
                     elif "file_excerpt_markdown" in value:
                         lines.append(str(value["file_excerpt_markdown"]))
@@ -343,12 +320,55 @@ class ForgeOperator:
                         lines.append(str(value["article_markdown"]))
                     elif "scorecard_markdown" in value:
                         lines.append(str(value["scorecard_markdown"]))
+                    elif "page_state" in value or "snapshot_text" in value:
+                        lines.append(str(value.get("summary") or value.get("current_url") or "Browser step completed."))
+                        if value.get("research_summary_markdown"):
+                            lines.append(str(value["research_summary_markdown"]))
+                        if value.get("action_trace"):
+                            lines.append(str(value["action_trace"]))
+                        if value.get("snapshot_text"):
+                            lines.append(str(value["snapshot_text"]))
+                    elif "mission_id" in value and "audit_log_path" in value:
+                        lines.append(f"Mission ID: {value.get('mission_id')}")
+                        lines.append(f"Audit log: {value.get('audit_log_path')}")
+                    elif "lanes" in value:
+                        raw_lanes = value.get("lanes", [])
+                        lane_lines: list[str] = []
+                        if isinstance(raw_lanes, dict):
+                            for service in raw_lanes.get("services", [])[:6]:
+                                lane_lines.append(
+                                    f"{service.get('service')}: status={service.get('status')} "
+                                    f"processed={sum(int(worker.get('processed_jobs', 0)) for worker in service.get('workers', []))} "
+                                    f"queued={service.get('queued_jobs', 0)}"
+                                )
+                        else:
+                            for lane in raw_lanes[:6]:
+                                lane_lines.append(
+                                    f"{lane.get('lane_id')}: processed={lane.get('processed_jobs')} queued={lane.get('queued_jobs')}"
+                                )
+                        lines.append("Worker lanes -> " + "; ".join(lane_lines))
+                    elif "diff" in value and value.get("summary"):
+                        lines.append(str(value["summary"]))
+                        if value["diff"]:
+                            lines.append(str(value["diff"]))
+                    elif "command" in value:
+                        lines.append(str(value.get("summary") or value["command"]))
+                        if value.get("stdout"):
+                            lines.append(str(value["stdout"]))
+                        if value.get("stderr"):
+                            lines.append(str(value["stderr"]))
+                    elif "summary" in value:
+                        lines.append(str(value["summary"]))
+                    elif "trace_markdown" in value:
+                        lines.append(str(value["trace_markdown"]))
                     else:
                         lines.append(str({k: v for k, v in value.items() if k != "payload_preview"}))
                 else:
                     lines.append(str(value))
             return "\n\n".join(lines)
         if step_results:
+            if step_results[-1].output is None:
+                return step_results[-1].error or "No output produced."
             return str(step_results[-1].output)
         return "No output produced."
 
@@ -364,4 +384,10 @@ class ForgeOperator:
             evidence.extend(f"file:{item}" for item in output["files_reviewed"] if item)
         if output.get("artifact_path"):
             evidence.append(f"artifact:{output['artifact_path']}")
+        if output.get("edited_path"):
+            evidence.append(f"edited:{output['edited_path']}")
+        if output.get("command"):
+            evidence.append(f"command:{output['command']}")
+        if output.get("current_url"):
+            evidence.append(f"url:{output['current_url']}")
         return list(dict.fromkeys(evidence))

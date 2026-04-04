@@ -8,8 +8,54 @@ from forge.config.settings import OperatorSettings
 from forge.skills.contracts import RoutingDecision, SkillDefinition
 
 
-HIGH_RISK_TERMS = {"delete", "drop", "overwrite", "destroy", "wipe", "shutdown", "transfer", "buy", "pay", "احذف", "امسح", "دمر", "ادفع"}
-MEDIUM_RISK_TERMS = {"deploy", "publish", "execute", "credential", "secret", "token", "account", "انشر", "نفذ", "توكن", "سر", "حساب"}
+HIGH_RISK_TERMS = {
+    "delete",
+    "drop",
+    "overwrite",
+    "destroy",
+    "wipe",
+    "shutdown",
+    "transfer",
+    "buy",
+    "pay",
+    "remove",
+    "format",
+    "rm",
+    "del",
+    "احذف",
+    "امسح",
+    "دمر",
+    "ادفع",
+}
+MEDIUM_RISK_TERMS = {
+    "deploy",
+    "publish",
+    "execute",
+    "run",
+    "shell",
+    "terminal",
+    "command",
+    "write",
+    "modify",
+    "create",
+    "replace",
+    "append",
+    "patch",
+    "credential",
+    "secret",
+    "token",
+    "account",
+    "انشر",
+    "نفذ",
+    "شغل",
+    "اكتب",
+    "حدث",
+    "بدل",
+    "اضف",
+    "توكن",
+    "سر",
+    "حساب",
+}
 
 
 @dataclass(slots=True)
@@ -47,6 +93,23 @@ class SafetyGuard:
             risk_level = RiskLevel.MEDIUM
             reasons.append("Request contains medium-risk terms.")
 
+        selected_skill_names = {name.lower() for name in routing.selected_skills}
+        if {"file-editor", "shell-executor"}.intersection(selected_skill_names) and risk_level == RiskLevel.LOW:
+            risk_level = RiskLevel.MEDIUM
+            reasons.append("Execution skill selected; elevating risk to medium.")
+        if "file-editor" in selected_skill_names and any(term in tokens for term in {"overwrite", "replace", "delete", "remove", "drop"}):
+            risk_level = RiskLevel.HIGH
+            reasons.append("Potentially destructive file mutation detected.")
+        if "shell-executor" in selected_skill_names and any(term in tokens for term in {"rm", "del", "shutdown", "format"}):
+            risk_level = RiskLevel.HIGH
+            reasons.append("Potentially destructive shell command detected.")
+        if "browser-executor" in selected_skill_names and any(term in tokens for term in {"login", "signin", "password", "credential", "token", "account", "checkout", "purchase", "buy", "pay"}):
+            risk_level = RiskLevel.HIGH
+            reasons.append("Sensitive browser action detected.")
+        if {"external-publisher", "github-publisher", "wordpress-publisher"}.intersection(selected_skill_names):
+            risk_level = RiskLevel.HIGH
+            reasons.append("External publish skill selected; elevating risk to high.")
+
         untrusted = [name for name in routing.selected_skills if name in skill_lookup and not skill_lookup[name].trusted]
         if untrusted:
             reasons.append(f"Untrusted skills blocked: {', '.join(untrusted)}")
@@ -63,7 +126,7 @@ class SafetyGuard:
             reasons.append("High-risk action requires explicit confirmation.")
 
         use_dry_run = dry_run_requested or (
-            risk_level == RiskLevel.MEDIUM and self._settings.medium_risk_dry_run
+            risk_level == RiskLevel.MEDIUM and self._settings.medium_risk_dry_run and not confirmed
         )
         if use_dry_run:
             reasons.append("Dry-run mode enabled.")

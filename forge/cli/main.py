@@ -215,6 +215,7 @@ def operate(
     confirm: bool = typer.Option(False, "--confirm", help="Confirm high-risk execution"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Force dry-run mode"),
     no_memory: bool = typer.Option(False, "--no-memory", help="Disable memory injection for this run"),
+    resume_mission: str | None = typer.Option(None, "--resume-mission", help="Resume a previous mission by ID"),
     raw: bool = typer.Option(False, "--raw", help="Print raw text only"),
 ):
     """Run the modular skill-based operator brain."""
@@ -223,7 +224,12 @@ def operate(
 
     with Live(Spinner("dots", text="[dim]Planning and executing...[/dim]"), refresh_per_second=10, transient=not raw):
         operator = _get_operator(no_memory=no_memory)
-        reply = operator.handle_as_text(prompt, confirmed=confirm, dry_run=dry_run)
+        reply = operator.handle_as_text(
+            prompt,
+            confirmed=confirm,
+            dry_run=dry_run,
+            resume_mission_id=resume_mission,
+        )
 
     if raw:
         print(reply)
@@ -364,6 +370,78 @@ def version():
     from forge import __version__
 
     console.print(f"FORGE [bold #FF6B1A]{__version__}[/bold #FF6B1A]")
+
+
+@cli.command()
+def gateway(
+    host: str = typer.Option("127.0.0.1", "--host", help="Gateway host"),
+    port: int = typer.Option(18789, "--port", help="Gateway port"),
+    token: str = typer.Option("", "--token", help="Optional Bearer token required by the gateway"),
+    rate_limit: int = typer.Option(60, "--rate-limit", help="Requests per minute per client"),
+    no_heartbeat: bool = typer.Option(False, "--no-heartbeat", help="Disable heartbeat tasks"),
+):
+    """Run the FORGE agent gateway with WebSocket and HTTP entrypoints."""
+    from forge.runtime.agent import AgentRuntimeSettings
+    from forge.runtime.gateway import GatewaySettings, run_gateway
+
+    _print_banner()
+    console.print(
+        f"[dim]Gateway starting on ws://{host}:{port}/ws and http://{host}:{port}/api/message[/dim]"
+    )
+
+    gateway_settings = GatewaySettings(
+        host=host,
+        port=port,
+        auth_token=token,
+        requests_per_minute=rate_limit,
+    )
+    runtime_settings = AgentRuntimeSettings(
+        workspace_root=Path.cwd().resolve(),
+        enable_heartbeat=not no_heartbeat,
+    )
+    run_gateway(gateway_settings=gateway_settings, runtime_settings=runtime_settings)
+
+
+@cli.command()
+def heartbeat(
+    once: bool = typer.Option(True, "--once/--watch", help="Run heartbeat once or keep watching"),
+):
+    """Run the autonomous heartbeat tasks without starting the gateway."""
+    import asyncio
+
+    from forge.runtime.agent import AgentRuntimeSettings, ForgeAgentRuntime
+
+    runtime = ForgeAgentRuntime(
+        AgentRuntimeSettings(
+            workspace_root=Path.cwd().resolve(),
+            enable_heartbeat=True,
+        )
+    )
+
+    async def _run_once() -> None:
+        reports = await runtime.run_heartbeat_once()
+        for report in reports:
+            console.print(
+                Panel(
+                    f"status: {report['status']}\n"
+                    f"duration_ms: {report['duration_ms']}\n"
+                    f"details: {report['details']}",
+                    title=f"Heartbeat: {report['task_name']}",
+                    border_style="#FF6B1A",
+                )
+            )
+        await runtime.stop()
+
+    async def _watch() -> None:
+        await runtime.start()
+        console.print("[dim]Heartbeat running. Press Ctrl+C to stop.[/dim]")
+        try:
+            while True:
+                await asyncio.sleep(3600)
+        finally:
+            await runtime.stop()
+
+    asyncio.run(_run_once() if once else _watch())
 
 
 if __name__ == "__main__":
