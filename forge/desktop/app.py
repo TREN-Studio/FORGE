@@ -31,9 +31,9 @@ class ForgeDesktopApp:
 
         self._queue: queue.Queue[tuple[str, str]] = queue.Queue()
         self._busy = False
-        self._operator_mode = tk.BooleanVar(value=False)
+        self._operator_mode = tk.BooleanVar(value=True)
         self._status_text = tk.StringVar(value="Booting FORGE...")
-        self._mode_text = tk.StringVar(value="Direct Chat")
+        self._mode_text = tk.StringVar(value="Operator Brain")
 
         self._configure_window()
         self._build_layout()
@@ -126,7 +126,7 @@ class ForgeDesktopApp:
 
         toggle = tk.Checkbutton(
             parent,
-            text="Use Operator Brain",
+            text="Operator Brain Locked",
             variable=self._operator_mode,
             command=self._toggle_mode,
             fg=TEXT,
@@ -137,6 +137,7 @@ class ForgeDesktopApp:
             padx=22,
             pady=12,
             font=("Segoe UI", 11),
+            state="disabled",
         )
         toggle.pack(anchor="w")
 
@@ -174,14 +175,14 @@ class ForgeDesktopApp:
 
         tk.Label(
             top,
-            text="Desktop Conversation",
+            text="Operator Mission Console",
             fg=TEXT,
             bg=SURFACE,
             font=("Bahnschrift", 22, "bold"),
         ).grid(row=0, column=0, sticky="w")
         tk.Label(
             top,
-            text="English-first interface. The model may answer in any language the user requests.",
+            text="Direct chat mode is removed. FORGE must answer through the operator path only.",
             fg=MUTED,
             bg=SURFACE,
             font=("Segoe UI", 10),
@@ -202,8 +203,8 @@ class ForgeDesktopApp:
         self.chat.grid(row=1, column=0, sticky="nsew", padx=24, pady=(0, 18))
         self.chat.insert(
             "end",
-            "FORGE Desktop initialized.\n"
-            "Ask for research, planning, code help, or execution-oriented guidance.\n\n",
+            "FORGE operator console initialized.\n"
+            "Give FORGE a concrete mission to inspect, analyze, edit, run, browse, or publish.\n\n",
         )
         self.chat.configure(state="disabled")
 
@@ -282,7 +283,7 @@ class ForgeDesktopApp:
         threading.Thread(target=runner, daemon=True).start()
 
     def _toggle_mode(self) -> None:
-        self._mode_text.set("Operator Brain" if self._operator_mode.get() else "Direct Chat")
+        self._mode_text.set("Operator Brain")
 
     def _send_from_event(self, event) -> str:
         self._send()
@@ -368,4 +369,3 @@ class ForgeDesktopApp:
             "Ask for research, planning, code help, or execution-oriented guidance.\n\n",
         )
         self.chat.configure(state="disabled")
-

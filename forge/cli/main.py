@@ -28,7 +28,7 @@ cli = typer.Typer(
 )
 
 FORGE_BANNER = """[bold #FF6B1A]FORGE[/bold #FF6B1A]
-[dim]Free Open Reasoning & Generation Engine  v1.1.0[/dim]
+[dim]Free Open Reasoning & Generation Engine  v1.1.1[/dim]
 [dim]https://www.trenstudio.com/FORGE[/dim]
 """
 

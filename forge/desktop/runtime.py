@@ -37,12 +37,7 @@ def run_prompt(prompt: str, use_operator: bool = False) -> str:
     prompt = prompt.strip()
     if not prompt:
         raise ValueError("Prompt is empty.")
-
-    if use_operator:
-        return operate_prompt(prompt)["answer"]
-
-    session = ForgeSession(memory=False)
-    return session.ask(prompt, task_type="general", remember=False)
+    return operate_prompt(prompt)["answer"]
 
 
 def operate_prompt(

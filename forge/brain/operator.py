@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from forge.brain.composer import ResponseComposer
-from forge.brain.contracts import CompletionState, OperatorResult, StepExecutionResult
+from forge.brain.contracts import CompletionState, ExecutionPlan, IntentKind, OperatorResult, StepExecutionResult
 from forge.brain.mission_store import MissionAuditStore
 from forge.brain.intent import IntentResolver
 from forge.brain.orchestrator import MissionOrchestrator
@@ -88,6 +88,24 @@ class ForgeOperator:
             plan,
             resume_mission_id=resume_mission_id,
         )
+
+        if intent.primary_intent == IntentKind.CONVERSATION and not routing.selected_skills:
+            return self._clarification_result(
+                request=request,
+                intent=intent,
+                routing=routing,
+                plan=ExecutionPlan(
+                    objective="Clarify the mission before execution.",
+                    task_type=intent.task_type,
+                    risk_level=safety.risk_level,
+                    steps=[],
+                    fallbacks=[],
+                    completion_criteria=["The user provides one concrete, verifiable mission."],
+                ),
+                mission_id=mission_id,
+                audit_log_path=audit_log_path,
+                resumed_from_step=resume_state.resumed_from_step if resume_state else None,
+            )
 
         if safety.blocked:
             status = CompletionState.NEEDS_HUMAN_CONFIRMATION if safety.requires_confirmation else CompletionState.FAILED
@@ -190,6 +208,83 @@ class ForgeOperator:
                 resume_mission_id=resume_mission_id,
                 memory_context_override=memory_context_override,
             )
+        )
+
+    def _clarification_result(
+        self,
+        request: str,
+        intent,
+        routing,
+        plan: ExecutionPlan,
+        mission_id: str,
+        audit_log_path: str,
+        resumed_from_step: str | None,
+    ) -> OperatorResult:
+        clarification = self._clarification_text(request)
+        mission_trace = [
+            "Intent resolved as conversation-only.",
+            "Raw chat fallback was blocked.",
+            "FORGE requested a concrete mission before execution.",
+        ]
+        result = OperatorResult(
+            objective="Clarify the mission before execution.",
+            approach_taken=[
+                f"Intent resolved as `{intent.primary_intent.value}`.",
+                f"Routing mode: `{routing.mode}`.",
+                "Blocked raw chat behavior and switched to operator clarification.",
+            ],
+            result=clarification,
+            validation_status=CompletionState.PARTIALLY_FINISHED,
+            risks_or_limitations=[
+                "The request did not specify a concrete, verifiable task.",
+                "FORGE will not pretend to execute when no actionable mission exists.",
+            ],
+            best_next_action="State one concrete mission with a target, expected result, or artifact.",
+            intent=intent,
+            plan=plan,
+            step_results=[],
+            artifacts={},
+            mission_trace=mission_trace,
+            mission_id=mission_id,
+            audit_log_path=audit_log_path,
+            resumed_from_step=resumed_from_step,
+            agent_reviews=[],
+        )
+        self.audit_store.save_progress(
+            mission_id,
+            audit_log_path,
+            request=request,
+            plan=plan,
+            status=result.validation_status.value,
+            step_results=[],
+            artifacts={},
+            mission_trace=mission_trace,
+            resumed_from_step=resumed_from_step,
+        )
+        return result
+
+    @staticmethod
+    def _clarification_text(request: str) -> str:
+        if any("\u0600" <= char <= "\u06ff" for char in request):
+            return (
+                "FORGE ليس chatbot عاماً. هذا الطلب لا يحتوي على مهمة قابلة للتنفيذ بعد.\n\n"
+                "أعطني أمراً واحداً واضحاً مثل:\n"
+                "- افحص هذا الحاسوب واذكر النظام والرام والمعالج\n"
+                "- حلل هذا المشروع واحفظ تقريراً في ملف\n"
+                "- افتح هذا الرابط واستخرج النقاط الرئيسية\n"
+                "- عدل هذا الملف ثم شغّل الاختبار\n"
+                "- انشر هذا التقرير إلى GitHub أو WordPress بعد التأكيد\n\n"
+                "عندها سينفذ FORGE المهمة كـ agent بخطة وخطوات وتحقيق ونتيجة قابلة للتحقق."
+            )
+        return (
+            "FORGE is not a general chatbot. This request does not define an executable mission yet.\n\n"
+            "Give one concrete instruction such as:\n"
+            "- Inspect this computer and report the OS, RAM, and CPU\n"
+            "- Analyze this project and save a report file\n"
+            "- Open this URL and extract the key findings\n"
+            "- Edit this file and run the test command\n"
+            "- Publish this verified report to GitHub or WordPress after confirmation\n\n"
+            "Then FORGE will execute it as an agent with a plan, steps, evidence, and validation."
         )
 
     @staticmethod

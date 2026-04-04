@@ -560,11 +560,11 @@ DESKTOP_HTML = """<!doctype html>
       <section class="card">
         <h3>Execution Mode</h3>
         <label class="mode-toggle">
-          <input id="operator-mode" type="checkbox" checked>
-          <span>Agent Mode</span>
+          <input id="operator-mode" type="checkbox" checked disabled>
+          <span>Agent Mode Locked</span>
         </label>
         <p class="footnote">
-          Agent Mode is the default path. FORGE should plan, route, validate, and expose evidence instead of behaving like a plain chatbot.
+          Direct chat mode is removed. FORGE always runs through the operator path and must return steps, evidence, validation, or a clarification request.
         </p>
       </section>
 
@@ -883,35 +883,27 @@ DESKTOP_HTML = """<!doctype html>
       promptBox.value = "";
       sendButton.disabled = true;
       sendButton.textContent = "Running...";
-      if (operatorMode.checked) {
-        setMissionStatus("running");
-      }
+      setMissionStatus("running");
 
       try {
-        const response = await fetch(operatorMode.checked ? "/api/operate" : "/api/chat", {
+        const response = await fetch("/api/operate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             prompt,
-            operator: operatorMode.checked
+            operator: true
           })
         });
         const data = await response.json();
         if (!response.ok) {
           throw new Error(data.error || "Execution failed.");
         }
-        if (operatorMode.checked) {
-          renderOperatorResult(data);
-          addBubble("assistant", data.answer || data.result || "No result produced.");
-        } else {
-          addBubble("assistant", data.answer);
-        }
+        renderOperatorResult(data);
+        addBubble("assistant", data.answer || data.result || "No result produced.");
         appendNote("Response completed successfully.");
       } catch (error) {
         addBubble("error", error.message);
-        if (operatorMode.checked) {
-          setMissionStatus("failed");
-        }
+        setMissionStatus("failed");
         appendNote("Execution failed: " + error.message);
       } finally {
         sendButton.disabled = false;
@@ -1002,12 +994,16 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
                 return
 
             try:
-                answer = run_prompt(prompt, use_operator=bool(payload.get("operator")))
+                result = operate_prompt(
+                    prompt,
+                    confirmed=bool(payload.get("confirmed")),
+                    dry_run=bool(payload.get("dry_run")),
+                )
             except Exception as exc:
                 self._send_json({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
                 return
 
-            self._send_json({"answer": answer})
+            self._send_json({"answer": result.get("answer"), "mode": "operator_only"})
             return
         if self.path == "/api/operate":
             payload = self._read_json()
