@@ -11,7 +11,10 @@ from forge.config.settings import OperatorSettings
 
 IGNORED_DIRS = {
     ".git",
+    ".idea",
     ".venv",
+    "build",
+    "dist",
     "__pycache__",
     "node_modules",
     ".mypy_cache",

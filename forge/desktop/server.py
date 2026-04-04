@@ -9,7 +9,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from forge.brain.orchestrator import MissionOrchestrator
 from forge import __version__
 from forge.desktop.diagnostics import log_event, log_exception
-from forge.desktop.runtime import boot_status, operate_prompt, run_prompt
+from forge.desktop.runtime import (
+    boot_status,
+    choose_workspace_root,
+    get_workspace_status,
+    operate_prompt,
+    run_prompt,
+    set_workspace_root,
+)
 
 
 DESKTOP_HTML = """<!doctype html>
@@ -192,6 +199,52 @@ DESKTOP_HTML = """<!doctype html>
       width: 18px;
       height: 18px;
       accent-color: var(--accent);
+    }
+
+    .toggle-stack {
+      display: grid;
+      gap: 12px;
+    }
+
+    .field-label {
+      display: block;
+      margin: 12px 0 8px;
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .text-field {
+      width: 100%;
+      min-height: 46px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(0,0,0,0.26);
+      color: var(--text);
+      padding: 12px 14px;
+      font: 14px/1.4 "Segoe UI", sans-serif;
+      outline: none;
+    }
+
+    .text-field:focus {
+      border-color: rgba(255,107,26,0.42);
+      box-shadow: 0 0 0 4px rgba(255,107,26,0.08);
+    }
+
+    .button-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .button-ghost {
+      min-height: 42px;
+      background: rgba(255,255,255,0.05);
+      color: var(--text);
+      border: 1px solid rgba(255,255,255,0.08);
+      box-shadow: none;
     }
 
     .notes {
@@ -569,6 +622,40 @@ DESKTOP_HTML = """<!doctype html>
       </section>
 
       <section class="card">
+        <h3>Workspace</h3>
+        <div class="status-line">
+          <span class="status-key">Active Root</span>
+          <span id="workspace-name" class="status-value">Loading...</span>
+        </div>
+        <label class="field-label" for="workspace-path">Project Folder</label>
+        <input id="workspace-path" class="text-field" type="text" placeholder="C:\\Projects\\your-repo">
+        <div class="button-grid">
+          <button id="apply-workspace" type="button" class="button-ghost">Apply Path</button>
+          <button id="browse-workspace" type="button" class="button-ghost">Browse...</button>
+        </div>
+        <p id="workspace-summary" class="footnote">
+          Select the real project root. File and shell skills will execute only inside this workspace.
+        </p>
+      </section>
+
+      <section class="card">
+        <h3>Execution Controls</h3>
+        <div class="toggle-stack">
+          <label class="mode-toggle">
+            <input id="confirm-mode" type="checkbox">
+            <span>Allow Real Changes</span>
+          </label>
+          <label class="mode-toggle">
+            <input id="dry-run-mode" type="checkbox">
+            <span>Force Dry Run</span>
+          </label>
+        </div>
+        <p class="footnote">
+          Without confirmation, medium-risk development tasks stay in dry-run. External publishing and high-risk writes still require explicit confirmation.
+        </p>
+      </section>
+
+      <section class="card">
         <h3>Boot Notes</h3>
         <div id="notes" class="notes">Preparing FORGE runtime...</div>
       </section>
@@ -585,7 +672,7 @@ DESKTOP_HTML = """<!doctype html>
       <header class="workspace-header">
         <h2>Operator Mission Console</h2>
         <p>
-          FORGE runs on-device, chooses a live model path, executes through skills, and must prove what it did with visible steps, evidence, and validation.
+          FORGE runs on-device, executes through skills inside the selected workspace, and must prove every file mutation, command, and validation step with visible evidence.
         </p>
       </header>
 
@@ -630,7 +717,7 @@ DESKTOP_HTML = """<!doctype html>
       <section id="chat" class="chat">
         <article class="bubble assistant">
           <header>FORGE</header>
-          <div class="body">Agent console online. Ask FORGE to inspect this computer, analyze the project, plan a workflow, or execute a verified task path.</div>
+          <div class="body">Agent console online. Select a real project folder, then ask FORGE to inspect the repo, edit a file, run a safe command, or complete a verified development mission.</div>
         </article>
         <article class="bubble assistant">
           <header>Status</header>
@@ -640,14 +727,14 @@ DESKTOP_HTML = """<!doctype html>
 
       <section class="composer">
         <div class="composer-grid">
-          <textarea id="prompt" placeholder="Give FORGE a real mission: inspect this computer, analyze this codebase, plan a release workflow, or produce a verified artifact..."></textarea>
+          <textarea id="prompt" placeholder="Give FORGE a real development mission: analyze this workspace, edit a file, run compile or tests, or save a verified report..."></textarea>
           <div class="actions">
             <button id="send" type="button">Run Mission</button>
             <button id="clear" type="button">Reset</button>
           </div>
         </div>
         <div class="footnote">
-          Press Ctrl+Enter to dispatch. Agent Mode returns objective, plan, validation status, step evidence, and the best next action.
+          Press Ctrl+Enter to dispatch. All file and shell actions are confined to the selected workspace and return objective, plan, validation status, step evidence, and the best next action.
         </div>
       </section>
     </main>
@@ -661,6 +748,13 @@ DESKTOP_HTML = """<!doctype html>
     const notes = document.getElementById("notes");
     const workerServices = document.getElementById("worker-services");
     const operatorMode = document.getElementById("operator-mode");
+    const workspaceName = document.getElementById("workspace-name");
+    const workspacePath = document.getElementById("workspace-path");
+    const workspaceSummary = document.getElementById("workspace-summary");
+    const applyWorkspaceButton = document.getElementById("apply-workspace");
+    const browseWorkspaceButton = document.getElementById("browse-workspace");
+    const confirmMode = document.getElementById("confirm-mode");
+    const dryRunMode = document.getElementById("dry-run-mode");
     const objective = document.getElementById("objective");
     const objectiveNote = document.getElementById("objective-note");
     const validationState = document.getElementById("validation-state");
@@ -761,6 +855,18 @@ DESKTOP_HTML = """<!doctype html>
       });
     }
 
+    function renderWorkspace(data) {
+      const root = data && data.workspace_root ? data.workspace_root : "";
+      const artifactRoot = data && data.artifact_root ? data.artifact_root : "";
+      const keyFiles = data && data.key_files ? data.key_files.slice(0, 6) : [];
+      workspaceName.textContent = data && data.workspace_name ? data.workspace_name : (root || "Not set");
+      workspacePath.value = root;
+      workspaceSummary.textContent =
+        "Artifacts: " + (artifactRoot || "-") +
+        " | Files: " + String(data && data.file_count ? data.file_count : 0) +
+        (keyFiles.length ? "\\nKey files: " + keyFiles.join(" | ") : "\\nNo key files indexed yet.");
+    }
+
     function clip(value, limit = 700) {
       if (value === null || value === undefined) return "No output.";
       const text = typeof value === "string" ? value : JSON.stringify(value, null, 2);
@@ -858,9 +964,71 @@ DESKTOP_HTML = """<!doctype html>
         document.getElementById("models").textContent = String(data.models_online);
         document.getElementById("version").textContent = data.version;
         appendNote(data.summary);
+        if (data.workspace_root) {
+          workspacePath.value = data.workspace_root;
+        }
       } catch (error) {
         document.getElementById("runtime-state").textContent = "Failed";
         appendNote("Boot request failed: " + error.message);
+      }
+    }
+
+    async function loadWorkspace() {
+      try {
+        const response = await fetch("/api/workspace");
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || "Workspace load failed.");
+        }
+        renderWorkspace(data);
+      } catch (error) {
+        workspaceName.textContent = "Unavailable";
+        workspaceSummary.textContent = "Workspace load failed: " + error.message;
+      }
+    }
+
+    async function applyWorkspace(path) {
+      try {
+        const response = await fetch("/api/workspace", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ workspace_root: path })
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || "Workspace update failed.");
+        }
+        renderWorkspace(data);
+        appendNote("Workspace set to " + data.workspace_root);
+      } catch (error) {
+        appendNote("Workspace update failed: " + error.message);
+        addBubble("error", "Workspace update failed: " + error.message);
+      }
+    }
+
+    async function browseWorkspace() {
+      browseWorkspaceButton.disabled = true;
+      browseWorkspaceButton.textContent = "Opening...";
+      try {
+        const response = await fetch("/api/workspace/dialog", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({})
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || "Workspace picker failed.");
+        }
+        renderWorkspace(data);
+        if (!data.cancelled) {
+          appendNote("Workspace selected via native picker: " + data.workspace_root);
+        }
+      } catch (error) {
+        appendNote("Workspace picker failed: " + error.message);
+        addBubble("error", "Workspace picker failed: " + error.message);
+      } finally {
+        browseWorkspaceButton.disabled = false;
+        browseWorkspaceButton.textContent = "Browse...";
       }
     }
 
@@ -879,7 +1047,7 @@ DESKTOP_HTML = """<!doctype html>
       if (!prompt || sendButton.disabled) return;
 
       addBubble("user", prompt);
-      appendNote("Dispatching prompt to live runtime...");
+      appendNote("Dispatching mission inside workspace: " + (workspacePath.value.trim() || "<unset>"));
       promptBox.value = "";
       sendButton.disabled = true;
       sendButton.textContent = "Running...";
@@ -891,12 +1059,18 @@ DESKTOP_HTML = """<!doctype html>
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             prompt,
-            operator: true
+            operator: true,
+            confirmed: confirmMode.checked,
+            dry_run: dryRunMode.checked,
+            workspace_root: workspacePath.value.trim()
           })
         });
         const data = await response.json();
         if (!response.ok) {
           throw new Error(data.error || "Execution failed.");
+        }
+        if (data.workspace_root) {
+          renderWorkspace(data);
         }
         renderOperatorResult(data);
         addBubble("assistant", data.answer || data.result || "No result produced.");
@@ -913,6 +1087,8 @@ DESKTOP_HTML = """<!doctype html>
     }
 
     sendButton.addEventListener("click", sendPrompt);
+    applyWorkspaceButton.addEventListener("click", () => applyWorkspace(workspacePath.value.trim()));
+    browseWorkspaceButton.addEventListener("click", browseWorkspace);
     clearButton.addEventListener("click", () => {
       chat.innerHTML = "";
       addBubble("assistant", "Mission console cleared. FORGE is ready for the next task.");
@@ -945,6 +1121,7 @@ DESKTOP_HTML = """<!doctype html>
     setListPlaceholder(stepList, "No steps executed yet.");
     setListPlaceholder(workerServices, "Worker telemetry loading...");
     loadBootStatus();
+    loadWorkspace();
     loadWorkerTelemetry();
     promptBox.focus();
   </script>
@@ -973,8 +1150,17 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
                 "models_online": status.models_online,
                 "summary": status.summary,
                 "version": f"FORGE v{__version__}",
+                "workspace_root": status.workspace_root,
+                "artifact_root": status.artifact_root,
             }
             self._send_json(payload)
+            return
+        if self.path == "/api/workspace":
+            try:
+                self._send_json(get_workspace_status())
+            except Exception as exc:
+                log_exception("Workspace status endpoint failed", exc)
+                self._send_json({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
             return
         if self.path == "/api/workers":
             self._send_json({"workers": MissionOrchestrator.worker_snapshot()})
@@ -985,6 +1171,32 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
         self.server.touch()
         if self.path == "/api/ping":
             self._send_json({"ok": True})
+            return
+        if self.path == "/api/workspace":
+            payload = self._read_json()
+            workspace_root = str(payload.get("workspace_root", "")).strip()
+            if not workspace_root:
+                self._send_json({"error": "Workspace path is empty."}, status=HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                result = set_workspace_root(workspace_root)
+            except (FileNotFoundError, NotADirectoryError, ValueError) as exc:
+                self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
+            except Exception as exc:
+                self._send_json({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+                return
+
+            self._send_json(result)
+            return
+        if self.path == "/api/workspace/dialog":
+            try:
+                result = choose_workspace_root()
+            except Exception as exc:
+                self._send_json({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+                return
+
+            self._send_json(result)
             return
         if self.path == "/api/chat":
             payload = self._read_json()
@@ -998,6 +1210,7 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
                     prompt,
                     confirmed=bool(payload.get("confirmed")),
                     dry_run=bool(payload.get("dry_run")),
+                    workspace_root=payload.get("workspace_root"),
                 )
             except Exception as exc:
                 self._send_json({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
@@ -1017,6 +1230,7 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
                     prompt,
                     confirmed=bool(payload.get("confirmed")),
                     dry_run=bool(payload.get("dry_run")),
+                    workspace_root=payload.get("workspace_root"),
                 )
             except Exception as exc:
                 self._send_json({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)

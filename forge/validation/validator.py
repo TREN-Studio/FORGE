@@ -23,6 +23,7 @@ class ResultValidator:
         output: Any,
         expected_output: str,
         request: str,
+        workspace_root: Path | None = None,
     ) -> ValidationResult:
         notes: list[str] = []
         if output in (None, "", {}, []):
@@ -52,7 +53,10 @@ class ResultValidator:
             if edited_path:
                 candidate = Path(edited_path)
                 if not candidate.exists():
-                    candidate = Path.cwd() / edited_path
+                    if workspace_root is not None:
+                        candidate = workspace_root / edited_path
+                    else:
+                        candidate = Path.cwd() / edited_path
                 if not candidate.exists():
                     return ValidationResult(
                         status=CompletionState.FAILED,

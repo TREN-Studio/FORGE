@@ -12,6 +12,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="FORGE Desktop")
     parser.add_argument("--headless-prompt", help="Run one prompt without opening the GUI")
     parser.add_argument("--operator", action="store_true", help="Use the operator brain in headless mode")
+    parser.add_argument("--workspace", help="Workspace root for file and shell execution")
+    parser.add_argument("--confirm", action="store_true", help="Allow real execution for high-risk or mutable steps")
+    parser.add_argument("--dry-run", action="store_true", help="Force dry-run mode")
     parser.add_argument("--output-path", help="Write the response text to a file")
     parser.add_argument("--host", default="127.0.0.1", help="Host address for desktop web app")
     parser.add_argument("--port", type=int, default=0, help="Port for desktop web app")
@@ -24,7 +27,13 @@ def main() -> int:
     )
 
     if args.headless_prompt:
-        result = run_prompt(args.headless_prompt, use_operator=args.operator)
+        result = run_prompt(
+            args.headless_prompt,
+            use_operator=args.operator,
+            workspace_root=args.workspace,
+            confirmed=args.confirm,
+            dry_run=args.dry_run,
+        )
         if args.output_path:
             output_path = Path(args.output_path)
             output_path.parent.mkdir(parents=True, exist_ok=True)

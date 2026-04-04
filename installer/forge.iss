@@ -1,6 +1,6 @@
 #define MyAppId "{{3E4D7F95-3BC3-4A59-92B0-0C493B4C07E2}"
 #define MyAppName "FORGE"
-#define MyAppVersion "1.1.1"
+#define MyAppVersion "1.1.2"
 #define MyAppPublisher "TREN Studio"
 #define MyAppURL "https://www.trenstudio.com/FORGE/"
 #define MyAppExeName "FORGE-Desktop.exe"
@@ -42,6 +42,9 @@ VersionInfoDescription=FORGE Desktop Installer
 VersionInfoProductName={#MyAppName}
 VersionInfoProductVersion={#MyAppVersion}
 SetupLogging=yes
+CloseApplications=yes
+CloseApplicationsFilter=FORGE-Desktop.exe
+RestartApplications=no
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -59,6 +62,10 @@ Name: "{autodesktop}\FORGE"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopic
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch FORGE Desktop"; Flags: nowait postinstall skipifsilent
+
+[UninstallDelete]
+Type: filesandordirs; Name: "{localappdata}\FORGE"
+Type: filesandordirs; Name: "{app}\.forge_artifacts"
 
 [Messages]
 WelcomeLabel2=This setup installs FORGE Desktop on this PC.%n%nFORGE is an English-first desktop operator with multilingual chat support, live model routing, and a local launcher designed for serious execution.

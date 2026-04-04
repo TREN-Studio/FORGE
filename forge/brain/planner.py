@@ -482,14 +482,6 @@ class PlanningEngine:
         executable = argv[0].strip().lower()
         if executable in SHELL_HINT_EXECUTABLES or executable.startswith(("./", ".\\")):
             return True
-
-        if re.fullmatch(r"[a-z0-9_.-]+", executable) is None:
-            return False
-
-        if any(part.startswith("-") for part in argv[1:]):
-            return True
-        if any("/" in part or "\\" in part or "." in part for part in argv[1:]):
-            return True
         return False
 
     @staticmethod

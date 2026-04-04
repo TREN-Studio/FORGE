@@ -276,7 +276,13 @@ class MissionOrchestrator:
                         agent_reviews.append(research_review)
                         step_trace.extend(f"Research: {note}" for note in research_review.notes)
 
-                    validation = self._validator.validate_step(current_skill, output, step.expected_output, request)
+                    validation = self._validator.validate_step(
+                        current_skill,
+                        output,
+                        step.expected_output,
+                        request,
+                        workspace_root=runtime_context.settings.workspace_root,
+                    )
                     last_validation_notes = validation.notes
                     critique = self._critique_step(step, output, validation.status)
                     combined_notes = list(last_validation_notes)
@@ -508,7 +514,13 @@ class MissionOrchestrator:
         runtime_context: SkillExecutionContext,
     ) -> tuple[StepExecutionResult, AgentReview]:
         reasoning_output = runtime_context.session.ask(request, task_type=intent.task_type, remember=False)
-        validation = self._validator.validate_step(None, reasoning_output, step.expected_output, request)
+        validation = self._validator.validate_step(
+            None,
+            reasoning_output,
+            step.expected_output,
+            request,
+            workspace_root=runtime_context.settings.workspace_root,
+        )
         critic_review = self._critic_agent.review_step(request, step, {"content": reasoning_output}, validation.status)
         step_trace = [
             "Reasoning-only step dispatched.",
