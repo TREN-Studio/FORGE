@@ -197,15 +197,18 @@ def _append_query(url: str, **params: str) -> str:
 
 
 def _google_authorize_location(config: PortalConfig, state_token: str) -> str:
-    return f"{config.google_authorize_url}?{urlencode({
-        'client_id': config.google_client_id,
-        'redirect_uri': config.google_redirect_uri,
-        'response_type': 'code',
-        'scope': 'openid email profile',
-        'state': state_token,
-        'access_type': 'online',
-        'prompt': 'select_account',
-    })}"
+    query = urlencode(
+        {
+            "client_id": config.google_client_id,
+            "redirect_uri": config.google_redirect_uri,
+            "response_type": "code",
+            "scope": "openid email profile",
+            "state": state_token,
+            "access_type": "online",
+            "prompt": "select_account",
+        }
+    )
+    return f"{config.google_authorize_url}?{query}"
 
 
 def _exchange_google_code(config: PortalConfig, code: str) -> dict[str, Any]:
