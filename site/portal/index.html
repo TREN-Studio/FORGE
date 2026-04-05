@@ -1,0 +1,710 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FORGE Portal</title>
+  <meta name="description" content="FORGE account portal for user API keys, sessions, and manager control.">
+  <style>
+    :root {
+      --bg: #060606;
+      --panel: rgba(16,16,16,0.88);
+      --panel-2: rgba(24,24,24,0.92);
+      --line: rgba(255,255,255,0.08);
+      --text: #f4efe8;
+      --muted: #a9a096;
+      --accent: #ff6b1a;
+      --accent-soft: #ffb44d;
+      --ok: #67d471;
+      --danger: #ff7878;
+      --warn: #ffd36a;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(255,107,26,0.14), transparent 30%),
+        radial-gradient(circle at 80% 12%, rgba(255,180,77,0.08), transparent 22%),
+        linear-gradient(135deg, #060606 0%, #0e0e0e 32%, #111 100%);
+    }
+
+    .shell {
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 28px;
+      display: grid;
+      gap: 20px;
+    }
+
+    .hero,
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      background: var(--panel);
+      backdrop-filter: blur(18px);
+      box-shadow: 0 22px 80px rgba(0,0,0,0.35);
+    }
+
+    .hero {
+      padding: 28px;
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
+      gap: 18px;
+      align-items: end;
+    }
+
+    .badge {
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      padding: 7px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.03);
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .badge::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--accent);
+      box-shadow: 0 0 18px rgba(255,107,26,0.5);
+    }
+
+    h1 {
+      margin: 16px 0 10px;
+      font-size: clamp(38px, 6vw, 62px);
+      line-height: 1;
+      letter-spacing: 0.04em;
+    }
+
+    .hero p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.7;
+      max-width: 720px;
+    }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .kpi {
+      padding: 16px;
+      border-radius: 18px;
+      border: 1px solid rgba(255,255,255,0.06);
+      background: var(--panel-2);
+    }
+
+    .kpi strong {
+      display: block;
+      font-size: 28px;
+      color: var(--accent);
+      line-height: 1;
+    }
+
+    .kpi span {
+      display: block;
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 20px;
+    }
+
+    .panel {
+      padding: 22px;
+    }
+
+    .panel h2 {
+      margin: 0 0 8px;
+      font-size: 14px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent-soft);
+    }
+
+    .panel h3 {
+      margin: 0 0 18px;
+      font-size: 24px;
+      line-height: 1.2;
+    }
+
+    .copy {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.65;
+      white-space: pre-wrap;
+    }
+
+    label {
+      display: block;
+      margin: 14px 0 8px;
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    input,
+    select {
+      width: 100%;
+      min-height: 46px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(0,0,0,0.22);
+      color: var(--text);
+      font: 14px/1.4 "Segoe UI", sans-serif;
+      outline: none;
+    }
+
+    input:focus,
+    select:focus {
+      border-color: rgba(255,107,26,0.42);
+      box-shadow: 0 0 0 4px rgba(255,107,26,0.09);
+    }
+
+    .button-row {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    button {
+      min-height: 46px;
+      border: 0;
+      border-radius: 14px;
+      cursor: pointer;
+      font: 700 14px/1 "Segoe UI", sans-serif;
+      transition: transform 0.16s ease, filter 0.16s ease;
+    }
+
+    button:hover { transform: translateY(-1px); }
+    button:disabled { opacity: 0.6; cursor: wait; transform: none; }
+
+    .primary {
+      background: linear-gradient(180deg, #ff9d46, #ff6b1a);
+      color: #17110c;
+      box-shadow: 0 14px 28px rgba(255,107,26,0.22);
+    }
+
+    .ghost {
+      background: rgba(255,255,255,0.05);
+      color: var(--text);
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .status {
+      margin-top: 14px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,0.06);
+      background: rgba(255,255,255,0.03);
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+    }
+
+    .status.ok { color: var(--ok); border-color: rgba(103,212,113,0.25); background: rgba(103,212,113,0.08); }
+    .status.error { color: var(--danger); border-color: rgba(255,120,120,0.25); background: rgba(255,120,120,0.08); }
+
+    .hidden { display: none !important; }
+
+    .info-list,
+    .admin-list {
+      display: grid;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .mini {
+      padding: 12px 14px;
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,0.06);
+      background: rgba(255,255,255,0.025);
+    }
+
+    .mini strong {
+      display: block;
+      font-size: 13px;
+      margin-bottom: 6px;
+      color: var(--text);
+    }
+
+    .mini span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 14px;
+    }
+
+    .meta {
+      padding: 14px;
+      border-radius: 16px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+
+    .meta-label {
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .meta-value {
+      margin-top: 8px;
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .topline {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .role-pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 7px 11px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.12);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent-soft);
+    }
+
+    @media (max-width: 1080px) {
+      .hero,
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <div>
+        <div class="badge">FORGE Account Portal</div>
+        <h1>Bring Your Own Keys</h1>
+        <p>
+          This is the public control surface for FORGE users.
+          Each user stores their own provider credentials. The manager account is locked to <strong>larbilife@gmail.com</strong>.
+          No user should inherit our machine keys. This portal exists to enforce that boundary.
+        </p>
+      </div>
+      <div class="hero-grid">
+        <div class="kpi"><strong>11</strong><span>Supported Providers</span></div>
+        <div class="kpi"><strong>1</strong><span>Manager Gate</span></div>
+        <div class="kpi"><strong>0</strong><span>Shared Keys By Default</span></div>
+        <div class="kpi"><strong>100%</strong><span>User-Owned Sessions</span></div>
+      </div>
+    </section>
+
+    <section class="grid">
+      <article class="panel">
+        <div class="topline">
+          <div>
+            <h2>Account</h2>
+            <h3>Register or Login</h3>
+          </div>
+          <span id="account-role-pill" class="role-pill">Guest</span>
+        </div>
+
+        <div id="logged-out">
+          <label for="display-name">Display Name</label>
+          <input id="display-name" data-testid="display-name" type="text" placeholder="Your name">
+          <label for="email">Email</label>
+          <input id="email" data-testid="email-input" type="email" placeholder="you@example.com">
+          <label for="password">Password</label>
+          <input id="password" data-testid="password-input" type="password" placeholder="Minimum 8 characters">
+          <div class="button-row">
+            <button id="login-button" data-testid="login-button" class="ghost" type="button">Login</button>
+            <button id="register-button" data-testid="register-button" class="primary" type="button">Register</button>
+          </div>
+        </div>
+
+        <div id="logged-in" class="hidden">
+          <div class="meta-grid">
+            <div class="meta">
+              <div class="meta-label">Signed In</div>
+              <div id="viewer-email" class="meta-value" style="font-size:18px">-</div>
+            </div>
+            <div class="meta">
+              <div class="meta-label">Manager Gate</div>
+              <div id="manager-gate" class="meta-value" style="font-size:18px">Closed</div>
+            </div>
+          </div>
+          <div class="button-row">
+            <button id="refresh-account-button" data-testid="refresh-account-button" class="ghost" type="button">Refresh</button>
+            <button id="logout-button" data-testid="logout-button" class="ghost" type="button">Logout</button>
+          </div>
+        </div>
+
+        <div id="account-status" class="status">Awaiting account action.</div>
+      </article>
+
+      <article class="panel">
+        <h2>Provider Keys</h2>
+        <h3>Store Your Own Credentials</h3>
+        <p class="copy">Choose a provider, add only the fields it needs, then save. Empty save deletes the stored set for that provider.</p>
+
+        <label for="provider-select">Provider</label>
+        <select id="provider-select" data-testid="provider-select"></select>
+        <label for="provider-api-key">API Key</label>
+        <input id="provider-api-key" data-testid="provider-api-key" type="password" placeholder="Required for most providers">
+        <label for="provider-account-id">Account ID</label>
+        <input id="provider-account-id" data-testid="provider-account-id" type="text" placeholder="Cloudflare account id">
+        <label for="provider-organization">Organization</label>
+        <input id="provider-organization" type="text" placeholder="OpenAI organization">
+        <label for="provider-project">Project</label>
+        <input id="provider-project" type="text" placeholder="OpenAI project">
+        <label for="provider-global-key">Global Key</label>
+        <input id="provider-global-key" type="password" placeholder="Cloudflare global API key">
+        <label for="provider-email">Provider Email</label>
+        <input id="provider-email" type="email" placeholder="Cloudflare email if using global key">
+
+        <div class="button-row">
+          <button id="save-provider-button" data-testid="save-provider-button" class="primary" type="button">Save Provider</button>
+          <button id="refresh-provider-button" data-testid="refresh-provider-button" class="ghost" type="button">Reload Saved</button>
+        </div>
+        <div id="provider-status" class="status">Login required before keys can be managed.</div>
+        <div id="provider-list" class="info-list"></div>
+      </article>
+
+      <article class="panel">
+        <h2>Admin Control</h2>
+        <h3>Manager-Only Overview</h3>
+        <p class="copy">Only the manager account can read global metrics and user inventory from this panel.</p>
+
+        <div id="admin-locked" class="status">Manager gate closed.</div>
+        <div id="admin-panel" class="hidden">
+          <div class="meta-grid">
+            <div class="meta"><div class="meta-label">Users</div><div id="admin-users-count" class="meta-value">0</div></div>
+            <div class="meta"><div class="meta-label">Active Sessions</div><div id="admin-sessions-count" class="meta-value">0</div></div>
+            <div class="meta"><div class="meta-label">Stored Key Sets</div><div id="admin-secrets-count" class="meta-value">0</div></div>
+            <div class="meta"><div class="meta-label">Manager</div><div id="admin-manager-email" class="meta-value" style="font-size:18px">-</div></div>
+          </div>
+          <div id="admin-users-list" class="admin-list"></div>
+        </div>
+      </article>
+    </section>
+  </main>
+
+  <script>
+    const api = (path, options = {}) =>
+      fetch(`./api/index.php${path}`, {
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+        ...options
+      });
+
+    const displayName = document.getElementById("display-name");
+    const email = document.getElementById("email");
+    const password = document.getElementById("password");
+    const loggedOut = document.getElementById("logged-out");
+    const loggedIn = document.getElementById("logged-in");
+    const accountStatus = document.getElementById("account-status");
+    const accountRolePill = document.getElementById("account-role-pill");
+    const viewerEmail = document.getElementById("viewer-email");
+    const managerGate = document.getElementById("manager-gate");
+
+    const providerSelect = document.getElementById("provider-select");
+    const providerApiKey = document.getElementById("provider-api-key");
+    const providerAccountId = document.getElementById("provider-account-id");
+    const providerOrganization = document.getElementById("provider-organization");
+    const providerProject = document.getElementById("provider-project");
+    const providerGlobalKey = document.getElementById("provider-global-key");
+    const providerEmail = document.getElementById("provider-email");
+    const providerStatus = document.getElementById("provider-status");
+    const providerList = document.getElementById("provider-list");
+
+    const adminLocked = document.getElementById("admin-locked");
+    const adminPanel = document.getElementById("admin-panel");
+    const adminUsersCount = document.getElementById("admin-users-count");
+    const adminSessionsCount = document.getElementById("admin-sessions-count");
+    const adminSecretsCount = document.getElementById("admin-secrets-count");
+    const adminManagerEmail = document.getElementById("admin-manager-email");
+    const adminUsersList = document.getElementById("admin-users-list");
+
+    let currentUser = null;
+    let providerCatalog = [];
+
+    function setStatus(node, message, tone = "") {
+      node.textContent = message;
+      node.className = `status${tone ? ` ${tone}` : ""}`;
+    }
+
+    function renderProviderCatalog() {
+      providerSelect.innerHTML = "";
+      for (const provider of providerCatalog) {
+        const option = document.createElement("option");
+        option.value = provider.name;
+        option.textContent = provider.name;
+        providerSelect.appendChild(option);
+      }
+    }
+
+    function renderSavedSecrets(items) {
+      providerList.innerHTML = "";
+      if (!items.length) {
+        providerList.innerHTML = '<div class="mini"><strong>No saved provider sets</strong><span>Each user starts empty. Nothing is inherited from the server.</span></div>';
+        return;
+      }
+      for (const item of items) {
+        const wrapper = document.createElement("div");
+        wrapper.className = "mini";
+        const fields = item.fields.join(", ") || "api_key";
+        const preview = Object.entries(item.preview || {}).map(([key, value]) => `${key}: ${value}`).join("\n");
+        wrapper.innerHTML = `<strong>${item.provider}</strong><span>Fields: ${fields}\n${preview || "Saved"}</span>`;
+        providerList.appendChild(wrapper);
+      }
+    }
+
+    function renderAdminUsers(items) {
+      adminUsersList.innerHTML = "";
+      if (!items.length) {
+        adminUsersList.innerHTML = '<div class="mini"><strong>No users yet</strong><span>Once registrations happen, they appear here.</span></div>';
+        return;
+      }
+      for (const user of items) {
+        const item = document.createElement("div");
+        item.className = "mini";
+        item.innerHTML = `<strong>${user.email}</strong><span>Display name: ${user.display_name || "-"}\nRole: ${user.is_admin ? "manager" : "user"}\nStored key sets: ${user.secret_count}</span>`;
+        adminUsersList.appendChild(item);
+      }
+    }
+
+    function applyAuthState(payload) {
+      currentUser = payload && payload.authenticated ? payload.user : null;
+      const isAdmin = Boolean(currentUser && currentUser.is_admin);
+      loggedOut.classList.toggle("hidden", Boolean(currentUser));
+      loggedIn.classList.toggle("hidden", !currentUser);
+      adminPanel.classList.toggle("hidden", !isAdmin);
+      adminLocked.classList.toggle("hidden", isAdmin);
+      accountRolePill.textContent = currentUser ? (isAdmin ? "Manager" : "User") : "Guest";
+      viewerEmail.textContent = currentUser ? currentUser.email : "-";
+      managerGate.textContent = isAdmin ? "Open" : "Closed";
+      if (!currentUser) {
+        setStatus(accountStatus, "Login required before provider keys or admin controls can be used.");
+        setStatus(providerStatus, "Login required before keys can be managed.");
+      }
+    }
+
+    async function loadAuth() {
+      const response = await api("/auth/me", { method: "GET" });
+      const payload = await response.json();
+      applyAuthState(payload);
+      return payload;
+    }
+
+    async function authRequest(path, body) {
+      const response = await api(path, {
+        method: "POST",
+        body: JSON.stringify(body)
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || "Authentication request failed.");
+      }
+      applyAuthState(payload);
+      setStatus(accountStatus, payload.user && payload.user.is_admin ? "Manager session is active." : "User session is active.", "ok");
+      return payload;
+    }
+
+    async function loadProviderKeys() {
+      if (!currentUser) {
+        renderSavedSecrets([]);
+        return;
+      }
+      const response = await api("/user/keys", { method: "GET" });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || "Failed to load provider keys.");
+      }
+      providerCatalog = payload.providers || [];
+      renderProviderCatalog();
+      renderSavedSecrets(payload.saved || []);
+      setStatus(providerStatus, "Saved provider sets loaded.", "ok");
+    }
+
+    async function saveProviderKey() {
+      if (!currentUser) {
+        throw new Error("Login required.");
+      }
+      const response = await api("/user/keys", {
+        method: "POST",
+        body: JSON.stringify({
+          provider: providerSelect.value,
+          api_key: providerApiKey.value.trim(),
+          account_id: providerAccountId.value.trim(),
+          organization: providerOrganization.value.trim(),
+          project: providerProject.value.trim(),
+          global_key: providerGlobalKey.value.trim(),
+          email: providerEmail.value.trim()
+        })
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || "Failed to save provider key.");
+      }
+      providerCatalog = payload.providers || providerCatalog;
+      renderProviderCatalog();
+      renderSavedSecrets(payload.saved || []);
+      setStatus(providerStatus, "Provider set saved.", "ok");
+      providerApiKey.value = "";
+      providerAccountId.value = "";
+      providerOrganization.value = "";
+      providerProject.value = "";
+      providerGlobalKey.value = "";
+      providerEmail.value = "";
+    }
+
+    async function loadAdmin() {
+      if (!currentUser || !currentUser.is_admin) {
+        return;
+      }
+      const [overviewResponse, usersResponse] = await Promise.all([
+        api("/admin/overview", { method: "GET" }),
+        api("/admin/users", { method: "GET" })
+      ]);
+      const overviewPayload = await overviewResponse.json();
+      const usersPayload = await usersResponse.json();
+      if (!overviewResponse.ok) {
+        throw new Error(overviewPayload.error || "Failed to load admin overview.");
+      }
+      if (!usersResponse.ok) {
+        throw new Error(usersPayload.error || "Failed to load admin users.");
+      }
+      const overview = overviewPayload.overview || {};
+      adminUsersCount.textContent = String(overview.users || 0);
+      adminSessionsCount.textContent = String(overview.active_sessions || 0);
+      adminSecretsCount.textContent = String(overview.stored_provider_sets || 0);
+      adminManagerEmail.textContent = overviewPayload.manager_email || "larbilife@gmail.com";
+      renderAdminUsers(usersPayload.users || []);
+    }
+
+    document.getElementById("login-button").addEventListener("click", async () => {
+      try {
+        await authRequest("/auth/login", {
+          email: email.value.trim(),
+          password: password.value
+        });
+        await Promise.all([loadProviderKeys(), loadAdmin()]);
+      } catch (error) {
+        setStatus(accountStatus, error.message, "error");
+      }
+    });
+
+    document.getElementById("register-button").addEventListener("click", async () => {
+      try {
+        await authRequest("/auth/register", {
+          display_name: displayName.value.trim(),
+          email: email.value.trim(),
+          password: password.value
+        });
+        await Promise.all([loadProviderKeys(), loadAdmin()]);
+      } catch (error) {
+        setStatus(accountStatus, error.message, "error");
+      }
+    });
+
+    document.getElementById("logout-button").addEventListener("click", async () => {
+      await api("/auth/logout", { method: "POST" });
+      await loadAuth();
+      renderSavedSecrets([]);
+      adminUsersList.innerHTML = "";
+    });
+
+    document.getElementById("refresh-account-button").addEventListener("click", async () => {
+      try {
+        await loadAuth();
+        await Promise.all([loadProviderKeys(), loadAdmin()]);
+        setStatus(accountStatus, "Account state refreshed.", "ok");
+      } catch (error) {
+        setStatus(accountStatus, error.message, "error");
+      }
+    });
+
+    document.getElementById("save-provider-button").addEventListener("click", async () => {
+      try {
+        await saveProviderKey();
+      } catch (error) {
+        setStatus(providerStatus, error.message, "error");
+      }
+    });
+
+    document.getElementById("refresh-provider-button").addEventListener("click", async () => {
+      try {
+        await loadProviderKeys();
+      } catch (error) {
+        setStatus(providerStatus, error.message, "error");
+      }
+    });
+
+    loadAuth()
+      .then(async () => {
+        const health = await api("/health", { method: "GET" }).then((r) => r.json()).catch(() => null);
+        if (health && health.manager_email) {
+          adminManagerEmail.textContent = health.manager_email;
+        }
+        if (currentUser) {
+          await Promise.all([loadProviderKeys(), loadAdmin()]);
+        } else {
+          providerCatalog = [
+            { name: "cloudflare" },
+            { name: "nvidia" },
+            { name: "openai" },
+            { name: "anthropic" },
+            { name: "groq" },
+            { name: "gemini" },
+            { name: "deepseek" },
+            { name: "openrouter" },
+            { name: "mistral" },
+            { name: "together" },
+            { name: "ollama" }
+          ];
+          renderProviderCatalog();
+        }
+      })
+      .catch((error) => {
+        setStatus(accountStatus, error.message, "error");
+      });
+  </script>
+</body>
+</html>

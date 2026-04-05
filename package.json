@@ -1,0 +1,11 @@
+{
+  "name": "forge-portal-qa",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "test:portal": "playwright test -c playwright.portal.config.js"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.54.2"
+  }
+}

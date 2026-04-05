@@ -18,6 +18,8 @@ class DeployConfig:
     password: str
     local_root: Path
     remote_root: str
+    portal_backend_local_root: Path | None = None
+    portal_backend_remote_root: str | None = None
     backup_index: bool = True
     dry_run: bool = False
 
@@ -29,6 +31,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--remote-root",
         default=os.getenv("HOSTINGER_REMOTE_ROOT", "domains/trenstudio.com/public_html/FORGE"),
     )
+    parser.add_argument(
+        "--portal-backend-local-root",
+        default=os.getenv("FORGE_SITE_BACKEND_LOCAL_ROOT", "site_backend/forge_portal"),
+    )
+    parser.add_argument("--portal-backend-remote-root", default=os.getenv("HOSTINGER_PORTAL_BACKEND_ROOT"))
     parser.add_argument("--host", default=os.getenv("HOSTINGER_HOST"))
     parser.add_argument("--port", type=int, default=int(os.getenv("HOSTINGER_PORT", "22")))
     parser.add_argument("--username", default=os.getenv("HOSTINGER_USERNAME"))
@@ -48,6 +55,15 @@ def load_config(args: argparse.Namespace) -> DeployConfig:
     local_root = Path(args.local_root).resolve()
     if not local_root.exists():
         raise FileNotFoundError(f"Local site root does not exist: {local_root}")
+    backend_local_root = Path(args.portal_backend_local_root).resolve()
+    if not backend_local_root.exists():
+        backend_local_root = None
+    remote_root = args.remote_root.strip("/")
+    backend_remote_root = (
+        (args.portal_backend_remote_root or _default_portal_backend_remote_root(remote_root)).strip("/")
+        if backend_local_root is not None
+        else None
+    )
     if args.dry_run:
         return DeployConfig(
             host=args.host or "dry-run.local",
@@ -55,7 +71,9 @@ def load_config(args: argparse.Namespace) -> DeployConfig:
             username=args.username or "dry-run",
             password=args.password or "dry-run",
             local_root=local_root,
-            remote_root=args.remote_root.strip("/"),
+            remote_root=remote_root,
+            portal_backend_local_root=backend_local_root,
+            portal_backend_remote_root=backend_remote_root,
             backup_index=not args.no_backup_index,
             dry_run=True,
         )
@@ -65,14 +83,27 @@ def load_config(args: argparse.Namespace) -> DeployConfig:
         username=require(args.username, "HOSTINGER_USERNAME"),
         password=require(args.password, "HOSTINGER_PASSWORD"),
         local_root=local_root,
-        remote_root=args.remote_root.strip("/"),
+        remote_root=remote_root,
+        portal_backend_local_root=backend_local_root,
+        portal_backend_remote_root=backend_remote_root,
         backup_index=not args.no_backup_index,
         dry_run=bool(args.dry_run),
     )
 
 
 def iter_site_files(local_root: Path) -> list[Path]:
-    return sorted(path for path in local_root.rglob("*") if path.is_file())
+    return sorted(
+        path
+        for path in local_root.rglob("*")
+        if path.is_file() and "__pycache__" not in path.parts and path.suffix not in {".pyc", ".pyo"}
+    )
+
+
+def _default_portal_backend_remote_root(remote_root: str) -> str:
+    marker = "/public_html/FORGE"
+    if marker in remote_root:
+        return remote_root.replace(marker, "/private/forge_portal")
+    return posixpath.join(posixpath.dirname(remote_root), "forge_portal_backend")
 
 
 def ensure_remote_dir(sftp: paramiko.SFTPClient, remote_dir: str) -> None:
@@ -105,6 +136,10 @@ def deploy(config: DeployConfig) -> list[tuple[str, int]]:
         for local_path in iter_site_files(config.local_root):
             relative = local_path.relative_to(config.local_root).as_posix()
             uploaded.append((posixpath.join(config.remote_root, relative), local_path.stat().st_size))
+        if config.portal_backend_local_root and config.portal_backend_remote_root:
+            for local_path in iter_site_files(config.portal_backend_local_root):
+                relative = local_path.relative_to(config.portal_backend_local_root).as_posix()
+                uploaded.append((posixpath.join(config.portal_backend_remote_root, relative), local_path.stat().st_size))
         return uploaded
 
     client = paramiko.SSHClient()
@@ -132,6 +167,17 @@ def deploy(config: DeployConfig) -> list[tuple[str, int]]:
             size = sftp.stat(remote_path).st_size
             uploaded.append((remote_path, size))
             print(f"Uploaded {relative} -> {remote_path} ({size} bytes)")
+
+        if config.portal_backend_local_root and config.portal_backend_remote_root:
+            ensure_remote_dir(sftp, config.portal_backend_remote_root)
+            for local_path in iter_site_files(config.portal_backend_local_root):
+                relative = local_path.relative_to(config.portal_backend_local_root).as_posix()
+                remote_path = posixpath.join(config.portal_backend_remote_root, relative)
+                ensure_remote_dir(sftp, posixpath.dirname(remote_path))
+                sftp.put(str(local_path), remote_path)
+                size = sftp.stat(remote_path).st_size
+                uploaded.append((remote_path, size))
+                print(f"Uploaded backend {relative} -> {remote_path} ({size} bytes)")
     finally:
         sftp.close()
         client.close()
