@@ -358,6 +358,10 @@
             <button id="login-button" data-testid="login-button" class="ghost" type="button">Login</button>
             <button id="register-button" data-testid="register-button" class="primary" type="button">Register</button>
           </div>
+          <div class="button-row">
+            <button id="google-login-button" data-testid="google-login-button" class="primary hidden" type="button">Continue with Google</button>
+            <button id="google-login-disabled" class="ghost hidden" type="button" disabled>Google OAuth not configured</button>
+          </div>
         </div>
 
         <div id="logged-in" class="hidden">
@@ -476,6 +480,8 @@
     const loggedIn = document.getElementById("logged-in");
     const accountStatus = document.getElementById("account-status");
     const accountRolePill = document.getElementById("account-role-pill");
+    const googleLoginButton = document.getElementById("google-login-button");
+    const googleLoginDisabled = document.getElementById("google-login-disabled");
     const viewerEmail = document.getElementById("viewer-email");
     const managerGate = document.getElementById("manager-gate");
     const tokenInput = document.getElementById("token-input");
@@ -511,6 +517,7 @@
 
     let currentUser = null;
     let providerCatalog = [];
+    let googleOauth = { enabled: false, provider: "google" };
 
     function setStatus(node, message, tone = "") {
       node.textContent = message;
@@ -586,12 +593,15 @@
     }
 
     function applyAuthState(payload) {
+      googleOauth = payload && payload.google_oauth ? payload.google_oauth : googleOauth;
       currentUser = payload && payload.authenticated ? payload.user : null;
       const isAdmin = Boolean(currentUser && currentUser.is_admin);
       loggedOut.classList.toggle("hidden", Boolean(currentUser));
       loggedIn.classList.toggle("hidden", !currentUser);
       adminPanel.classList.toggle("hidden", !isAdmin);
       adminLocked.classList.toggle("hidden", isAdmin);
+      googleLoginButton.classList.toggle("hidden", !googleOauth.enabled || Boolean(currentUser));
+      googleLoginDisabled.classList.toggle("hidden", googleOauth.enabled || Boolean(currentUser));
       accountRolePill.textContent = currentUser ? (isAdmin ? "Manager" : "User") : "Guest";
       viewerEmail.textContent = currentUser ? currentUser.email : "-";
       managerGate.textContent = isAdmin ? "Open" : "Closed";
@@ -769,6 +779,10 @@
       }
     });
 
+    googleLoginButton.addEventListener("click", () => {
+      window.location.href = "./api/index.php/auth/google/start";
+    });
+
     document.getElementById("logout-button").addEventListener("click", async () => {
       await api("/auth/logout", { method: "POST" });
       await loadAuth();
@@ -891,6 +905,11 @@
         if (health && health.manager_email) {
           adminManagerEmail.textContent = health.manager_email;
         }
+        if (health && health.google_oauth) {
+          googleOauth = health.google_oauth;
+          googleLoginButton.classList.toggle("hidden", !googleOauth.enabled || Boolean(currentUser));
+          googleLoginDisabled.classList.toggle("hidden", googleOauth.enabled || Boolean(currentUser));
+        }
         if (currentUser) {
           await Promise.all([loadProviderKeys(), loadAdmin()]);
         } else {
@@ -910,7 +929,11 @@
           renderProviderCatalog();
         }
         const params = new URLSearchParams(window.location.search);
-        if (params.get("verify_token")) {
+        if (params.get("oauth") === "google_success") {
+          setStatus(accountStatus, "Google sign-in completed.", "ok");
+        } else if (params.get("oauth_error")) {
+          setStatus(accountStatus, "Google sign-in failed: " + params.get("oauth_error"), "error");
+        } else if (params.get("verify_token")) {
           tokenInput.value = params.get("verify_token");
           setStatus(accountStatus, "Verification token detected in URL.");
         } else if (params.get("reset_token")) {

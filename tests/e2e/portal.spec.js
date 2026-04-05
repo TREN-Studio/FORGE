@@ -69,6 +69,18 @@ test.describe.serial('FORGE public portal', () => {
     await expect(page.locator('#viewer-email')).toContainText('portal-user@example.com');
   });
 
+  test('signs in through Google OAuth and creates a verified session', async ({ page }) => {
+    await page.goto('/');
+
+    await expect(page.getByTestId('google-login-button')).toBeVisible();
+    await page.getByTestId('google-login-button').click();
+
+    await page.waitForURL(/oauth=google_success/);
+    await expect(page.locator('#viewer-email')).toContainText('google-user@example.com');
+    await expect(page.locator('#email-verification-state')).toContainText('Verified');
+    await expect(page.locator('#account-status')).toContainText('Google sign-in completed.');
+  });
+
   test('registers the manager and exposes approvals, missions, and key health', async ({ page }) => {
     await page.goto('/');
 

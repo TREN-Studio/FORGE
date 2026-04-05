@@ -170,6 +170,60 @@ class PortalStateStore:
             row = self._conn.execute("SELECT * FROM users WHERE email = ?", (normalized_email,)).fetchone()
         return self._row_to_user(row) if row is not None else None
 
+    def upsert_google_user(
+        self,
+        *,
+        email: str,
+        display_name: str = "",
+        manager_email: str = "",
+        email_verified: bool = True,
+    ) -> PortalUser:
+        normalized_email = email.strip().lower()
+        if not normalized_email or "@" not in normalized_email:
+            raise ValueError("Valid email is required.")
+        clean_display_name = display_name.strip()
+        now = _utcnow()
+        with self._lock:
+            row = self._conn.execute("SELECT * FROM users WHERE email = ?", (normalized_email,)).fetchone()
+        if row is None:
+            random_password = secrets.token_urlsafe(24)
+            created = self.create_user(
+                email=normalized_email,
+                password=random_password,
+                display_name=clean_display_name,
+                manager_email=manager_email,
+            )
+            if email_verified:
+                with self._lock, self._conn:
+                    self._conn.execute(
+                        "UPDATE users SET email_verified = 1, verified_at = ?, updated_at = ? WHERE user_id = ?",
+                        (now, now, created.user_id),
+                    )
+                return self.get_user(created.user_id)
+            return created
+
+        updates: list[str] = []
+        values: list[Any] = []
+        if clean_display_name and clean_display_name != (row["display_name"] or ""):
+            updates.append("display_name = ?")
+            values.append(clean_display_name)
+        if email_verified and not bool(row["email_verified"]):
+            updates.append("email_verified = 1")
+            updates.append("verified_at = ?")
+            values.append(now)
+        if normalized_email == manager_email.strip().lower() and not bool(row["is_admin"]):
+            updates.append("is_admin = 1")
+        if updates:
+            updates.append("updated_at = ?")
+            values.append(now)
+            values.append(row["user_id"])
+            with self._lock, self._conn:
+                self._conn.execute(
+                    f"UPDATE users SET {', '.join(updates)} WHERE user_id = ?",
+                    tuple(values),
+                )
+        return self.get_user(row["user_id"])
+
     def authenticate_user(self, *, email: str, password: str) -> PortalUser | None:
         normalized_email = email.strip().lower()
         with self._lock:
@@ -412,6 +466,23 @@ class PortalStateStore:
                 ),
             )
         return {"token_id": token_id, "raw_token": raw_token, "expires_at": expires_at}
+
+    def consume_auth_token(self, *, token: str, kind: str) -> dict[str, Any] | None:
+        row = self._consume_auth_token(token=token, kind=kind)
+        if row is None:
+            return None
+        metadata_raw = row["metadata_json"] or "{}"
+        try:
+            metadata = json.loads(metadata_raw)
+        except json.JSONDecodeError:
+            metadata = {}
+        return {
+            "token_id": row["token_id"],
+            "user_id": row["user_id"],
+            "kind": row["kind"],
+            "expires_at": float(row["expires_at"] or 0.0),
+            "metadata": metadata if isinstance(metadata, dict) else {},
+        }
 
     def request_email_verification(
         self,

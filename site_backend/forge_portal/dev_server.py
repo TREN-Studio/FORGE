@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
 import sys
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 SCRIPT_ROOT = Path(__file__).resolve().parent
 REPO_ROOT = Path(__file__).resolve().parents[2] if len(Path(__file__).resolve().parents) >= 3 else SCRIPT_ROOT
@@ -25,16 +27,24 @@ class PortalDevHandler(BaseHTTPRequestHandler):
     server: "PortalDevServer"
 
     def do_GET(self) -> None:
-        if self.path in {"/", "/index.html"}:
+        parsed = urlsplit(self.path)
+        if parsed.path in {"/", "/index.html"}:
             self._send_html(self.server.portal_html)
             return
-        if self.path.startswith("/api/") or self.path.startswith("/api/index.php"):
+        if parsed.path.startswith("/mock/google/"):
+            self._dispatch_mock_google("GET", parsed)
+            return
+        if parsed.path.startswith("/api/") or parsed.path.startswith("/api/index.php"):
             self._dispatch_api("GET")
             return
         self.send_error(HTTPStatus.NOT_FOUND)
 
     def do_POST(self) -> None:
-        if self.path.startswith("/api/") or self.path.startswith("/api/index.php"):
+        parsed = urlsplit(self.path)
+        if parsed.path.startswith("/mock/google/"):
+            self._dispatch_mock_google("POST", parsed)
+            return
+        if parsed.path.startswith("/api/") or parsed.path.startswith("/api/index.php"):
             self._dispatch_api("POST")
             return
         self.send_error(HTTPStatus.NOT_FOUND)
@@ -43,9 +53,10 @@ class PortalDevHandler(BaseHTTPRequestHandler):
         return
 
     def _dispatch_api(self, method: str) -> None:
+        parsed = urlsplit(self.path)
         length = int(self.headers.get("Content-Length", "0"))
         body = self.rfile.read(length) if length else b""
-        api_path = self.path
+        api_path = parsed.path
         if api_path.startswith("/api/index.php"):
             api_path = api_path[len("/api/index.php") :] or "/"
         response = handle_request(
@@ -53,7 +64,7 @@ class PortalDevHandler(BaseHTTPRequestHandler):
             self.server.store,
             method=method,
             path=api_path,
-            query_string="",
+            query_string=parsed.query,
             headers={key: value for key, value in self.headers.items()},
             body=body,
         )
@@ -63,6 +74,48 @@ class PortalDevHandler(BaseHTTPRequestHandler):
             self.send_header(key, value)
         self.end_headers()
         self.wfile.write(payload)
+
+    def _dispatch_mock_google(self, method: str, parsed) -> None:
+        if parsed.path == "/mock/google/authorize" and method == "GET":
+            query = parse_qs(parsed.query, keep_blank_values=True)
+            redirect_uri = str(query.get("redirect_uri", [""])[0]).strip()
+            state = str(query.get("state", [""])[0]).strip()
+            if not redirect_uri or not state:
+                self.send_error(HTTPStatus.BAD_REQUEST)
+                return
+            location = f"{redirect_uri}?{urlencode({'code': 'mock-google-code', 'state': state})}"
+            self.send_response(HTTPStatus.FOUND)
+            self.send_header("Location", location)
+            self.end_headers()
+            return
+
+        if parsed.path == "/mock/google/token" and method == "POST":
+            payload = {
+                "access_token": "mock-google-access-token",
+                "token_type": "Bearer",
+                "expires_in": 3600,
+            }
+            raw = json.dumps(payload).encode("utf-8")
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+            return
+
+        if parsed.path == "/mock/google/userinfo" and method == "GET":
+            payload = self.server.mock_google_profile
+            raw = json.dumps(payload).encode("utf-8")
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+            return
+
+        self.send_error(HTTPStatus.NOT_FOUND)
 
     def _send_html(self, html: str) -> None:
         payload = html.encode("utf-8")
@@ -80,6 +133,12 @@ class PortalDevServer(ThreadingHTTPServer):
         self.portal_html = portal_html
         self.portal_config = portal_config
         self.store = PortalStateStore(portal_config.state_root)
+        self.mock_google_profile = {
+            "sub": "mock-google-user",
+            "email": "google-user@example.com",
+            "email_verified": True,
+            "name": "Google User",
+        }
 
     def server_close(self) -> None:
         try:
@@ -110,6 +169,11 @@ def main() -> int:
         auth_session_days=30,
         app_base_url=f"http://{args.host}:{args.port}",
         debug_auth_tokens=True,
+        google_client_id="forge-local-google-client",
+        google_client_secret="forge-local-google-secret",
+        google_authorize_url=f"http://{args.host}:{args.port}/mock/google/authorize",
+        google_token_url=f"http://{args.host}:{args.port}/mock/google/token",
+        google_userinfo_url=f"http://{args.host}:{args.port}/mock/google/userinfo",
     )
     server = PortalDevServer(args.host, args.port, portal_html=portal_html, portal_config=config)
     try:

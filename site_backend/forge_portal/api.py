@@ -6,7 +6,8 @@ from http import HTTPStatus
 from http.cookies import SimpleCookie
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs
+from urllib import error, request
+from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 
 try:
     from .store import PROVIDER_REQUIREMENTS, PortalStateStore
@@ -57,6 +58,19 @@ class PortalConfig:
     auth_session_days: int = 30
     app_base_url: str = "https://www.trenstudio.com/FORGE/portal"
     debug_auth_tokens: bool = False
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_authorize_url: str = "https://accounts.google.com/o/oauth2/v2/auth"
+    google_token_url: str = "https://oauth2.googleapis.com/token"
+    google_userinfo_url: str = "https://openidconnect.googleapis.com/v1/userinfo"
+
+    @property
+    def google_oauth_enabled(self) -> bool:
+        return bool(self.google_client_id and self.google_client_secret)
+
+    @property
+    def google_redirect_uri(self) -> str:
+        return f"{self.app_base_url.rstrip('/')}/api/index.php/auth/google/callback"
 
 
 @dataclass
@@ -158,6 +172,91 @@ def _verification_payload(config: PortalConfig, store: PortalStateStore, user_id
     )
 
 
+def _google_oauth_payload(config: PortalConfig) -> dict[str, Any]:
+    return {
+        "enabled": config.google_oauth_enabled,
+        "provider": "google",
+        "redirect_uri": config.google_redirect_uri,
+    }
+
+
+def _redirect_response(location: str, *, status: HTTPStatus = HTTPStatus.FOUND, headers: dict[str, str] | None = None) -> PortalResponse:
+    merged = {"Location": location, "Cache-Control": "no-store", **SECURITY_HEADERS}
+    if headers:
+        merged.update(headers)
+    return PortalResponse(int(status), merged, "")
+
+
+def _append_query(url: str, **params: str) -> str:
+    parts = urlsplit(url)
+    existing = parse_qs(parts.query, keep_blank_values=True)
+    for key, value in params.items():
+        existing[str(key)] = [str(value)]
+    query = urlencode(existing, doseq=True)
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, query, parts.fragment))
+
+
+def _google_authorize_location(config: PortalConfig, state_token: str) -> str:
+    return f"{config.google_authorize_url}?{urlencode({
+        'client_id': config.google_client_id,
+        'redirect_uri': config.google_redirect_uri,
+        'response_type': 'code',
+        'scope': 'openid email profile',
+        'state': state_token,
+        'access_type': 'online',
+        'prompt': 'select_account',
+    })}"
+
+
+def _exchange_google_code(config: PortalConfig, code: str) -> dict[str, Any]:
+    body = urlencode(
+        {
+            "code": code,
+            "client_id": config.google_client_id,
+            "client_secret": config.google_client_secret,
+            "redirect_uri": config.google_redirect_uri,
+            "grant_type": "authorization_code",
+        }
+    ).encode("utf-8")
+    req = request.Request(
+        config.google_token_url,
+        data=body,
+        method="POST",
+        headers={"Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json"},
+    )
+    try:
+        with request.urlopen(req, timeout=20) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except error.HTTPError as exc:
+        details = exc.read().decode("utf-8", errors="replace")
+        raise ValueError(f"Google token exchange failed: {details or exc.reason}") from exc
+    except error.URLError as exc:
+        raise ValueError(f"Google token exchange failed: {exc.reason}") from exc
+
+
+def _fetch_google_profile(config: PortalConfig, access_token: str) -> dict[str, Any]:
+    req = request.Request(
+        config.google_userinfo_url,
+        method="GET",
+        headers={"Authorization": f"Bearer {access_token}", "Accept": "application/json"},
+    )
+    try:
+        with request.urlopen(req, timeout=20) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except error.HTTPError as exc:
+        details = exc.read().decode("utf-8", errors="replace")
+        raise ValueError(f"Google userinfo request failed: {details or exc.reason}") from exc
+    except error.URLError as exc:
+        raise ValueError(f"Google userinfo request failed: {exc.reason}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("Google userinfo payload was invalid.")
+    email = str(payload.get("email", "")).strip().lower()
+    if not email:
+        raise ValueError("Google account did not return an email.")
+    payload["email"] = email
+    return payload
+
+
 def handle_request(
     config: PortalConfig,
     store: PortalStateStore,
@@ -180,6 +279,7 @@ def handle_request(
                     "ok": True,
                     "manager_email": config.manager_email,
                     "auth_features": ["email_verification", "password_reset"],
+                    "google_oauth": _google_oauth_payload(config),
                     "app_base_url": config.app_base_url,
                 }
             )
@@ -191,6 +291,7 @@ def handle_request(
                     {
                         "authenticated": False,
                         "manager_email": config.manager_email,
+                        "google_oauth": _google_oauth_payload(config),
                         "app_base_url": config.app_base_url,
                     }
                 )
@@ -199,8 +300,57 @@ def handle_request(
                     "authenticated": True,
                     "user": user,
                     "manager_email": config.manager_email,
+                    "google_oauth": _google_oauth_payload(config),
                     "app_base_url": config.app_base_url,
                 }
+            )
+
+        if method == "GET" and route == "/auth/google/start":
+            if not config.google_oauth_enabled:
+                return json_response({"error": "Google OAuth is not configured."}, status=HTTPStatus.SERVICE_UNAVAILABLE)
+            state_record = store.create_auth_token(
+                user_id="google-oauth",
+                kind="google_oauth_state",
+                ttl_hours=1,
+                metadata={"redirect_path": "/"},
+            )
+            return _redirect_response(_google_authorize_location(config, state_record["raw_token"]))
+
+        if method == "GET" and route == "/auth/google/callback":
+            if not config.google_oauth_enabled:
+                return _redirect_response(_append_query(f"{config.app_base_url.rstrip('/')}/", oauth_error="google_not_configured"))
+            oauth_error = str(query.get("error", [""])[0]).strip()
+            if oauth_error:
+                return _redirect_response(_append_query(f"{config.app_base_url.rstrip('/')}/", oauth_error=oauth_error))
+            state_token = str(query.get("state", [""])[0]).strip()
+            code = str(query.get("code", [""])[0]).strip()
+            state = store.consume_auth_token(token=state_token, kind="google_oauth_state")
+            if not state:
+                return _redirect_response(_append_query(f"{config.app_base_url.rstrip('/')}/", oauth_error="invalid_state"))
+            if not code:
+                return _redirect_response(_append_query(f"{config.app_base_url.rstrip('/')}/", oauth_error="missing_code"))
+            try:
+                tokens = _exchange_google_code(config, code)
+                access_token = str(tokens.get("access_token", "")).strip()
+                if not access_token:
+                    raise ValueError("missing_access_token")
+                profile = _fetch_google_profile(config, access_token)
+                user = store.upsert_google_user(
+                    email=str(profile.get("email", "")).strip(),
+                    display_name=str(profile.get("name", "")).strip(),
+                    manager_email=config.manager_email,
+                    email_verified=bool(profile.get("email_verified", True)),
+                )
+            except ValueError as exc:
+                return _redirect_response(
+                    _append_query(f"{config.app_base_url.rstrip('/')}/", oauth_error=str(exc).replace(" ", "_"))
+                )
+            session = store.create_session(user_id=user.user_id, ttl_days=config.auth_session_days)
+            redirect_path = str(state.get("metadata", {}).get("redirect_path", "/")).strip() or "/"
+            location = _append_query(f"{config.app_base_url.rstrip('/')}{redirect_path}", oauth="google_success")
+            return _redirect_response(
+                location,
+                headers={"Set-Cookie": _cookie_header(session["token"], path=config.cookie_path)},
             )
 
         if method == "POST" and route == "/auth/register":
@@ -215,6 +365,7 @@ def handle_request(
                 {
                     "authenticated": True,
                     "user": user.to_dict(),
+                    "google_oauth": _google_oauth_payload(config),
                     "verification": _verification_payload(config, store, user.user_id),
                 },
                 headers={"Set-Cookie": _cookie_header(session["token"], path=config.cookie_path)},
@@ -229,7 +380,7 @@ def handle_request(
                 return json_response({"error": "Invalid email or password."}, status=HTTPStatus.UNAUTHORIZED)
             session = store.create_session(user_id=user.user_id, ttl_days=config.auth_session_days)
             return json_response(
-                {"authenticated": True, "user": user.to_dict()},
+                {"authenticated": True, "user": user.to_dict(), "google_oauth": _google_oauth_payload(config)},
                 headers={"Set-Cookie": _cookie_header(session["token"], path=config.cookie_path)},
             )
 
@@ -280,6 +431,7 @@ def handle_request(
                 {
                     "authenticated": True,
                     "user": user.to_dict(),
+                    "google_oauth": _google_oauth_payload(config),
                     "message": "Password reset complete.",
                 },
                 headers={"Set-Cookie": _cookie_header(session["token"], path=config.cookie_path)},
