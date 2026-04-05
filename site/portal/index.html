@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>FORGE Portal</title>
   <meta name="description" content="FORGE account portal for user API keys, sessions, and manager control.">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; object-src 'none'; upgrade-insecure-requests">
   <style>
     :root {
       --bg: #060606;
@@ -369,11 +370,36 @@
               <div class="meta-label">Manager Gate</div>
               <div id="manager-gate" class="meta-value" style="font-size:18px">Closed</div>
             </div>
+            <div class="meta">
+              <div class="meta-label">Email Status</div>
+              <div id="email-verification-state" class="meta-value" style="font-size:18px">Pending</div>
+            </div>
+            <div class="meta">
+              <div class="meta-label">Verified At</div>
+              <div id="verified-at" class="meta-value" style="font-size:18px">-</div>
+            </div>
           </div>
           <div class="button-row">
             <button id="refresh-account-button" data-testid="refresh-account-button" class="ghost" type="button">Refresh</button>
             <button id="logout-button" data-testid="logout-button" class="ghost" type="button">Logout</button>
           </div>
+          <div class="button-row">
+            <button id="send-verification-button" data-testid="send-verification-button" class="primary" type="button">Send Verification</button>
+            <button id="load-outbox-button" class="ghost" type="button">Refresh Admin Data</button>
+          </div>
+        </div>
+
+        <label for="token-input">Verification / Reset Token</label>
+        <input id="token-input" data-testid="token-input" type="text" placeholder="Paste email token here">
+        <label for="new-password">New Password</label>
+        <input id="new-password" data-testid="new-password-input" type="password" placeholder="New password for reset flow">
+        <div class="button-row">
+          <button id="verify-email-button" data-testid="verify-email-button" class="ghost" type="button">Verify Email</button>
+          <button id="request-reset-button" data-testid="request-reset-button" class="ghost" type="button">Request Reset</button>
+        </div>
+        <div class="button-row">
+          <button id="reset-password-button" data-testid="reset-password-button" class="primary" type="button">Apply Reset</button>
+          <button id="clear-token-button" class="ghost" type="button">Clear Token</button>
         </div>
 
         <div id="account-status" class="status">Awaiting account action.</div>
@@ -383,6 +409,7 @@
         <h2>Provider Keys</h2>
         <h3>Store Your Own Credentials</h3>
         <p class="copy">Choose a provider, add only the fields it needs, then save. Empty save deletes the stored set for that provider.</p>
+        <p class="copy">Your provider secrets are encrypted at rest inside the FORGE portal, scoped to your account only, and synced to Desktop only after you authenticate. No shared project keys should appear here.</p>
 
         <label for="provider-select">Provider</label>
         <select id="provider-select" data-testid="provider-select"></select>
@@ -419,8 +446,16 @@
             <div class="meta"><div class="meta-label">Active Sessions</div><div id="admin-sessions-count" class="meta-value">0</div></div>
             <div class="meta"><div class="meta-label">Stored Key Sets</div><div id="admin-secrets-count" class="meta-value">0</div></div>
             <div class="meta"><div class="meta-label">Manager</div><div id="admin-manager-email" class="meta-value" style="font-size:18px">-</div></div>
+            <div class="meta"><div class="meta-label">Missions</div><div id="admin-missions-count" class="meta-value">0</div></div>
+            <div class="meta"><div class="meta-label">Pending Approvals</div><div id="admin-approvals-count" class="meta-value">0</div></div>
+            <div class="meta"><div class="meta-label">Verified Users</div><div id="admin-verified-count" class="meta-value">0</div></div>
+            <div class="meta"><div class="meta-label">Outbox</div><div id="admin-outbox-count" class="meta-value">0</div></div>
           </div>
           <div id="admin-users-list" class="admin-list"></div>
+          <div id="admin-key-health-list" class="admin-list"></div>
+          <div id="admin-approvals-list" class="admin-list"></div>
+          <div id="admin-missions-list" class="admin-list"></div>
+          <div id="admin-outbox-list" class="admin-list"></div>
         </div>
       </article>
     </section>
@@ -443,6 +478,10 @@
     const accountRolePill = document.getElementById("account-role-pill");
     const viewerEmail = document.getElementById("viewer-email");
     const managerGate = document.getElementById("manager-gate");
+    const tokenInput = document.getElementById("token-input");
+    const newPassword = document.getElementById("new-password");
+    const emailVerificationState = document.getElementById("email-verification-state");
+    const verifiedAt = document.getElementById("verified-at");
 
     const providerSelect = document.getElementById("provider-select");
     const providerApiKey = document.getElementById("provider-api-key");
@@ -459,8 +498,16 @@
     const adminUsersCount = document.getElementById("admin-users-count");
     const adminSessionsCount = document.getElementById("admin-sessions-count");
     const adminSecretsCount = document.getElementById("admin-secrets-count");
+    const adminMissionsCount = document.getElementById("admin-missions-count");
+    const adminApprovalsCount = document.getElementById("admin-approvals-count");
+    const adminVerifiedCount = document.getElementById("admin-verified-count");
+    const adminOutboxCount = document.getElementById("admin-outbox-count");
     const adminManagerEmail = document.getElementById("admin-manager-email");
     const adminUsersList = document.getElementById("admin-users-list");
+    const adminKeyHealthList = document.getElementById("admin-key-health-list");
+    const adminApprovalsList = document.getElementById("admin-approvals-list");
+    const adminMissionsList = document.getElementById("admin-missions-list");
+    const adminOutboxList = document.getElementById("admin-outbox-list");
 
     let currentUser = null;
     let providerCatalog = [];
@@ -491,7 +538,7 @@
         wrapper.className = "mini";
         const fields = item.fields.join(", ") || "api_key";
         const preview = Object.entries(item.preview || {}).map(([key, value]) => `${key}: ${value}`).join("\n");
-        wrapper.innerHTML = `<strong>${item.provider}</strong><span>Fields: ${fields}\n${preview || "Saved"}</span>`;
+        wrapper.innerHTML = `<strong>${item.provider} | ${item.health || "ready"}</strong><span>Fields: ${fields}\nRequired: ${(item.required_fields || []).join(", ") || "api_key"}\nMissing: ${(item.missing_fields || []).join(", ") || "none"}\n${preview || "Saved"}</span>`;
         providerList.appendChild(wrapper);
       }
     }
@@ -505,9 +552,37 @@
       for (const user of items) {
         const item = document.createElement("div");
         item.className = "mini";
-        item.innerHTML = `<strong>${user.email}</strong><span>Display name: ${user.display_name || "-"}\nRole: ${user.is_admin ? "manager" : "user"}\nStored key sets: ${user.secret_count}</span>`;
+        item.innerHTML = `<strong>${user.email}</strong><span>Display name: ${user.display_name || "-"}\nRole: ${user.is_admin ? "manager" : "user"}\nVerified: ${user.email_verified ? "yes" : "no"}\nStored key sets: ${user.secret_count}\nHealthy: ${user.healthy_provider_sets || 0} | Incomplete: ${user.incomplete_provider_sets || 0} | Stale: ${user.stale_provider_sets || 0}</span>`;
         adminUsersList.appendChild(item);
       }
+    }
+
+    function renderMiniList(node, items, emptyTitle, emptyCopy, toHtml) {
+      node.innerHTML = "";
+      if (!items.length) {
+        node.innerHTML = `<div class="mini"><strong>${emptyTitle}</strong><span>${emptyCopy}</span></div>`;
+        return;
+      }
+      for (const item of items) {
+        const wrapper = document.createElement("div");
+        wrapper.className = "mini";
+        wrapper.innerHTML = toHtml(item);
+        node.appendChild(wrapper);
+      }
+    }
+
+    function formatAuthMessage(prefix, payload) {
+      const lines = [prefix];
+      if (payload && payload.delivery_mode) {
+        lines.push(`delivery=${payload.delivery_mode}`);
+      }
+      if (payload && payload.email) {
+        lines.push(`email=${payload.email}`);
+      }
+      if (payload && payload.debug_token) {
+        lines.push(`debug_token=${payload.debug_token}`);
+      }
+      return lines.join("\n");
     }
 
     function applyAuthState(payload) {
@@ -520,9 +595,15 @@
       accountRolePill.textContent = currentUser ? (isAdmin ? "Manager" : "User") : "Guest";
       viewerEmail.textContent = currentUser ? currentUser.email : "-";
       managerGate.textContent = isAdmin ? "Open" : "Closed";
+      emailVerificationState.textContent = currentUser ? (currentUser.email_verified ? "Verified" : "Pending") : "-";
+      verifiedAt.textContent = currentUser && currentUser.verified_at ? currentUser.verified_at : "-";
       if (!currentUser) {
         setStatus(accountStatus, "Login required before provider keys or admin controls can be used.");
         setStatus(providerStatus, "Login required before keys can be managed.");
+        adminKeyHealthList.innerHTML = "";
+        adminApprovalsList.innerHTML = "";
+        adminMissionsList.innerHTML = "";
+        adminOutboxList.innerHTML = "";
       }
     }
 
@@ -543,7 +624,11 @@
         throw new Error(payload.error || "Authentication request failed.");
       }
       applyAuthState(payload);
-      setStatus(accountStatus, payload.user && payload.user.is_admin ? "Manager session is active." : "User session is active.", "ok");
+      let message = payload.user && payload.user.is_admin ? "Manager session is active." : "User session is active.";
+      if (payload.verification) {
+        message = formatAuthMessage("Account created. Verification queued.", payload.verification);
+      }
+      setStatus(accountStatus, message, "ok");
       return payload;
     }
 
@@ -599,12 +684,20 @@
       if (!currentUser || !currentUser.is_admin) {
         return;
       }
-      const [overviewResponse, usersResponse] = await Promise.all([
+      const [overviewResponse, usersResponse, approvalsResponse, missionsResponse, keyHealthResponse, outboxResponse] = await Promise.all([
         api("/admin/overview", { method: "GET" }),
-        api("/admin/users", { method: "GET" })
+        api("/admin/users", { method: "GET" }),
+        api("/admin/approvals", { method: "GET" }),
+        api("/admin/missions", { method: "GET" }),
+        api("/admin/key-health", { method: "GET" }),
+        api("/admin/outbox", { method: "GET" })
       ]);
       const overviewPayload = await overviewResponse.json();
       const usersPayload = await usersResponse.json();
+      const approvalsPayload = await approvalsResponse.json();
+      const missionsPayload = await missionsResponse.json();
+      const keyHealthPayload = await keyHealthResponse.json();
+      const outboxPayload = await outboxResponse.json();
       if (!overviewResponse.ok) {
         throw new Error(overviewPayload.error || "Failed to load admin overview.");
       }
@@ -613,10 +706,42 @@
       }
       const overview = overviewPayload.overview || {};
       adminUsersCount.textContent = String(overview.users || 0);
+      adminVerifiedCount.textContent = String(overview.verified_users || 0);
       adminSessionsCount.textContent = String(overview.active_sessions || 0);
       adminSecretsCount.textContent = String(overview.stored_provider_sets || 0);
+      adminMissionsCount.textContent = String(overview.missions || 0);
+      adminApprovalsCount.textContent = String(overview.pending_approvals || 0);
+      adminOutboxCount.textContent = String(overview.outbox_messages || 0);
       adminManagerEmail.textContent = overviewPayload.manager_email || "larbilife@gmail.com";
       renderAdminUsers(usersPayload.users || []);
+      renderMiniList(
+        adminKeyHealthList,
+        keyHealthPayload.key_health || [],
+        "No key health data",
+        "User key health appears here once keys are saved.",
+        (item) => `<strong>${item.email}</strong><span>configured=${item.configured_providers} | healthy=${item.healthy_providers} | incomplete=${item.incomplete_providers} | stale=${item.stale_providers}</span>`
+      );
+      renderMiniList(
+        adminApprovalsList,
+        approvalsPayload.approvals || [],
+        "No approval events",
+        "Pending or synced approvals appear here.",
+        (item) => `<strong>${item.approval_class} | ${item.status}</strong><span>${item.email}\n${item.summary}\nmission=${item.mission_id || "-"} step=${item.step_id || "-"}</span>`
+      );
+      renderMiniList(
+        adminMissionsList,
+        missionsPayload.missions || [],
+        "No mission events",
+        "Desktop mission sync will populate this list.",
+        (item) => `<strong>${item.objective}</strong><span>${item.email}\nstatus=${item.status} validation=${item.validation_status}\nworkspace=${item.workspace_root || "-"}</span>`
+      );
+      renderMiniList(
+        adminOutboxList,
+        outboxPayload.outbox || [],
+        "No outbox messages",
+        "Verification and reset mail artifacts appear here.",
+        (item) => `<strong>${item.kind} -> ${item.email}</strong><span>${item.subject}\nmode=${item.delivery_mode} created=${item.created_at}</span>`
+      );
     }
 
     document.getElementById("login-button").addEventListener("click", async () => {
@@ -677,6 +802,89 @@
       }
     });
 
+    document.getElementById("send-verification-button").addEventListener("click", async () => {
+      try {
+        const response = await api("/auth/request-verification", { method: "POST", body: JSON.stringify({}) });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.error || "Verification request failed.");
+        }
+        setStatus(accountStatus, formatAuthMessage("Verification queued.", payload.verification || {}), "ok");
+      } catch (error) {
+        setStatus(accountStatus, error.message, "error");
+      }
+    });
+
+    document.getElementById("request-reset-button").addEventListener("click", async () => {
+      try {
+        const response = await api("/auth/request-password-reset", {
+          method: "POST",
+          body: JSON.stringify({ email: email.value.trim() })
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.error || "Reset request failed.");
+        }
+        setStatus(accountStatus, formatAuthMessage("Password reset requested.", payload.reset || {}), "ok");
+      } catch (error) {
+        setStatus(accountStatus, error.message, "error");
+      }
+    });
+
+    document.getElementById("verify-email-button").addEventListener("click", async () => {
+      try {
+        const response = await api("/auth/verify-email", {
+          method: "POST",
+          body: JSON.stringify({ token: tokenInput.value.trim() })
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.error || "Email verification failed.");
+        }
+        if (payload.user) {
+          applyAuthState({ authenticated: true, user: payload.user });
+        }
+        setStatus(accountStatus, payload.message || "Email verified.", "ok");
+      } catch (error) {
+        setStatus(accountStatus, error.message, "error");
+      }
+    });
+
+    document.getElementById("reset-password-button").addEventListener("click", async () => {
+      try {
+        const response = await api("/auth/reset-password", {
+          method: "POST",
+          body: JSON.stringify({ token: tokenInput.value.trim(), password: newPassword.value })
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.error || "Password reset failed.");
+        }
+        applyAuthState(payload);
+        setStatus(accountStatus, payload.message || "Password reset complete.", "ok");
+        tokenInput.value = "";
+        newPassword.value = "";
+        await Promise.all([loadProviderKeys(), loadAdmin()]);
+      } catch (error) {
+        setStatus(accountStatus, error.message, "error");
+      }
+    });
+
+    document.getElementById("clear-token-button").addEventListener("click", () => {
+      tokenInput.value = "";
+      newPassword.value = "";
+      setStatus(accountStatus, "Token fields cleared.");
+    });
+
+    document.getElementById("load-outbox-button").addEventListener("click", async () => {
+      try {
+        await loadAdmin();
+        setStatus(accountStatus, "Admin data refreshed.", "ok");
+      } catch (error) {
+        setStatus(accountStatus, error.message, "error");
+      }
+    });
+
     loadAuth()
       .then(async () => {
         const health = await api("/health", { method: "GET" }).then((r) => r.json()).catch(() => null);
@@ -700,6 +908,14 @@
             { name: "ollama" }
           ];
           renderProviderCatalog();
+        }
+        const params = new URLSearchParams(window.location.search);
+        if (params.get("verify_token")) {
+          tokenInput.value = params.get("verify_token");
+          setStatus(accountStatus, "Verification token detected in URL.");
+        } else if (params.get("reset_token")) {
+          tokenInput.value = params.get("reset_token");
+          setStatus(accountStatus, "Reset token detected in URL.");
         }
       })
       .catch((error) => {

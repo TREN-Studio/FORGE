@@ -42,6 +42,8 @@ def main() -> int:
                 manager_email=os.environ.get("FORGE_PORTAL_MANAGER_EMAIL", "larbilife@gmail.com"),
                 cookie_path=os.environ.get("FORGE_PORTAL_COOKIE_PATH", "/FORGE/portal"),
                 auth_session_days=int(os.environ.get("FORGE_PORTAL_SESSION_DAYS", "30")),
+                app_base_url=os.environ.get("FORGE_PORTAL_APP_BASE_URL", "https://www.trenstudio.com/FORGE/portal"),
+                debug_auth_tokens=os.environ.get("FORGE_PORTAL_DEBUG_AUTH_TOKENS", "0") == "1",
             ),
             store,
             method=method.upper(),

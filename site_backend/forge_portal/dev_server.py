@@ -108,6 +108,8 @@ def main() -> int:
         manager_email="larbilife@gmail.com",
         cookie_path="/",
         auth_session_days=30,
+        app_base_url=f"http://{args.host}:{args.port}",
+        debug_auth_tokens=True,
     )
     server = PortalDevServer(args.host, args.port, portal_html=portal_html, portal_config=config)
     try:

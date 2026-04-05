@@ -6,12 +6,42 @@ on:
       - main
     paths:
       - "site/**"
+      - "site_backend/**"
       - "tools/deploy_hostinger_site.py"
       - ".github/workflows/deploy_forge_site.yml"
   workflow_dispatch:
 
 jobs:
+  portal-ui:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Python dependency
+        run: python -m pip install --upgrade pip cryptography
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Portal UI smoke tests
+        run: npm run test:portal
+
   deploy-site:
+    needs: portal-ui
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

@@ -3,20 +3,30 @@ from __future__ import annotations
 import json
 import threading
 import webbrowser
+from http.cookies import SimpleCookie
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
 from forge.brain.orchestrator import MissionOrchestrator
 from forge import __version__
+from forge.config.settings import OperatorSettings
+from forge.desktop.account_client import (
+    PortalAccountClient,
+    PortalApiError,
+    SESSION_COOKIE_NAME,
+)
 from forge.desktop.diagnostics import log_event, log_exception
 from forge.desktop.runtime import (
     boot_status,
+    boot_status_for_user,
     choose_workspace_root,
     get_workspace_status,
     operate_prompt,
     run_prompt,
     set_workspace_root,
 )
+from forge.providers import supported_provider_names
 
 
 DESKTOP_HTML = """<!doctype html>
@@ -562,6 +572,48 @@ DESKTOP_HTML = """<!doctype html>
       line-height: 1.5;
     }
 
+    .hidden { display: none !important; }
+
+    .auth-grid, .provider-grid {
+      display: grid;
+      gap: 10px;
+    }
+
+    .inline-status {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+    }
+
+    .secret-list, .admin-list {
+      display: grid;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .mini-item {
+      padding: 10px 12px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,0.06);
+      background: rgba(255,255,255,0.025);
+    }
+
+    .mini-title {
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+
+    .mini-copy {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+    }
+
     @media (max-width: 1080px) {
       .shell {
         grid-template-columns: 1fr;
@@ -589,6 +641,58 @@ DESKTOP_HTML = """<!doctype html>
           <p>Autonomous Operator</p>
         </div>
       </div>
+
+      <section class="card">
+        <h2>Account</h2>
+        <div id="account-summary" class="footnote">Login required. Every user must bring their own provider keys.</div>
+        <div id="auth-logged-out" class="auth-grid">
+          <label class="field-label" for="auth-name">Display Name</label>
+          <input id="auth-name" class="text-field" type="text" placeholder="Your name">
+          <label class="field-label" for="auth-email">Email</label>
+          <input id="auth-email" class="text-field" type="email" placeholder="you@example.com">
+          <label class="field-label" for="auth-password">Password</label>
+          <input id="auth-password" class="text-field" type="password" placeholder="Minimum 8 characters">
+          <div class="button-grid">
+            <button id="login-button" type="button" class="button-ghost">Login</button>
+            <button id="register-button" type="button" class="button-ghost">Register</button>
+          </div>
+        </div>
+        <div id="auth-logged-in" class="hidden">
+          <div class="status-line">
+            <span class="status-key">Signed In</span>
+            <span id="account-email" class="status-value">-</span>
+          </div>
+          <div class="status-line">
+            <span class="status-key">Role</span>
+            <span id="account-role" class="status-value">User</span>
+          </div>
+          <div class="status-line">
+            <span class="status-key">Manager Gate</span>
+            <span id="account-manager-gate" class="status-value">Closed</span>
+          </div>
+          <div class="status-line">
+            <span class="status-key">Email Verification</span>
+            <span id="account-email-verification" class="status-value">Pending</span>
+          </div>
+          <div class="button-grid">
+            <button id="logout-button" type="button" class="button-ghost">Logout</button>
+            <button id="refresh-account-button" type="button" class="button-ghost">Refresh</button>
+          </div>
+          <div class="button-grid">
+            <button id="send-verification-button" type="button" class="button-ghost">Send Verification</button>
+            <button id="request-reset-button" type="button" class="button-ghost">Request Reset</button>
+          </div>
+        </div>
+        <label class="field-label" for="auth-token">Verification / Reset Token</label>
+        <input id="auth-token" class="text-field" type="text" placeholder="Paste token from email or portal">
+        <label class="field-label" for="auth-new-password">New Password</label>
+        <input id="auth-new-password" class="text-field" type="password" placeholder="Use for password reset">
+        <div class="button-grid">
+          <button id="verify-email-button" type="button" class="button-ghost">Verify Email</button>
+          <button id="apply-reset-button" type="button" class="button-ghost">Apply Reset</button>
+        </div>
+        <div id="auth-status" class="inline-status">Awaiting account action.</div>
+      </section>
 
       <section class="card">
         <h2>Boot Status</h2>
@@ -656,6 +760,41 @@ DESKTOP_HTML = """<!doctype html>
       </section>
 
       <section class="card">
+        <h3>My Provider Keys</h3>
+        <label class="field-label" for="provider-select">Provider</label>
+        <select id="provider-select" class="text-field">
+          <option value="cloudflare">cloudflare</option>
+          <option value="nvidia">nvidia</option>
+          <option value="openai">openai</option>
+          <option value="anthropic">anthropic</option>
+          <option value="gemini">gemini</option>
+          <option value="groq">groq</option>
+          <option value="deepseek">deepseek</option>
+          <option value="openrouter">openrouter</option>
+          <option value="mistral">mistral</option>
+          <option value="together">together</option>
+        </select>
+        <div class="provider-grid">
+          <label class="field-label" for="provider-api-key">API Key / Token</label>
+          <input id="provider-api-key" class="text-field" type="password" placeholder="API key or token">
+          <label class="field-label" for="provider-account-id">Account ID / Extra Field</label>
+          <input id="provider-account-id" class="text-field" type="text" placeholder="Cloudflare account_id or leave empty">
+          <label class="field-label" for="provider-organization">Organization / Email</label>
+          <input id="provider-organization" class="text-field" type="text" placeholder="OpenAI organization or Cloudflare email">
+          <label class="field-label" for="provider-project">Project / Global Key</label>
+          <input id="provider-project" class="text-field" type="text" placeholder="OpenAI project or Cloudflare global key">
+        </div>
+        <div class="button-grid">
+          <button id="save-provider-key" type="button" class="button-ghost">Save Key</button>
+          <button id="refresh-provider-keys" type="button" class="button-ghost">Reload</button>
+        </div>
+        <div id="provider-status" class="inline-status">Provider secrets are encrypted and bound to the logged-in user.</div>
+        <div id="provider-secret-list" class="secret-list">
+          <div class="operator-copy">Login to manage your provider keys.</div>
+        </div>
+      </section>
+
+      <section class="card">
         <h3>Boot Notes</h3>
         <div id="notes" class="notes">Preparing FORGE runtime...</div>
       </section>
@@ -664,6 +803,14 @@ DESKTOP_HTML = """<!doctype html>
         <h3>Worker Telemetry</h3>
         <div id="worker-services" class="worker-list">
           <div class="operator-copy">Worker telemetry loading...</div>
+        </div>
+      </section>
+
+      <section id="admin-panel" class="card hidden">
+        <h3>Admin Control</h3>
+        <div id="admin-summary" class="inline-status">Manager view locked.</div>
+        <div id="admin-users" class="admin-list">
+          <div class="operator-copy">Admin access required.</div>
         </div>
       </section>
     </aside>
@@ -766,6 +913,40 @@ DESKTOP_HTML = """<!doctype html>
     const planList = document.getElementById("plan-list");
     const stepList = document.getElementById("step-list");
     const resultPanel = document.getElementById("result-panel");
+    const accountSummary = document.getElementById("account-summary");
+    const authLoggedOut = document.getElementById("auth-logged-out");
+    const authLoggedIn = document.getElementById("auth-logged-in");
+    const authName = document.getElementById("auth-name");
+    const authEmail = document.getElementById("auth-email");
+    const authPassword = document.getElementById("auth-password");
+    const loginButton = document.getElementById("login-button");
+    const registerButton = document.getElementById("register-button");
+    const logoutButton = document.getElementById("logout-button");
+    const refreshAccountButton = document.getElementById("refresh-account-button");
+    const sendVerificationButton = document.getElementById("send-verification-button");
+    const requestResetButton = document.getElementById("request-reset-button");
+    const verifyEmailButton = document.getElementById("verify-email-button");
+    const applyResetButton = document.getElementById("apply-reset-button");
+    const accountEmail = document.getElementById("account-email");
+    const accountRole = document.getElementById("account-role");
+    const accountManagerGate = document.getElementById("account-manager-gate");
+    const accountEmailVerification = document.getElementById("account-email-verification");
+    const authToken = document.getElementById("auth-token");
+    const authNewPassword = document.getElementById("auth-new-password");
+    const authStatus = document.getElementById("auth-status");
+    const providerSelect = document.getElementById("provider-select");
+    const providerApiKey = document.getElementById("provider-api-key");
+    const providerAccountId = document.getElementById("provider-account-id");
+    const providerOrganization = document.getElementById("provider-organization");
+    const providerProject = document.getElementById("provider-project");
+    const saveProviderKeyButton = document.getElementById("save-provider-key");
+    const refreshProviderKeysButton = document.getElementById("refresh-provider-keys");
+    const providerStatus = document.getElementById("provider-status");
+    const providerSecretList = document.getElementById("provider-secret-list");
+    const adminPanel = document.getElementById("admin-panel");
+    const adminSummary = document.getElementById("admin-summary");
+    const adminUsers = document.getElementById("admin-users");
+    let currentUser = null;
 
     function appendNote(line) {
       notes.textContent += "\\n" + line;
@@ -776,6 +957,196 @@ DESKTOP_HTML = """<!doctype html>
       while (node.firstChild) {
         node.removeChild(node.firstChild);
       }
+    }
+
+    function setAuthStatus(message) {
+      authStatus.textContent = message || "Awaiting account action.";
+    }
+
+    function authMessage(prefix, payload) {
+      const lines = [prefix];
+      if (payload && payload.delivery_mode) lines.push("delivery=" + payload.delivery_mode);
+      if (payload && payload.email) lines.push("email=" + payload.email);
+      if (payload && payload.debug_token) lines.push("debug_token=" + payload.debug_token);
+      return lines.join("\\n");
+    }
+
+    function requireAuthenticated() {
+      if (currentUser) return true;
+      addBubble("error", "Login required. Create an account or sign in, then add your own provider keys.");
+      setAuthStatus("Login required before FORGE can execute missions.");
+      return false;
+    }
+
+    function renderProviderSecrets(items) {
+      if (!items || !items.length) {
+        setListPlaceholder(providerSecretList, currentUser ? "No provider keys saved yet." : "Login to manage your provider keys.");
+        return;
+      }
+      clearNode(providerSecretList);
+      items.forEach((item) => {
+        const article = document.createElement("article");
+        article.className = "mini-item";
+        const title = document.createElement("div");
+        title.className = "mini-title";
+        title.textContent = item.provider;
+        const body = document.createElement("div");
+        body.className = "mini-copy";
+        const previews = Object.entries(item.preview || {}).map(([key, value]) => key + ": " + value).join(" | ");
+        body.textContent = (item.fields || []).join(", ") + (previews ? "\\n" + previews : "");
+        article.appendChild(title);
+        article.appendChild(body);
+        providerSecretList.appendChild(article);
+      });
+    }
+
+    function renderAdminUsers(users) {
+      if (!users || !users.length) {
+        setListPlaceholder(adminUsers, "No users yet.");
+        return;
+      }
+      clearNode(adminUsers);
+      users.forEach((user) => {
+        const article = document.createElement("article");
+        article.className = "mini-item";
+        const title = document.createElement("div");
+        title.className = "mini-title";
+        title.textContent = user.email + (user.is_admin ? " | manager" : "");
+        const body = document.createElement("div");
+        body.className = "mini-copy";
+        body.textContent =
+          "display_name=" + (user.display_name || "-") +
+          " | secret_sets=" + String(user.secret_count || 0) +
+          " | created_at=" + (user.created_at || "-") +
+          "\\nlast_login_at=" + (user.last_login_at || "never");
+        article.appendChild(title);
+        article.appendChild(body);
+        adminUsers.appendChild(article);
+      });
+    }
+
+    function applyAuthState(data) {
+      const authenticated = !!(data && data.authenticated && data.user);
+      currentUser = authenticated ? data.user : null;
+      authLoggedOut.classList.toggle("hidden", authenticated);
+      authLoggedIn.classList.toggle("hidden", !authenticated);
+      adminPanel.classList.toggle("hidden", !(authenticated && data.user.is_admin));
+      sendButton.disabled = !authenticated;
+      if (authenticated) {
+        accountEmail.textContent = data.user.email;
+        accountRole.textContent = data.user.is_admin ? "Manager" : "User";
+        accountManagerGate.textContent = data.user.is_admin ? "Open" : "Closed";
+        accountEmailVerification.textContent = data.user.email_verified ? "Verified" : "Pending";
+        accountSummary.textContent = "Each account keeps its own encrypted provider secrets. FORGE must use the signed-in user's keys.";
+        setAuthStatus("Signed in as " + data.user.email);
+      } else {
+        accountSummary.textContent = "Login required. Every user must bring their own provider keys.";
+        accountEmail.textContent = "-";
+        accountRole.textContent = "User";
+        accountManagerGate.textContent = "Closed";
+        accountEmailVerification.textContent = "Pending";
+        providerStatus.textContent = "Provider secrets are encrypted and bound to the logged-in user.";
+        renderProviderSecrets([]);
+        setListPlaceholder(workerServices, "Login to view worker telemetry.");
+        workspaceName.textContent = "Login required";
+        workspaceSummary.textContent = "Sign in to select a workspace and run FORGE.";
+      }
+    }
+
+    async function loadAuth() {
+      const response = await fetch("/api/auth/me");
+      const data = await response.json();
+      applyAuthState(data);
+      return data;
+    }
+
+    async function authRequest(path, payload) {
+      const response = await fetch(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload || {})
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Authentication request failed.");
+      }
+      applyAuthState(data);
+      if (data.verification) {
+        setAuthStatus(authMessage("Verification queued.", data.verification));
+      }
+      return data;
+    }
+
+    async function loadProviderKeys() {
+      if (!currentUser) {
+        renderProviderSecrets([]);
+        return;
+      }
+      const response = await fetch("/api/user/keys");
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to load provider keys.");
+      }
+      renderProviderSecrets(data.saved || []);
+      providerStatus.textContent = "Saved encrypted provider key sets: " + String((data.saved || []).length);
+    }
+
+    async function saveProviderKey() {
+      if (!requireAuthenticated()) return;
+      const provider = providerSelect.value;
+      const payload = { provider };
+      if (providerApiKey.value.trim()) payload.api_key = providerApiKey.value.trim();
+      if (providerAccountId.value.trim()) payload.account_id = providerAccountId.value.trim();
+      if (providerOrganization.value.trim()) {
+        if (provider === "cloudflare") payload.email = providerOrganization.value.trim();
+        else payload.organization = providerOrganization.value.trim();
+      }
+      if (providerProject.value.trim()) {
+        if (provider === "cloudflare") payload.global_key = providerProject.value.trim();
+        else payload.project = providerProject.value.trim();
+      }
+      const response = await fetch("/api/user/keys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Saving provider key failed.");
+      }
+      renderProviderSecrets(data.saved || []);
+      providerStatus.textContent = "Saved key set for " + provider + ".";
+      providerApiKey.value = "";
+      providerAccountId.value = "";
+      providerOrganization.value = "";
+      providerProject.value = "";
+      await loadBootStatus();
+    }
+
+    async function loadAdmin() {
+      if (!(currentUser && currentUser.is_admin)) {
+        return;
+      }
+      const [overviewResponse, usersResponse] = await Promise.all([
+        fetch("/api/admin/overview"),
+        fetch("/api/admin/users")
+      ]);
+      const overviewData = await overviewResponse.json();
+      const usersData = await usersResponse.json();
+      if (!overviewResponse.ok) {
+        throw new Error(overviewData.error || "Failed to load admin overview.");
+      }
+      if (!usersResponse.ok) {
+        throw new Error(usersData.error || "Failed to load admin users.");
+      }
+      const overview = overviewData.overview || {};
+      adminSummary.textContent =
+        "users=" + String(overview.users || 0) +
+        " | active_sessions=" + String(overview.active_sessions || 0) +
+        " | stored_provider_sets=" + String(overview.stored_provider_sets || 0) +
+        " | workers=" + String(overview.workers || 0) +
+        " | pending_approvals=" + String(overview.pending_approvals || 0);
+      renderAdminUsers(usersData.users || []);
     }
 
     function addBubble(role, text) {
@@ -840,11 +1211,17 @@ DESKTOP_HTML = """<!doctype html>
         meta.textContent =
           "active_jobs=" + String(service.active_jobs || 0) +
           " | queued_jobs=" + String(service.queued_jobs || 0) +
+          " | queue_length=" + String(service.queue_length || 0) +
+          " | avg_processing_ms=" + String(service.avg_processing_ms || 0) +
           "\\n" +
           (service.workers || []).map((worker) =>
-            worker.lane_id + ": active=" + String(worker.active_jobs || 0) +
+            worker.lane_id + " [" + String(worker.process_mode || worker.location || "worker") + "]" +
+            ": active=" + String(worker.active_jobs || 0) +
             ", queued=" + String(worker.queued_jobs || 0) +
-            ", processed=" + String(worker.processed_jobs || 0)
+            ", queue=" + String(worker.queue_length || 0) +
+            ", processed=" + String(worker.processed_jobs || 0) +
+            ", avg_ms=" + String(worker.avg_processing_ms || 0) +
+            ", mem_mb=" + String(worker.mem_usage_mb || 0)
           ).join("\\n");
 
         header.appendChild(name);
@@ -956,9 +1333,19 @@ DESKTOP_HTML = """<!doctype html>
     }
 
     async function loadBootStatus() {
+      if (!currentUser) {
+        document.getElementById("runtime-state").textContent = "Login";
+        document.getElementById("providers").textContent = "-";
+        document.getElementById("models").textContent = "-";
+        document.getElementById("version").textContent = "FORGE";
+        return;
+      }
       try {
         const response = await fetch("/api/boot");
         const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || "Boot failed.");
+        }
         document.getElementById("runtime-state").textContent = data.models_online > 0 ? "Ready" : "Limited";
         document.getElementById("providers").textContent = String(data.providers);
         document.getElementById("models").textContent = String(data.models_online);
@@ -974,6 +1361,11 @@ DESKTOP_HTML = """<!doctype html>
     }
 
     async function loadWorkspace() {
+      if (!currentUser) {
+        workspaceName.textContent = "Login required";
+        workspaceSummary.textContent = "Sign in to select a workspace and run FORGE.";
+        return;
+      }
       try {
         const response = await fetch("/api/workspace");
         const data = await response.json();
@@ -1033,9 +1425,16 @@ DESKTOP_HTML = """<!doctype html>
     }
 
     async function loadWorkerTelemetry() {
+      if (!currentUser) {
+        setListPlaceholder(workerServices, "Login to view worker telemetry.");
+        return;
+      }
       try {
         const response = await fetch("/api/workers");
         const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || "Worker telemetry load failed.");
+        }
         renderWorkers(data);
       } catch (error) {
         setListPlaceholder(workerServices, "Worker telemetry unavailable: " + error.message);
@@ -1045,6 +1444,7 @@ DESKTOP_HTML = """<!doctype html>
     async function sendPrompt() {
       const prompt = promptBox.value.trim();
       if (!prompt || sendButton.disabled) return;
+      if (!requireAuthenticated()) return;
 
       addBubble("user", prompt);
       appendNote("Dispatching mission inside workspace: " + (workspacePath.value.trim() || "<unset>"));
@@ -1079,6 +1479,7 @@ DESKTOP_HTML = """<!doctype html>
         addBubble("error", error.message);
         setMissionStatus("failed");
         appendNote("Execution failed: " + error.message);
+        resultPanel.textContent = "Execution failed. Recovery path: check your provider keys, workspace path, and mission wording, then retry.";
       } finally {
         sendButton.disabled = false;
         sendButton.textContent = "Run Mission";
@@ -1089,6 +1490,120 @@ DESKTOP_HTML = """<!doctype html>
     sendButton.addEventListener("click", sendPrompt);
     applyWorkspaceButton.addEventListener("click", () => applyWorkspace(workspacePath.value.trim()));
     browseWorkspaceButton.addEventListener("click", browseWorkspace);
+    loginButton.addEventListener("click", async () => {
+      try {
+        await authRequest("/api/auth/login", {
+          email: authEmail.value.trim(),
+          password: authPassword.value
+        });
+        await Promise.all([loadBootStatus(), loadWorkspace(), loadProviderKeys(), loadWorkerTelemetry(), loadAdmin()]);
+      } catch (error) {
+        setAuthStatus(error.message);
+        addBubble("error", error.message);
+      }
+    });
+    registerButton.addEventListener("click", async () => {
+      try {
+        await authRequest("/api/auth/register", {
+          display_name: authName.value.trim(),
+          email: authEmail.value.trim(),
+          password: authPassword.value
+        });
+        await Promise.all([loadBootStatus(), loadWorkspace(), loadProviderKeys(), loadWorkerTelemetry(), loadAdmin()]);
+      } catch (error) {
+        setAuthStatus(error.message);
+        addBubble("error", error.message);
+      }
+    });
+    logoutButton.addEventListener("click", async () => {
+      await fetch("/api/auth/logout", { method: "POST" });
+      applyAuthState({ authenticated: false });
+      setAuthStatus("Logged out.");
+    });
+    refreshAccountButton.addEventListener("click", async () => {
+      try {
+        await loadAuth();
+        await Promise.all([loadBootStatus(), loadWorkspace(), loadProviderKeys(), loadWorkerTelemetry(), loadAdmin()]);
+      } catch (error) {
+        setAuthStatus(error.message);
+      }
+    });
+    sendVerificationButton.addEventListener("click", async () => {
+      try {
+        const response = await fetch("/api/auth/request-verification", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({})
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Verification request failed.");
+        setAuthStatus(authMessage("Verification queued.", data.verification || data));
+      } catch (error) {
+        setAuthStatus(error.message);
+      }
+    });
+    requestResetButton.addEventListener("click", async () => {
+      try {
+        const response = await fetch("/api/auth/request-password-reset", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: authEmail.value.trim() || (currentUser ? currentUser.email : "") })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Reset request failed.");
+        setAuthStatus(authMessage("Password reset requested.", data.reset || data));
+      } catch (error) {
+        setAuthStatus(error.message);
+      }
+    });
+    verifyEmailButton.addEventListener("click", async () => {
+      try {
+        const response = await fetch("/api/auth/verify-email", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: authToken.value.trim() })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Email verification failed.");
+        if (data.user) applyAuthState({ authenticated: true, user: data.user });
+        setAuthStatus(data.message || "Email verified successfully.");
+      } catch (error) {
+        setAuthStatus(error.message);
+      }
+    });
+    applyResetButton.addEventListener("click", async () => {
+      try {
+        const response = await fetch("/api/auth/reset-password", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: authToken.value.trim(), password: authNewPassword.value })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Password reset failed.");
+        applyAuthState(data);
+        setAuthStatus(data.message || "Password reset complete.");
+        authToken.value = "";
+        authNewPassword.value = "";
+      } catch (error) {
+        setAuthStatus(error.message);
+      }
+    });
+    saveProviderKeyButton.addEventListener("click", async () => {
+      try {
+        await saveProviderKey();
+      } catch (error) {
+        providerStatus.textContent = error.message;
+        addBubble("error", error.message);
+      }
+    });
+    refreshProviderKeysButton.addEventListener("click", async () => {
+      try {
+        await loadProviderKeys();
+        await loadBootStatus();
+      } catch (error) {
+        providerStatus.textContent = error.message;
+      }
+    });
     clearButton.addEventListener("click", () => {
       chat.innerHTML = "";
       addBubble("assistant", "Mission console cleared. FORGE is ready for the next task.");
@@ -1115,14 +1630,22 @@ DESKTOP_HTML = """<!doctype html>
     window.setInterval(() => {
       fetch("/api/ping", { method: "POST" }).catch(() => {});
     }, 15000);
-    window.setInterval(loadWorkerTelemetry, 2500);
+    window.setInterval(() => { if (currentUser) { loadWorkerTelemetry().catch(() => {}); } }, 2500);
 
     setListPlaceholder(planList, "No execution plan yet.");
     setListPlaceholder(stepList, "No steps executed yet.");
     setListPlaceholder(workerServices, "Worker telemetry loading...");
-    loadBootStatus();
-    loadWorkspace();
-    loadWorkerTelemetry();
+    loadAuth()
+      .then(async () => {
+        if (currentUser) {
+          await Promise.all([loadBootStatus(), loadWorkspace(), loadProviderKeys(), loadWorkerTelemetry(), loadAdmin()]);
+        } else {
+          setAuthStatus("Login required before missions can run.");
+        }
+      })
+      .catch((error) => {
+        setAuthStatus(error.message);
+      });
     promptBox.focus();
   </script>
 </body>
@@ -1138,9 +1661,29 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
         if self.path in {"/", "/index.html"}:
             self._send_html(DESKTOP_HTML)
             return
-        if self.path == "/api/boot":
+        if self.path == "/api/auth/me":
+            token = self._session_token()
+            if not token:
+                self._send_json(
+                    {
+                        "authenticated": False,
+                        "manager_email": self.server.app_settings.manager_email,
+                    }
+                )
+                return
             try:
-                status = boot_status()
+                payload = self.server.portal.auth_me(token)
+            except PortalApiError as exc:
+                self._send_json(exc.payload, status=HTTPStatus(exc.status))
+                return
+            self._send_json(payload)
+            return
+        if self.path == "/api/boot":
+            user = self._require_user()
+            if user is None:
+                return
+            try:
+                status = boot_status_for_user(self._provider_secrets())
             except Exception as exc:
                 log_exception("Boot endpoint failed", exc)
                 self._send_json({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
@@ -1156,6 +1699,8 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
             self._send_json(payload)
             return
         if self.path == "/api/workspace":
+            if self._require_user() is None:
+                return
             try:
                 self._send_json(get_workspace_status())
             except Exception as exc:
@@ -1163,16 +1708,190 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
             return
         if self.path == "/api/workers":
+            if self._require_user() is None:
+                return
             self._send_json({"workers": MissionOrchestrator.worker_snapshot()})
+            return
+        if self.path == "/api/user/keys":
+            if self._require_user() is None:
+                return
+            try:
+                payload = self.server.portal.list_user_keys(self._session_token() or "")
+            except PortalApiError as exc:
+                self._send_json(exc.payload, status=HTTPStatus(exc.status))
+                return
+            if not payload.get("providers"):
+                payload["providers"] = supported_provider_names()
+            self._send_json(payload)
+            return
+        if self.path == "/api/admin/overview":
+            if self._require_admin() is None:
+                return
+            try:
+                payload = self.server.portal.admin_overview(self._session_token() or "")
+            except PortalApiError as exc:
+                self._send_json(exc.payload, status=HTTPStatus(exc.status))
+                return
+            payload["workers"] = MissionOrchestrator.worker_snapshot()
+            payload["local_approvals"] = MissionOrchestrator.approvals_snapshot()
+            self._send_json(payload)
+            return
+        if self.path == "/api/admin/users":
+            if self._require_admin() is None:
+                return
+            try:
+                payload = self.server.portal.admin_users(self._session_token() or "")
+            except PortalApiError as exc:
+                self._send_json(exc.payload, status=HTTPStatus(exc.status))
+                return
+            self._send_json(payload)
+            return
+        if self.path == "/api/admin/approvals":
+            if self._require_admin() is None:
+                return
+            try:
+                payload = self.server.portal.admin_approvals(self._session_token() or "")
+            except PortalApiError as exc:
+                self._send_json(exc.payload, status=HTTPStatus(exc.status))
+                return
+            self._send_json(payload)
+            return
+        if self.path == "/api/admin/missions":
+            if self._require_admin() is None:
+                return
+            try:
+                payload = self.server.portal.admin_missions(self._session_token() or "")
+            except PortalApiError as exc:
+                self._send_json(exc.payload, status=HTTPStatus(exc.status))
+                return
+            self._send_json(payload)
+            return
+        if self.path == "/api/admin/key-health":
+            if self._require_admin() is None:
+                return
+            try:
+                payload = self.server.portal.admin_key_health(self._session_token() or "")
+            except PortalApiError as exc:
+                self._send_json(exc.payload, status=HTTPStatus(exc.status))
+                return
+            self._send_json(payload)
             return
         self._send_json({"error": "Not found."}, status=HTTPStatus.NOT_FOUND)
 
     def do_POST(self) -> None:
         self.server.touch()
+        if self.path == "/api/auth/register":
+            payload = self._read_json()
+            try:
+                reply = self.server.portal.register(
+                    {
+                        "email": str(payload.get("email", "")).strip(),
+                        "password": str(payload.get("password", "")),
+                        "display_name": str(payload.get("display_name", "")).strip(),
+                    }
+                )
+            except PortalApiError as exc:
+                self._send_json(exc.payload, status=HTTPStatus(exc.status))
+                return
+            headers = {}
+            if reply.session_token:
+                headers["Set-Cookie"] = self._session_cookie(reply.session_token)
+            self._send_json(reply.payload, headers=headers or None)
+            return
+        if self.path == "/api/auth/login":
+            payload = self._read_json()
+            try:
+                reply = self.server.portal.login(
+                    {
+                        "email": str(payload.get("email", "")).strip(),
+                        "password": str(payload.get("password", "")),
+                    }
+                )
+            except PortalApiError as exc:
+                self._send_json(exc.payload, status=HTTPStatus(exc.status))
+                return
+            headers = {}
+            if reply.session_token:
+                headers["Set-Cookie"] = self._session_cookie(reply.session_token)
+            self._send_json(reply.payload, headers=headers or None)
+            return
+        if self.path == "/api/auth/logout":
+            token = self._session_token()
+            if token:
+                try:
+                    self.server.portal.logout(token)
+                except PortalApiError:
+                    pass
+            self._send_json(
+                {"authenticated": False},
+                headers={"Set-Cookie": self._session_cookie("", expire=True)},
+            )
+            return
+        if self.path == "/api/auth/request-verification":
+            if self._require_user() is None:
+                return
+            try:
+                payload = self.server.portal.request_verification(self._session_token() or "")
+            except PortalApiError as exc:
+                self._send_json(exc.payload, status=HTTPStatus(exc.status))
+                return
+            self._send_json(payload)
+            return
+        if self.path == "/api/auth/verify-email":
+            payload = self._read_json()
+            try:
+                response = self.server.portal.verify_email(
+                    str(payload.get("token", "")).strip(),
+                    session_token=self._session_token(),
+                )
+            except PortalApiError as exc:
+                self._send_json(exc.payload, status=HTTPStatus(exc.status))
+                return
+            self._send_json(response)
+            return
+        if self.path == "/api/auth/request-password-reset":
+            payload = self._read_json()
+            try:
+                response = self.server.portal.request_password_reset(str(payload.get("email", "")).strip())
+            except PortalApiError as exc:
+                self._send_json(exc.payload, status=HTTPStatus(exc.status))
+                return
+            self._send_json(response)
+            return
+        if self.path == "/api/auth/reset-password":
+            payload = self._read_json()
+            try:
+                reply = self.server.portal.reset_password(
+                    str(payload.get("token", "")).strip(),
+                    str(payload.get("password", "")),
+                )
+            except PortalApiError as exc:
+                self._send_json(exc.payload, status=HTTPStatus(exc.status))
+                return
+            headers = {}
+            if reply.session_token:
+                headers["Set-Cookie"] = self._session_cookie(reply.session_token)
+            self._send_json(reply.payload, headers=headers or None)
+            return
         if self.path == "/api/ping":
             self._send_json({"ok": True})
             return
+        if self.path == "/api/user/keys":
+            if self._require_user() is None:
+                return
+            payload = self._read_json()
+            try:
+                response = self.server.portal.save_user_key(self._session_token() or "", payload)
+            except PortalApiError as exc:
+                self._send_json(exc.payload, status=HTTPStatus(exc.status))
+                return
+            if not response.get("providers"):
+                response["providers"] = supported_provider_names()
+            self._send_json(response)
+            return
         if self.path == "/api/workspace":
+            if self._require_user() is None:
+                return
             payload = self._read_json()
             workspace_root = str(payload.get("workspace_root", "")).strip()
             if not workspace_root:
@@ -1190,6 +1909,8 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
             self._send_json(result)
             return
         if self.path == "/api/workspace/dialog":
+            if self._require_user() is None:
+                return
             try:
                 result = choose_workspace_root()
             except Exception as exc:
@@ -1199,6 +1920,9 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
             self._send_json(result)
             return
         if self.path == "/api/chat":
+            user = self._require_user()
+            if user is None:
+                return
             payload = self._read_json()
             prompt = str(payload.get("prompt", "")).strip()
             if not prompt:
@@ -1211,14 +1935,18 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
                     confirmed=bool(payload.get("confirmed")),
                     dry_run=bool(payload.get("dry_run")),
                     workspace_root=payload.get("workspace_root"),
+                    provider_secrets=self._provider_secrets(),
                 )
             except Exception as exc:
                 self._send_json({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
                 return
-
+            self._sync_remote_mission(user, result)
             self._send_json({"answer": result.get("answer"), "mode": "operator_only"})
             return
         if self.path == "/api/operate":
+            user = self._require_user()
+            if user is None:
+                return
             payload = self._read_json()
             prompt = str(payload.get("prompt", "")).strip()
             if not prompt:
@@ -1231,11 +1959,12 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
                     confirmed=bool(payload.get("confirmed")),
                     dry_run=bool(payload.get("dry_run")),
                     workspace_root=payload.get("workspace_root"),
+                    provider_secrets=self._provider_secrets(),
                 )
             except Exception as exc:
                 self._send_json({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
                 return
-
+            self._sync_remote_mission(user, result)
             self._send_json(result)
             return
 
@@ -1243,6 +1972,100 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
 
     def log_message(self, format: str, *args) -> None:  # noqa: A003
         return
+
+    def _session_token(self) -> str | None:
+        raw = self.headers.get("Cookie", "")
+        if not raw:
+            return None
+        cookie = SimpleCookie()
+        cookie.load(raw)
+        morsel = cookie.get(SESSION_COOKIE_NAME)
+        if morsel is None:
+            return None
+        value = morsel.value.strip()
+        return value or None
+
+    def _current_user(self) -> dict[str, object] | None:
+        token = self._session_token()
+        if not token:
+            return None
+        try:
+            payload = self.server.portal.auth_me(token)
+        except PortalApiError:
+            return None
+        if not payload.get("authenticated"):
+            return None
+        return payload.get("user")
+
+    def _provider_secrets(self) -> dict[str, dict[str, str]]:
+        token = self._session_token()
+        if not token:
+            return {}
+        return self.server.portal.export_user_secrets(token)
+
+    def _require_user(self) -> dict[str, object] | None:
+        user = self._current_user()
+        if user is None:
+            self._send_json({"error": "Login required."}, status=HTTPStatus.UNAUTHORIZED)
+            return None
+        return user
+
+    def _require_admin(self) -> dict[str, object] | None:
+        user = self._require_user()
+        if user is None:
+            return None
+        if not bool(user.get("is_admin")):
+            self._send_json({"error": "Admin access required."}, status=HTTPStatus.FORBIDDEN)
+            return None
+        return user
+
+    def _sync_remote_mission(self, user: dict[str, object], result: dict[str, object]) -> None:
+        token = self._session_token()
+        if not token:
+            return
+        mission_id = str(result.get("mission_id", "")).strip()
+        if not mission_id:
+            return
+        try:
+            self.server.portal.sync_mission(
+                token,
+                {
+                    "mission_id": mission_id,
+                    "objective": str(result.get("objective", "")).strip(),
+                    "status": str(result.get("validation_status", "")).strip() or "unknown",
+                    "validation_status": str(result.get("validation_status", "")).strip() or "unknown",
+                    "summary": str(result.get("result", "") or result.get("answer", "") or "No result."),
+                    "workspace_root": str(result.get("workspace_root", "")).strip(),
+                    "source": "desktop",
+                },
+            )
+            pending = []
+            for approval in MissionOrchestrator.approvals_snapshot():
+                if str(approval.get("mission_id", "")).strip() != mission_id:
+                    continue
+                pending.append(
+                    {
+                        "approval_id": approval.get("approval_id"),
+                        "mission_id": approval.get("mission_id"),
+                        "step_id": approval.get("step_id"),
+                        "approval_class": approval.get("approval_class"),
+                        "status": approval.get("status"),
+                        "summary": approval.get("summary"),
+                        "request_excerpt": approval.get("request_excerpt"),
+                        "source": "desktop",
+                    }
+                )
+            if pending:
+                self.server.portal.sync_approvals(token, {"approvals": pending})
+        except PortalApiError as exc:
+            log_exception("Portal mission sync failed", exc)
+
+    @staticmethod
+    def _session_cookie(token: str, *, expire: bool = False) -> str:
+        parts = [SESSION_COOKIE_NAME + "=" + token, "Path=/", "HttpOnly", "SameSite=Lax"]
+        if expire:
+            parts.append("Max-Age=0")
+        return "; ".join(parts)
 
     def _read_json(self) -> dict[str, object]:
         length = int(self.headers.get("Content-Length", "0"))
@@ -1252,20 +2075,31 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
         except json.JSONDecodeError:
             return {}
 
-    def _send_html(self, html: str) -> None:
+    def _send_html(self, html: str, headers: dict[str, str] | None = None) -> None:
         body = html.encode("utf-8")
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
+        if headers:
+            for key, value in headers.items():
+                self.send_header(key, value)
         self.end_headers()
         self.wfile.write(body)
 
-    def _send_json(self, payload: dict[str, object], status: HTTPStatus = HTTPStatus.OK) -> None:
+    def _send_json(
+        self,
+        payload: dict[str, object],
+        status: HTTPStatus = HTTPStatus.OK,
+        headers: dict[str, str] | None = None,
+    ) -> None:
         body = json.dumps(payload).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(body)))
+        if headers:
+            for key, value in headers.items():
+                self.send_header(key, value)
         self.end_headers()
         self.wfile.write(body)
 
@@ -1273,10 +2107,14 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
 class ForgeDesktopHttpServer(ThreadingHTTPServer):
     def __init__(self, host: str, port: int) -> None:
         super().__init__((host, port), DesktopRequestHandler)
+        self.app_settings = OperatorSettings(enable_memory=False)
+        self.portal = PortalAccountClient(
+            self.app_settings.portal_api_base_url,
+            timeout_seconds=self.app_settings.portal_request_timeout_seconds,
+        )
 
     def touch(self) -> None:
         pass
-
 
 def launch_desktop(host: str = "127.0.0.1", port: int = 0, open_browser: bool = True) -> str:
     log_event(f"Launching desktop server host={host} port={port} open_browser={open_browser}")

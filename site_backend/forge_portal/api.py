@@ -9,25 +9,30 @@ from typing import Any
 from urllib.parse import parse_qs
 
 try:
-    from .store import PortalStateStore
-except ImportError:  # pragma: no cover - deployed flat backend fallback
-    from store import PortalStateStore
+    from .store import PROVIDER_REQUIREMENTS, PortalStateStore
+except ImportError:  # pragma: no cover
+    from store import PROVIDER_REQUIREMENTS, PortalStateStore
 
 
 SESSION_COOKIE = "forge_portal_session"
-SUPPORTED_PROVIDERS = [
-    "cloudflare",
-    "nvidia",
-    "openai",
-    "anthropic",
-    "groq",
-    "gemini",
-    "deepseek",
-    "openrouter",
-    "mistral",
-    "together",
-    "ollama",
-]
+SUPPORTED_PROVIDERS = sorted(PROVIDER_REQUIREMENTS.keys())
+SECURITY_HEADERS: dict[str, str] = {
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+    "Content-Security-Policy": (
+        "default-src 'none'; "
+        "base-uri 'none'; "
+        "frame-ancestors 'none'; "
+        "form-action 'none'; "
+        "object-src 'none'; "
+        "img-src 'self' data:; "
+        "connect-src 'self'; "
+        "script-src 'none'; "
+        "style-src 'none'"
+    ),
+}
 PROVIDER_FIELDS: dict[str, list[str]] = {
     "cloudflare": ["api_key", "account_id", "global_key", "email"],
     "openai": ["api_key", "organization", "project"],
@@ -50,6 +55,8 @@ class PortalConfig:
     manager_email: str = "larbilife@gmail.com"
     cookie_path: str = "/"
     auth_session_days: int = 30
+    app_base_url: str = "https://www.trenstudio.com/FORGE/portal"
+    debug_auth_tokens: bool = False
 
 
 @dataclass
@@ -68,11 +75,14 @@ def json_response(
     status: HTTPStatus = HTTPStatus.OK,
     headers: dict[str, str] | None = None,
 ) -> PortalResponse:
-    body = json.dumps(payload, ensure_ascii=False)
-    merged = {"Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store"}
+    merged = {
+        "Content-Type": "application/json; charset=utf-8",
+        "Cache-Control": "no-store",
+        **SECURITY_HEADERS,
+    }
     if headers:
         merged.update(headers)
-    return PortalResponse(status=int(status), headers=merged, body=body)
+    return PortalResponse(int(status), merged, json.dumps(payload, ensure_ascii=False))
 
 
 def _load_json(body: bytes) -> dict[str, Any]:
@@ -115,6 +125,10 @@ def _normalize_route(path: str) -> str:
     return clean
 
 
+def _provider_catalog() -> list[dict[str, Any]]:
+    return [{"name": name, "fields": PROVIDER_FIELDS.get(name, ["api_key"])} for name in SUPPORTED_PROVIDERS]
+
+
 def _get_current_user(store: PortalStateStore, headers: dict[str, str]) -> dict[str, Any] | None:
     token = _read_session_token(headers)
     if not token:
@@ -136,11 +150,12 @@ def _require_admin(store: PortalStateStore, headers: dict[str, str]) -> dict[str
     return user
 
 
-def _provider_catalog() -> list[dict[str, Any]]:
-    return [
-        {"name": name, "fields": PROVIDER_FIELDS.get(name, ["api_key"])}
-        for name in SUPPORTED_PROVIDERS
-    ]
+def _verification_payload(config: PortalConfig, store: PortalStateStore, user_id: str) -> dict[str, Any]:
+    return store.request_email_verification(
+        user_id=user_id,
+        app_base_url=config.app_base_url,
+        debug_token=config.debug_auth_tokens,
+    )
 
 
 def handle_request(
@@ -156,21 +171,35 @@ def handle_request(
     headers = {str(key).lower(): str(value) for key, value in (headers or {}).items()}
     route = _normalize_route(path)
     payload = _load_json(body)
-    _ = parse_qs(query_string, keep_blank_values=True)
+    query = parse_qs(query_string, keep_blank_values=True)
 
     try:
         if method == "GET" and route == "/health":
-            return json_response({"ok": True, "manager_email": config.manager_email})
+            return json_response(
+                {
+                    "ok": True,
+                    "manager_email": config.manager_email,
+                    "auth_features": ["email_verification", "password_reset"],
+                    "app_base_url": config.app_base_url,
+                }
+            )
 
         if method == "GET" and route == "/auth/me":
             user = _get_current_user(store, headers)
             if user is None:
-                return json_response({"authenticated": False, "manager_email": config.manager_email})
+                return json_response(
+                    {
+                        "authenticated": False,
+                        "manager_email": config.manager_email,
+                        "app_base_url": config.app_base_url,
+                    }
+                )
             return json_response(
                 {
                     "authenticated": True,
                     "user": user,
                     "manager_email": config.manager_email,
+                    "app_base_url": config.app_base_url,
                 }
             )
 
@@ -183,7 +212,11 @@ def handle_request(
             )
             session = store.create_session(user_id=user.user_id, ttl_days=config.auth_session_days)
             return json_response(
-                {"authenticated": True, "user": user.to_dict()},
+                {
+                    "authenticated": True,
+                    "user": user.to_dict(),
+                    "verification": _verification_payload(config, store, user.user_id),
+                },
                 headers={"Set-Cookie": _cookie_header(session["token"], path=config.cookie_path)},
             )
 
@@ -193,10 +226,7 @@ def handle_request(
                 password=str(payload.get("password", "")),
             )
             if user is None:
-                return json_response(
-                    {"error": "Invalid email or password."},
-                    status=HTTPStatus.UNAUTHORIZED,
-                )
+                return json_response({"error": "Invalid email or password."}, status=HTTPStatus.UNAUTHORIZED)
             session = store.create_session(user_id=user.user_id, ttl_days=config.auth_session_days)
             return json_response(
                 {"authenticated": True, "user": user.to_dict()},
@@ -212,6 +242,49 @@ def handle_request(
                 headers={"Set-Cookie": _cookie_header("", path=config.cookie_path, expire=True)},
             )
 
+        if method == "POST" and route == "/auth/request-verification":
+            user = _require_user(store, headers)
+            return json_response({"verification": _verification_payload(config, store, str(user["user_id"]))})
+
+        if method == "POST" and route == "/auth/verify-email":
+            token = str(payload.get("token", "")).strip() or str(query.get("token", [""])[0]).strip()
+            user = store.verify_email(token=token)
+            session_token = _read_session_token(headers)
+            current = store.get_session(session_token) if session_token else None
+            return json_response(
+                {
+                    "authenticated": bool(current and current.get("user_id") == user.user_id),
+                    "user": user.to_dict() if current and current.get("user_id") == user.user_id else None,
+                    "message": "Email verified successfully.",
+                }
+            )
+
+        if method == "POST" and route == "/auth/request-password-reset":
+            email = str(payload.get("email", "")).strip()
+            return json_response(
+                {
+                    "reset": store.request_password_reset(
+                        email=email,
+                        app_base_url=config.app_base_url,
+                        debug_token=config.debug_auth_tokens,
+                    )
+                }
+            )
+
+        if method == "POST" and route == "/auth/reset-password":
+            token = str(payload.get("token", "")).strip()
+            password = str(payload.get("password", ""))
+            user = store.reset_password(token=token, new_password=password)
+            session = store.create_session(user_id=user.user_id, ttl_days=config.auth_session_days)
+            return json_response(
+                {
+                    "authenticated": True,
+                    "user": user.to_dict(),
+                    "message": "Password reset complete.",
+                },
+                headers={"Set-Cookie": _cookie_header(session["token"], path=config.cookie_path)},
+            )
+
         if method == "GET" and route == "/user/keys":
             user = _require_user(store, headers)
             return json_response(
@@ -221,6 +294,10 @@ def handle_request(
                     "viewer": user,
                 }
             )
+
+        if method == "GET" and route == "/user/keys/export":
+            user = _require_user(store, headers)
+            return json_response({"secrets": store.export_user_provider_secrets(str(user["user_id"]))})
 
         if method == "POST" and route == "/user/keys":
             user = _require_user(store, headers)
@@ -233,11 +310,7 @@ def handle_request(
                 if key in ALLOWED_SECRET_FIELDS and str(value).strip()
             }
             if secret_payload:
-                store.save_user_provider_secret(
-                    user_id=str(user["user_id"]),
-                    provider=provider,
-                    payload=secret_payload,
-                )
+                store.save_user_provider_secret(user_id=str(user["user_id"]), provider=provider, payload=secret_payload)
             else:
                 store.delete_user_provider_secret(user_id=str(user["user_id"]), provider=provider)
             return json_response(
@@ -247,6 +320,43 @@ def handle_request(
                     "viewer": user,
                 }
             )
+
+        if method == "POST" and route == "/desktop/missions/sync":
+            user = _require_user(store, headers)
+            store.upsert_mission_event(
+                user_id=str(user["user_id"]),
+                mission_id=str(payload.get("mission_id", "")).strip(),
+                objective=str(payload.get("objective", "")).strip() or "Untitled mission",
+                status=str(payload.get("status", "")).strip() or "unknown",
+                validation_status=str(payload.get("validation_status", "")).strip() or "unknown",
+                summary=str(payload.get("summary", "")).strip() or "No mission summary.",
+                workspace_root=str(payload.get("workspace_root", "")).strip(),
+                source=str(payload.get("source", "desktop")).strip() or "desktop",
+            )
+            return json_response({"ok": True})
+
+        if method == "POST" and route == "/desktop/approvals/sync":
+            user = _require_user(store, headers)
+            approvals = payload.get("approvals", [])
+            if isinstance(approvals, list):
+                for item in approvals:
+                    if not isinstance(item, dict):
+                        continue
+                    approval_id = str(item.get("approval_id", "")).strip()
+                    if not approval_id:
+                        continue
+                    store.upsert_approval_event(
+                        user_id=str(user["user_id"]),
+                        approval_id=approval_id,
+                        mission_id=str(item.get("mission_id", "")).strip(),
+                        step_id=str(item.get("step_id", "")).strip(),
+                        approval_class=str(item.get("approval_class", "")).strip() or "unknown",
+                        status=str(item.get("status", "")).strip() or "pending",
+                        summary=str(item.get("summary", "")).strip() or "Approval request",
+                        request_excerpt=str(item.get("request_excerpt", "")).strip(),
+                        source=str(item.get("source", "desktop")).strip() or "desktop",
+                    )
+            return json_response({"ok": True, "count": len(approvals) if isinstance(approvals, list) else 0})
 
         if method == "GET" and route == "/admin/overview":
             user = _require_admin(store, headers)
@@ -262,16 +372,26 @@ def handle_request(
             _require_admin(store, headers)
             return json_response({"users": store.list_users()})
 
+        if method == "GET" and route == "/admin/approvals":
+            _require_admin(store, headers)
+            return json_response({"approvals": store.list_approval_events(limit=100)})
+
+        if method == "GET" and route == "/admin/missions":
+            _require_admin(store, headers)
+            return json_response({"missions": store.list_missions(limit=100)})
+
+        if method == "GET" and route == "/admin/key-health":
+            _require_admin(store, headers)
+            return json_response({"key_health": store.list_user_key_health()})
+
+        if method == "GET" and route == "/admin/outbox":
+            _require_admin(store, headers)
+            return json_response({"outbox": store.list_outbox_messages(limit=100)})
+
         return json_response({"error": "Not found."}, status=HTTPStatus.NOT_FOUND)
     except PermissionError as exc:
-        return json_response({"error": str(exc)}, status=HTTPStatus.FORBIDDEN if "Admin" in str(exc) else HTTPStatus.UNAUTHORIZED)
+        message = str(exc)
+        status = HTTPStatus.FORBIDDEN if "Admin" in message else HTTPStatus.UNAUTHORIZED
+        return json_response({"error": message}, status=status)
     except ValueError as exc:
         return json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
-    except Exception as exc:  # noqa: BLE001
-        return json_response(
-            {
-                "error": "Portal request failed.",
-                "details": str(exc),
-            },
-            status=HTTPStatus.INTERNAL_SERVER_ERROR,
-        )

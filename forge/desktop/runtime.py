@@ -182,6 +182,7 @@ def operate_prompt(
     confirmed: bool = False,
     dry_run: bool = False,
     workspace_root: str | Path | None = None,
+    provider_secrets: dict[str, dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     prompt = prompt.strip()
     if not prompt:
@@ -195,10 +196,34 @@ def operate_prompt(
         settings=OperatorSettings(
             enable_memory=False,
             workspace_root=normalized_workspace_root,
-        )
+        ),
+        provider_secrets=provider_secrets,
     )
     result = operator.handle(prompt, confirmed=confirmed, dry_run=dry_run)
     return _serialize_operator_result(result, operator, normalized_workspace_root)
+
+
+def boot_status_for_user(provider_secrets: dict[str, dict[str, str]] | None = None) -> DesktopBootStatus:
+    session = ForgeSession(
+        memory=False,
+        provider_secrets=provider_secrets,
+        allow_host_fallback=False,
+    )
+    status = session._router.status()
+    providers = status.get("providers", 0)
+    models_online = status.get("models_online", 0)
+    workspace = get_workspace_status()
+    summary = (
+        f"FORGE v{__version__} booted with {providers} provider(s) "
+        f"and {models_online} live model(s). Active workspace: {workspace['workspace_root']}."
+    )
+    return DesktopBootStatus(
+        providers=providers,
+        models_online=models_online,
+        summary=summary,
+        workspace_root=workspace["workspace_root"],
+        artifact_root=workspace["artifact_root"],
+    )
 
 
 def _serialize_operator_result(

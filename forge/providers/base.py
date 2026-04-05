@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import ClassVar
 
 from forge.core.models import ForgeResponse, Message, ModelSpec
@@ -30,11 +31,23 @@ class BaseProvider(ABC):
     daily_token_limit: int = 0
     daily_request_limit: int = 0
 
-    def __init__(self, api_key: str | None = None) -> None:
+    def __init__(
+        self,
+        api_key: str | None = None,
+        config: dict[str, str] | None = None,
+        allow_host_fallback: bool = True,
+    ) -> None:
+        self._config = config or {}
+        self._allow_host_fallback = allow_host_fallback
         self._api_key = api_key or self._load_key()
         self._model_map: dict[str, ModelSpec] = {model.id: model for model in self.models}
 
     def _load_key(self) -> str | None:
+        direct = self._config.get("api_key")
+        if direct:
+            return direct
+        if not self._allow_host_fallback:
+            return None
         for env_name in self._candidate_env_names():
             value = os.environ.get(env_name)
             if value:
@@ -49,17 +62,53 @@ class BaseProvider(ABC):
             "deepseek": ["DEEPSEEK_API_KEY"],
             "openrouter": ["OPENROUTER_API_KEY"],
             "ollama": ["OLLAMA_API_KEY"],
+            "openai": ["OPENAI_API_KEY"],
+            "anthropic": ["ANTHROPIC_API_KEY"],
+            "mistral": ["MISTRAL_API_KEY"],
+            "together": ["TOGETHER_API_KEY"],
+            "nvidia": ["NVIDIA_API_KEY", "NGC_API_KEY"],
+            "cloudflare": ["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_API_KEY"],
         }
         names = [f"FORGE_{upper}_KEY", f"{upper}_API_KEY", f"{upper}_KEY"]
         names.extend(alias_map.get(self.name, []))
         return list(dict.fromkeys(names))
 
     def _read_keyfile(self) -> str | None:
-        from pathlib import Path
-
-        keyfile = Path.home() / ".forge" / "keys" / self.name
+        keyfile = self._keydir() / self.name
         if keyfile.exists():
             return keyfile.read_text().strip()
+        return None
+
+    def _keydir(self) -> Path:
+        return Path.home() / ".forge" / "keys"
+
+    def _load_optional_value(
+        self,
+        name: str,
+        env_names: list[str] | None = None,
+    ) -> str | None:
+        direct = self._config.get(name)
+        if direct:
+            return direct
+        if not self._allow_host_fallback:
+            return None
+        upper_provider = self.name.upper()
+        upper_name = name.upper()
+        candidates = [
+            f"FORGE_{upper_provider}_{upper_name}",
+            f"{upper_provider}_{upper_name}",
+        ]
+        if env_names:
+            candidates.extend(env_names)
+        for candidate in dict.fromkeys(candidates):
+            value = os.environ.get(candidate)
+            if value:
+                return value
+
+        sidecar = self._keydir() / f"{self.name}.{name}"
+        if sidecar.exists():
+            value = sidecar.read_text().strip()
+            return value or None
         return None
 
     @property

@@ -21,17 +21,29 @@ from forge.providers import iter_provider_classes
 logger = logging.getLogger("forge.session")
 
 
-def _load_providers(router: ForgeRouter, guardian: QuotaGuardian) -> None:
+def _load_providers(
+    router: ForgeRouter,
+    guardian: QuotaGuardian,
+    provider_secrets: dict[str, dict[str, str]] | None = None,
+    allow_host_fallback: bool = True,
+) -> None:
     """Auto-register all built-in providers that are usable right now."""
+    provider_secrets = provider_secrets or {}
     for cls in iter_provider_classes():
         try:
-            provider = cls()
+            provider_name = getattr(cls, "name", cls.__name__.replace("Provider", "").lower())
+            secrets = provider_secrets.get(provider_name, {})
+            provider = cls(
+                api_key=secrets.get("api_key"),
+                config=secrets,
+                allow_host_fallback=allow_host_fallback,
+            )
             if provider.is_available or cls.__name__ == "OllamaProvider":
                 router.register(provider)
                 guardian.register_provider(provider.name)
-                logger.info(f"  âœ“ {provider.name}")
+                logger.info("provider_online %s", provider.name)
         except Exception as exc:
-            logger.debug(f"  âœ— {cls.__name__}: {exc}")
+            logger.debug("provider_skip %s: %s", cls.__name__, exc)
 
 
 class ForgeSession:
@@ -48,6 +60,8 @@ class ForgeSession:
         system_prompt: str | None = None,
         memory: bool = True,
         db_path: Path | None = None,
+        provider_secrets: dict[str, dict[str, str]] | None = None,
+        allow_host_fallback: bool = True,
     ) -> None:
         self._router = ForgeRouter()
         self._guardian = QuotaGuardian(self._router)
@@ -56,6 +70,8 @@ class ForgeSession:
         self._system = system_prompt or self._default_system()
         self._conv_id: str | None = None
         self._history: list[Message] = []
+        self._provider_secrets = provider_secrets or {}
+        self._allow_host_fallback = allow_host_fallback
 
         try:
             self._loop = asyncio.get_event_loop()
@@ -65,9 +81,14 @@ class ForgeSession:
             self._loop = asyncio.new_event_loop()
             asyncio.set_event_loop(self._loop)
 
-        logger.info("FORGE booting â€” registering providers...")
-        _load_providers(self._router, self._guardian)
-        logger.info(f"Ready. {self._router.status()['models_online']} models available.")
+        logger.info("FORGE booting - registering providers...")
+        _load_providers(
+            self._router,
+            self._guardian,
+            self._provider_secrets,
+            allow_host_fallback=self._allow_host_fallback,
+        )
+        logger.info("FORGE ready with %s live models", self._router.status()["models_online"])
 
     def ask(
         self,
@@ -163,7 +184,7 @@ class ForgeSession:
     @staticmethod
     def _default_system() -> str:
         return (
-            "You are FORGE â€” an expert AI agent. "
+            "You are FORGE - an expert AI agent. "
             "You are precise, direct, and deeply capable. "
             "When writing code, write production-quality code with no placeholders. "
             "When answering questions, be thorough but concise. "

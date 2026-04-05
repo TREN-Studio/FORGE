@@ -1,4 +1,11 @@
 <?php
+header('X-Frame-Options: DENY');
+header('Referrer-Policy: no-referrer');
+header('X-Content-Type-Options: nosniff');
+header("Content-Security-Policy: default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'; object-src 'none'; img-src 'self' data:; connect-src 'self'; script-src 'none'; style-src 'none'");
+if (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') {
+    header('Strict-Transport-Security: max-age=31536000; includeSubDomains');
+}
 header('Cache-Control: no-store');
 
 $request_uri = $_SERVER['REQUEST_URI'] ?? '/';
