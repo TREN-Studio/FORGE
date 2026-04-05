@@ -12,6 +12,10 @@ test.describe.serial('FORGE public portal', () => {
   test('registers a user, stores a provider key, and verifies the email', async ({ page }) => {
     await page.goto('/');
 
+    await expect(page.locator('#hero-title')).toContainText('Complete Setup After Download');
+    await expect(page.locator('#provider-panel')).toBeHidden();
+    await expect(page.locator('#admin-surface')).toBeHidden();
+
     await page.getByTestId('display-name').fill('Portal User');
     await page.getByTestId('email-input').fill('portal-user@example.com');
     await page.getByTestId('password-input').fill('StrongPass123!');
@@ -19,6 +23,8 @@ test.describe.serial('FORGE public portal', () => {
 
     await expect(page.locator('#viewer-email')).toContainText('portal-user@example.com');
     await expect(page.locator('#email-verification-state')).toContainText('Pending');
+    await expect(page.locator('#provider-panel')).toBeVisible();
+    await expect(page.locator('#admin-surface')).toBeVisible();
 
     await page.getByTestId('provider-select').selectOption('nvidia');
     await page.getByTestId('provider-api-key').fill('abcd1234efgh5678');

@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>FORGE Portal</title>
   <meta name="description" content="FORGE account portal for user API keys, sessions, and manager control.">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; object-src 'none'; upgrade-insecure-requests">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b0b0b'/%3E%3Cpath d='M22 14h10c9 0 16 7 16 16 0 8-5 14-12 16l-6 4V14Z' fill='%23ff6b1a'/%3E%3Cpath d='M18 18h9v28h-9z' fill='%23ffd08d'/%3E%3C/svg%3E">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; form-action 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; object-src 'none'; upgrade-insecure-requests">
   <style>
     :root {
       --bg: #060606;
@@ -41,6 +42,10 @@
       gap: 20px;
     }
 
+    body:not(.authenticated) .shell {
+      max-width: 900px;
+    }
+
     .hero,
     .panel {
       border: 1px solid var(--line);
@@ -56,6 +61,21 @@
       grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
       gap: 18px;
       align-items: end;
+    }
+
+    .hero-actions {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 18px;
+    }
+
+    .hero-note {
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.7;
+      max-width: 680px;
     }
 
     .badge {
@@ -130,6 +150,10 @@
       gap: 20px;
     }
 
+    body:not(.authenticated) .grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
     .panel {
       padding: 22px;
     }
@@ -153,6 +177,17 @@
       font-size: 14px;
       line-height: 1.65;
       white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .field-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .field-span-2 {
+      grid-column: 1 / -1;
     }
 
     label {
@@ -175,6 +210,7 @@
       color: var(--text);
       font: 14px/1.4 "Segoe UI", sans-serif;
       outline: none;
+      overflow-wrap: anywhere;
     }
 
     input:focus,
@@ -258,6 +294,7 @@
       font-size: 12px;
       line-height: 1.5;
       white-space: pre-wrap;
+      overflow-wrap: anywhere;
       word-break: break-word;
     }
 
@@ -287,6 +324,17 @@
       font-size: 24px;
       font-weight: 700;
       color: var(--text);
+      line-height: 1.25;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    .meta-value.email-value {
+      font-size: clamp(14px, 1.7vw, 18px);
+    }
+
+    .surface-private {
+      transition: opacity 0.16s ease, transform 0.16s ease;
     }
 
     .topline {
@@ -314,6 +362,10 @@
       .grid {
         grid-template-columns: 1fr;
       }
+
+      .field-grid {
+        grid-template-columns: 1fr;
+      }
     }
   </style>
 </head>
@@ -322,14 +374,20 @@
     <section class="hero">
       <div>
         <div class="badge">FORGE Account Portal</div>
-        <h1>Bring Your Own Keys</h1>
-        <p>
-          This is the public control surface for FORGE users.
-          Each user stores their own provider credentials. The manager account is locked to <strong>larbilife@gmail.com</strong>.
-          No user should inherit our machine keys. This portal exists to enforce that boundary.
+        <h1 id="hero-title">Complete Setup After Download</h1>
+        <p id="hero-copy">
+          Download FORGE Desktop first, then sign in with your own account and finish setup.
+          Provider keys, admin data, and private controls stay hidden until authentication succeeds.
         </p>
+        <div class="hero-actions">
+          <a id="download-desktop-link" href="../#downloads" class="role-pill" style="text-decoration:none">Download FORGE Desktop</a>
+          <span class="role-pill">Private Until Login</span>
+        </div>
+        <div id="hero-note" class="hero-note">
+          Step 1: install the app. Step 2: create or sign in to your account. Step 3: complete provider setup inside Desktop or here after login.
+        </div>
       </div>
-      <div class="hero-grid">
+      <div id="hero-private-metrics" class="hero-grid hidden surface-private">
         <div class="kpi"><strong>11</strong><span>Supported Providers</span></div>
         <div class="kpi"><strong>1</strong><span>Manager Gate</span></div>
         <div class="kpi"><strong>0</strong><span>Shared Keys By Default</span></div>
@@ -342,25 +400,34 @@
         <div class="topline">
           <div>
             <h2>Account</h2>
-            <h3>Register or Login</h3>
+            <h3 id="account-panel-title">Register or Login</h3>
           </div>
           <span id="account-role-pill" class="role-pill">Guest</span>
         </div>
 
         <div id="logged-out">
-          <label for="display-name">Display Name</label>
-          <input id="display-name" data-testid="display-name" type="text" placeholder="Your name">
-          <label for="email">Email</label>
-          <input id="email" data-testid="email-input" type="email" placeholder="you@example.com">
-          <label for="password">Password</label>
-          <input id="password" data-testid="password-input" type="password" placeholder="Minimum 8 characters">
+          <div class="copy">This public page is now an access gate only. The private workspace appears after login.</div>
+          <div class="field-grid">
+            <div>
+              <label for="display-name">Display Name</label>
+              <input id="display-name" data-testid="display-name" type="text" placeholder="Your name">
+            </div>
+            <div>
+              <label for="email">Email</label>
+              <input id="email" data-testid="email-input" type="email" placeholder="you@example.com">
+            </div>
+            <div class="field-span-2">
+              <label for="password">Password</label>
+              <input id="password" data-testid="password-input" type="password" placeholder="Minimum 8 characters">
+            </div>
+          </div>
           <div class="button-row">
             <button id="login-button" data-testid="login-button" class="ghost" type="button">Login</button>
             <button id="register-button" data-testid="register-button" class="primary" type="button">Register</button>
           </div>
           <div class="button-row">
             <button id="google-login-button" data-testid="google-login-button" class="primary hidden" type="button">Continue with Google</button>
-            <button id="google-login-disabled" class="ghost hidden" type="button" disabled>Google OAuth not configured</button>
+            <button id="google-login-disabled" class="ghost hidden" type="button" disabled aria-hidden="true">Google OAuth not configured</button>
           </div>
         </div>
 
@@ -368,7 +435,7 @@
           <div class="meta-grid">
             <div class="meta">
               <div class="meta-label">Signed In</div>
-              <div id="viewer-email" class="meta-value" style="font-size:18px">-</div>
+              <div id="viewer-email" class="meta-value email-value">-</div>
             </div>
             <div class="meta">
               <div class="meta-label">Manager Gate</div>
@@ -393,10 +460,16 @@
           </div>
         </div>
 
-        <label for="token-input">Verification / Reset Token</label>
-        <input id="token-input" data-testid="token-input" type="text" placeholder="Paste email token here">
-        <label for="new-password">New Password</label>
-        <input id="new-password" data-testid="new-password-input" type="password" placeholder="New password for reset flow">
+        <div class="field-grid">
+          <div class="field-span-2">
+            <label for="token-input">Verification / Reset Token</label>
+            <input id="token-input" data-testid="token-input" type="text" placeholder="Paste email token here">
+          </div>
+          <div class="field-span-2">
+            <label for="new-password">New Password</label>
+            <input id="new-password" data-testid="new-password-input" type="password" placeholder="New password for reset flow">
+          </div>
+        </div>
         <div class="button-row">
           <button id="verify-email-button" data-testid="verify-email-button" class="ghost" type="button">Verify Email</button>
           <button id="request-reset-button" data-testid="request-reset-button" class="ghost" type="button">Request Reset</button>
@@ -409,7 +482,7 @@
         <div id="account-status" class="status">Awaiting account action.</div>
       </article>
 
-      <article class="panel">
+      <article id="provider-panel" class="panel hidden surface-private">
         <h2>Provider Keys</h2>
         <h3>Store Your Own Credentials</h3>
         <p class="copy">Choose a provider, add only the fields it needs, then save. Empty save deletes the stored set for that provider.</p>
@@ -438,7 +511,7 @@
         <div id="provider-list" class="info-list"></div>
       </article>
 
-      <article class="panel">
+      <article id="admin-surface" class="panel hidden surface-private">
         <h2>Admin Control</h2>
         <h3>Manager-Only Overview</h3>
         <p class="copy">Only the manager account can read global metrics and user inventory from this panel.</p>
@@ -476,6 +549,11 @@
     const displayName = document.getElementById("display-name");
     const email = document.getElementById("email");
     const password = document.getElementById("password");
+    const heroTitle = document.getElementById("hero-title");
+    const heroCopy = document.getElementById("hero-copy");
+    const heroNote = document.getElementById("hero-note");
+    const heroPrivateMetrics = document.getElementById("hero-private-metrics");
+    const accountPanelTitle = document.getElementById("account-panel-title");
     const loggedOut = document.getElementById("logged-out");
     const loggedIn = document.getElementById("logged-in");
     const accountStatus = document.getElementById("account-status");
@@ -498,7 +576,9 @@
     const providerEmail = document.getElementById("provider-email");
     const providerStatus = document.getElementById("provider-status");
     const providerList = document.getElementById("provider-list");
+    const providerPanel = document.getElementById("provider-panel");
 
+    const adminSurface = document.getElementById("admin-surface");
     const adminLocked = document.getElementById("admin-locked");
     const adminPanel = document.getElementById("admin-panel");
     const adminUsersCount = document.getElementById("admin-users-count");
@@ -596,25 +676,40 @@
       googleOauth = payload && payload.google_oauth ? payload.google_oauth : googleOauth;
       currentUser = payload && payload.authenticated ? payload.user : null;
       const isAdmin = Boolean(currentUser && currentUser.is_admin);
+      document.body.classList.toggle("authenticated", Boolean(currentUser));
       loggedOut.classList.toggle("hidden", Boolean(currentUser));
       loggedIn.classList.toggle("hidden", !currentUser);
+      heroPrivateMetrics.classList.toggle("hidden", !currentUser);
+      providerPanel.classList.toggle("hidden", !currentUser);
+      adminSurface.classList.toggle("hidden", !currentUser);
       adminPanel.classList.toggle("hidden", !isAdmin);
       adminLocked.classList.toggle("hidden", isAdmin);
       googleLoginButton.classList.toggle("hidden", !googleOauth.enabled || Boolean(currentUser));
-      googleLoginDisabled.classList.toggle("hidden", googleOauth.enabled || Boolean(currentUser));
+      googleLoginDisabled.classList.add("hidden");
       accountRolePill.textContent = currentUser ? (isAdmin ? "Manager" : "User") : "Guest";
+      accountPanelTitle.textContent = currentUser ? "Account Control" : "Register or Login";
       viewerEmail.textContent = currentUser ? currentUser.email : "-";
       managerGate.textContent = isAdmin ? "Open" : "Closed";
       emailVerificationState.textContent = currentUser ? (currentUser.email_verified ? "Verified" : "Pending") : "-";
       verifiedAt.textContent = currentUser && currentUser.verified_at ? currentUser.verified_at : "-";
       if (!currentUser) {
+        heroTitle.textContent = "Complete Setup After Download";
+        heroCopy.textContent = "Download FORGE Desktop first, then sign in with your own account and finish setup. Provider keys, admin data, and private controls stay hidden until authentication succeeds.";
+        heroNote.textContent = "Step 1: install the app. Step 2: create or sign in to your account. Step 3: complete provider setup inside Desktop or here after login.";
         setStatus(accountStatus, "Login required before provider keys or admin controls can be used.");
         setStatus(providerStatus, "Login required before keys can be managed.");
+        adminUsersList.innerHTML = "";
         adminKeyHealthList.innerHTML = "";
         adminApprovalsList.innerHTML = "";
         adminMissionsList.innerHTML = "";
         adminOutboxList.innerHTML = "";
+        return;
       }
+      heroTitle.textContent = isAdmin ? "Manager Surface Unlocked" : "Your Private FORGE Surface";
+      heroCopy.textContent = isAdmin
+        ? "Manager access is active. Approvals, mission summaries, and key health are now visible inside this authenticated session."
+        : "Your account is active. Provider keys and private controls are now visible only inside this authenticated session.";
+      heroNote.textContent = "Desktop and portal now share the same account boundary. Nothing private is exposed publicly before login.";
     }
 
     async function loadAuth() {
@@ -908,7 +1003,7 @@
         if (health && health.google_oauth) {
           googleOauth = health.google_oauth;
           googleLoginButton.classList.toggle("hidden", !googleOauth.enabled || Boolean(currentUser));
-          googleLoginDisabled.classList.toggle("hidden", googleOauth.enabled || Boolean(currentUser));
+          googleLoginDisabled.classList.add("hidden");
         }
         if (currentUser) {
           await Promise.all([loadProviderKeys(), loadAdmin()]);
@@ -931,6 +1026,8 @@
         const params = new URLSearchParams(window.location.search);
         if (params.get("oauth") === "google_success") {
           setStatus(accountStatus, "Google sign-in completed.", "ok");
+        } else if (params.get("from") === "download") {
+          setStatus(accountStatus, "Desktop downloaded. Create your account or sign in to finish setup.", "ok");
         } else if (params.get("oauth_error")) {
           setStatus(accountStatus, "Google sign-in failed: " + params.get("oauth_error"), "error");
         } else if (params.get("verify_token")) {
