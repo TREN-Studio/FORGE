@@ -57,6 +57,7 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: write
+      id-token: write
     env:
       RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
       RELEASE_PRERELEASE: ${{ github.event.inputs.prerelease || 'false' }}
@@ -87,8 +88,32 @@ jobs:
       - name: Build Windows installer
         run: python tools/build_windows_installer.py
 
+      - name: Azure login for Artifact Signing
+        if: ${{ secrets.AZURE_CLIENT_ID != '' && secrets.AZURE_TENANT_ID != '' && secrets.AZURE_SUBSCRIPTION_ID != '' && secrets.AZURE_TRUSTED_SIGNING_ENDPOINT != '' && secrets.AZURE_TRUSTED_SIGNING_ACCOUNT_NAME != '' && secrets.AZURE_TRUSTED_SIGNING_CERT_PROFILE != '' }}
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sign Windows artifacts with Azure Artifact Signing
+        if: ${{ secrets.AZURE_CLIENT_ID != '' && secrets.AZURE_TENANT_ID != '' && secrets.AZURE_SUBSCRIPTION_ID != '' && secrets.AZURE_TRUSTED_SIGNING_ENDPOINT != '' && secrets.AZURE_TRUSTED_SIGNING_ACCOUNT_NAME != '' && secrets.AZURE_TRUSTED_SIGNING_CERT_PROFILE != '' }}
+        uses: azure/artifact-signing-action@v1
+        with:
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          endpoint: ${{ secrets.AZURE_TRUSTED_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ secrets.AZURE_TRUSTED_SIGNING_ACCOUNT_NAME }}
+          certificate-profile-name: ${{ secrets.AZURE_TRUSTED_SIGNING_CERT_PROFILE }}
+          files: |
+            ${{ github.workspace }}\dist\FORGE-Desktop.exe
+            ${{ github.workspace }}\release-assets\installer-output\FORGE-Setup-${{ env.RELEASE_TAG }}.exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
       - name: Sign Windows artifacts
-        if: ${{ secrets.WINDOWS_PFX_BASE64 != '' && secrets.WINDOWS_PFX_PASSWORD != '' }}
+        if: ${{ (secrets.AZURE_CLIENT_ID == '' || secrets.AZURE_TENANT_ID == '' || secrets.AZURE_SUBSCRIPTION_ID == '' || secrets.AZURE_TRUSTED_SIGNING_ENDPOINT == '' || secrets.AZURE_TRUSTED_SIGNING_ACCOUNT_NAME == '' || secrets.AZURE_TRUSTED_SIGNING_CERT_PROFILE == '') && secrets.WINDOWS_PFX_BASE64 != '' && secrets.WINDOWS_PFX_PASSWORD != '' }}
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
