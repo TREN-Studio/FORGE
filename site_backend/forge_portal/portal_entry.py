@@ -19,8 +19,22 @@ except ModuleNotFoundError:
     from store import PortalStateStore
 
 
+def _load_runtime_config(root: Path) -> dict[str, str]:
+    config_path = root / "portal_runtime_config.json"
+    if not config_path.exists():
+        return {}
+    try:
+        payload = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    return {str(key): str(value) for key, value in payload.items() if isinstance(key, str)}
+
+
 def main() -> int:
     root = Path(__file__).resolve().parent
+    runtime_config = _load_runtime_config(root)
     state_root = Path(os.environ.get("FORGE_PORTAL_STATE_ROOT", root / "state")).resolve()
     method = os.environ.get("FORGE_PORTAL_REQUEST_METHOD", os.environ.get("REQUEST_METHOD", "GET"))
     path = os.environ.get("FORGE_PORTAL_REQUEST_PATH", "/")
@@ -44,11 +58,13 @@ def main() -> int:
                 auth_session_days=int(os.environ.get("FORGE_PORTAL_SESSION_DAYS", "30")),
                 app_base_url=os.environ.get("FORGE_PORTAL_APP_BASE_URL", "https://www.trenstudio.com/FORGE/portal"),
                 debug_auth_tokens=os.environ.get("FORGE_PORTAL_DEBUG_AUTH_TOKENS", "0") == "1",
-                google_client_id=os.environ.get("FORGE_GOOGLE_CLIENT_ID", ""),
-                google_client_secret=os.environ.get("FORGE_GOOGLE_CLIENT_SECRET", ""),
+                google_client_id=os.environ.get("FORGE_GOOGLE_CLIENT_ID", runtime_config.get("FORGE_GOOGLE_CLIENT_ID", "")),
+                google_client_secret=os.environ.get("FORGE_GOOGLE_CLIENT_SECRET", runtime_config.get("FORGE_GOOGLE_CLIENT_SECRET", "")),
                 google_authorize_url=os.environ.get("FORGE_GOOGLE_AUTHORIZE_URL", "https://accounts.google.com/o/oauth2/v2/auth"),
                 google_token_url=os.environ.get("FORGE_GOOGLE_TOKEN_URL", "https://oauth2.googleapis.com/token"),
                 google_userinfo_url=os.environ.get("FORGE_GOOGLE_USERINFO_URL", "https://openidconnect.googleapis.com/v1/userinfo"),
+                google_tokeninfo_url=os.environ.get("FORGE_GOOGLE_TOKENINFO_URL", "https://oauth2.googleapis.com/tokeninfo"),
+                google_bridge_url=os.environ.get("FORGE_GOOGLE_BRIDGE_URL", runtime_config.get("FORGE_GOOGLE_BRIDGE_URL", "")),
             ),
             store,
             method=method.upper(),

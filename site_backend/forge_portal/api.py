@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass
 from http import HTTPStatus
 from http.cookies import SimpleCookie
@@ -63,14 +64,30 @@ class PortalConfig:
     google_authorize_url: str = "https://accounts.google.com/o/oauth2/v2/auth"
     google_token_url: str = "https://oauth2.googleapis.com/token"
     google_userinfo_url: str = "https://openidconnect.googleapis.com/v1/userinfo"
+    google_tokeninfo_url: str = "https://oauth2.googleapis.com/tokeninfo"
+    google_bridge_url: str = ""
 
     @property
     def google_oauth_enabled(self) -> bool:
-        return bool(self.google_client_id and self.google_client_secret)
+        return bool(self.google_client_id)
+
+    @property
+    def google_oauth_mode(self) -> str:
+        if self.google_client_id and self.google_client_secret:
+            return "oauth_code"
+        if self.google_client_id and self.google_bridge_url:
+            return "bridge_id_token"
+        if self.google_client_id:
+            return "id_token"
+        return "disabled"
 
     @property
     def google_redirect_uri(self) -> str:
         return f"{self.app_base_url.rstrip('/')}/api/index.php/auth/google/callback"
+
+    @property
+    def google_bridge_complete_uri(self) -> str:
+        return f"{self.app_base_url.rstrip('/')}/api/index.php/auth/google/bridge-complete"
 
 
 @dataclass
@@ -102,6 +119,25 @@ def json_response(
 def _load_json(body: bytes) -> dict[str, Any]:
     if not body:
         return {}
+    try:
+        payload = json.loads(body.decode("utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _load_payload(headers: dict[str, str], body: bytes) -> dict[str, Any]:
+    content_type = headers.get("content-type", "").lower()
+    if "application/x-www-form-urlencoded" in content_type:
+        try:
+            parsed = parse_qs(body.decode("utf-8"), keep_blank_values=True)
+        except UnicodeDecodeError:
+            return {}
+        normalized: dict[str, Any] = {}
+        for key, values in parsed.items():
+            normalized[str(key)] = values[0] if len(values) == 1 else values
+        return normalized
+    return _load_json(body)
     try:
         return json.loads(body.decode("utf-8"))
     except json.JSONDecodeError:
@@ -176,6 +212,9 @@ def _google_oauth_payload(config: PortalConfig) -> dict[str, Any]:
     return {
         "enabled": config.google_oauth_enabled,
         "provider": "google",
+        "mode": config.google_oauth_mode,
+        "client_id": config.google_client_id if config.google_oauth_enabled else "",
+        "bridge_url": config.google_bridge_url if config.google_oauth_mode == "bridge_id_token" else "",
         "redirect_uri": config.google_redirect_uri,
     }
 
@@ -209,6 +248,15 @@ def _google_authorize_location(config: PortalConfig, state_token: str) -> str:
         }
     )
     return f"{config.google_authorize_url}?{query}"
+
+
+def _google_bridge_location(config: PortalConfig, state_token: str) -> str:
+    return _append_query(
+        config.google_bridge_url,
+        state=state_token,
+        return_to=config.google_bridge_complete_uri,
+        client_id=config.google_client_id,
+    )
 
 
 def _exchange_google_code(config: PortalConfig, code: str) -> dict[str, Any]:
@@ -260,6 +308,44 @@ def _fetch_google_profile(config: PortalConfig, access_token: str) -> dict[str, 
     return payload
 
 
+def _verify_google_id_token(config: PortalConfig, credential: str) -> dict[str, Any]:
+    token = credential.strip()
+    if not token:
+        raise ValueError("missing_google_credential")
+    req = request.Request(
+        f"{config.google_tokeninfo_url}?{urlencode({'id_token': token})}",
+        method="GET",
+        headers={"Accept": "application/json"},
+    )
+    try:
+        with request.urlopen(req, timeout=20) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except error.HTTPError as exc:
+        details = exc.read().decode("utf-8", errors="replace")
+        raise ValueError(f"Google token verification failed: {details or exc.reason}") from exc
+    except error.URLError as exc:
+        raise ValueError(f"Google token verification failed: {exc.reason}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("google_token_payload_invalid")
+    issuer = str(payload.get("iss", "")).strip()
+    if issuer not in {"https://accounts.google.com", "accounts.google.com"}:
+        raise ValueError("google_token_issuer_invalid")
+    audience = str(payload.get("aud", "")).strip()
+    authorized_party = str(payload.get("azp", "")).strip()
+    if audience != config.google_client_id and authorized_party != config.google_client_id:
+        raise ValueError("google_token_audience_mismatch")
+    expires_at = int(str(payload.get("exp", "0") or "0"))
+    if expires_at and expires_at <= int(time.time()):
+        raise ValueError("google_token_expired")
+    email = str(payload.get("email", "")).strip().lower()
+    if not email:
+        raise ValueError("google_account_missing_email")
+    payload["email"] = email
+    email_verified = str(payload.get("email_verified", "")).strip().lower()
+    payload["email_verified"] = email_verified in {"true", "1", "yes"}
+    return payload
+
+
 def handle_request(
     config: PortalConfig,
     store: PortalStateStore,
@@ -272,7 +358,7 @@ def handle_request(
 ) -> PortalResponse:
     headers = {str(key).lower(): str(value) for key, value in (headers or {}).items()}
     route = _normalize_route(path)
-    payload = _load_json(body)
+    payload = _load_payload(headers, body)
     query = parse_qs(query_string, keep_blank_values=True)
 
     try:
@@ -309,7 +395,7 @@ def handle_request(
             )
 
         if method == "GET" and route == "/auth/google/start":
-            if not config.google_oauth_enabled:
+            if config.google_oauth_mode not in {"oauth_code", "bridge_id_token"}:
                 return json_response({"error": "Google OAuth is not configured."}, status=HTTPStatus.SERVICE_UNAVAILABLE)
             state_record = store.create_auth_token(
                 user_id="google-oauth",
@@ -317,10 +403,12 @@ def handle_request(
                 ttl_hours=1,
                 metadata={"redirect_path": "/"},
             )
+            if config.google_oauth_mode == "bridge_id_token":
+                return _redirect_response(_google_bridge_location(config, state_record["raw_token"]))
             return _redirect_response(_google_authorize_location(config, state_record["raw_token"]))
 
         if method == "GET" and route == "/auth/google/callback":
-            if not config.google_oauth_enabled:
+            if config.google_oauth_mode != "oauth_code":
                 return _redirect_response(_append_query(f"{config.app_base_url.rstrip('/')}/", oauth_error="google_not_configured"))
             oauth_error = str(query.get("error", [""])[0]).strip()
             if oauth_error:
@@ -338,6 +426,59 @@ def handle_request(
                 if not access_token:
                     raise ValueError("missing_access_token")
                 profile = _fetch_google_profile(config, access_token)
+                user = store.upsert_google_user(
+                    email=str(profile.get("email", "")).strip(),
+                    display_name=str(profile.get("name", "")).strip(),
+                    manager_email=config.manager_email,
+                    email_verified=bool(profile.get("email_verified", True)),
+                )
+            except ValueError as exc:
+                return _redirect_response(
+                    _append_query(f"{config.app_base_url.rstrip('/')}/", oauth_error=str(exc).replace(" ", "_"))
+                )
+            session = store.create_session(user_id=user.user_id, ttl_days=config.auth_session_days)
+            redirect_path = str(state.get("metadata", {}).get("redirect_path", "/")).strip() or "/"
+            location = _append_query(f"{config.app_base_url.rstrip('/')}{redirect_path}", oauth="google_success")
+            return _redirect_response(
+                location,
+                headers={"Set-Cookie": _cookie_header(session["token"], path=config.cookie_path)},
+            )
+
+        if method == "POST" and route == "/auth/google/id-token":
+            if config.google_oauth_mode != "id_token":
+                return json_response({"error": "Google ID token sign-in is not configured."}, status=HTTPStatus.SERVICE_UNAVAILABLE)
+            credential = str(payload.get("credential", "")).strip()
+            try:
+                profile = _verify_google_id_token(config, credential)
+                user = store.upsert_google_user(
+                    email=str(profile.get("email", "")).strip(),
+                    display_name=str(profile.get("name", "")).strip(),
+                    manager_email=config.manager_email,
+                    email_verified=bool(profile.get("email_verified", True)),
+                )
+            except ValueError as exc:
+                return json_response({"error": str(exc)}, status=HTTPStatus.UNAUTHORIZED)
+            session = store.create_session(user_id=user.user_id, ttl_days=config.auth_session_days)
+            return json_response(
+                {
+                    "authenticated": True,
+                    "user": user.to_dict(),
+                    "google_oauth": _google_oauth_payload(config),
+                    "message": "Google sign-in completed.",
+                },
+                headers={"Set-Cookie": _cookie_header(session["token"], path=config.cookie_path)},
+            )
+
+        if method == "POST" and route == "/auth/google/bridge-complete":
+            if config.google_oauth_mode != "bridge_id_token":
+                return _redirect_response(_append_query(f"{config.app_base_url.rstrip('/')}/", oauth_error="google_bridge_not_configured"))
+            credential = str(payload.get("credential", "")).strip()
+            state_token = str(payload.get("state", "")).strip()
+            state = store.consume_auth_token(token=state_token, kind="google_oauth_state")
+            if not state:
+                return _redirect_response(_append_query(f"{config.app_base_url.rstrip('/')}/", oauth_error="invalid_state"))
+            try:
+                profile = _verify_google_id_token(config, credential)
                 user = store.upsert_google_user(
                     email=str(profile.get("email", "")).strip(),
                     display_name=str(profile.get("name", "")).strip(),
