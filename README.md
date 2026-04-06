@@ -110,6 +110,13 @@ Current foundation includes:
 - safety, validation, and recovery layers
 - grounded workspace analysis and file reading skills
 
+## Windows Releases
+
+- The repository now includes a Windows release workflow in `.github/workflows/release_forge_windows.yml`.
+- It builds `FORGE-Desktop.exe` and `FORGE-Setup-<version>.exe` on GitHub Actions.
+- If `WINDOWS_PFX_BASE64` and `WINDOWS_PFX_PASSWORD` are configured in GitHub Secrets, the workflow signs both artifacts before publishing the GitHub Release.
+- Until code signing is configured, Windows SmartScreen and local execution reputation checks can still block downloaded installers.
+
 ## Roadmap
 
 1. Add guarded file editing and patch execution

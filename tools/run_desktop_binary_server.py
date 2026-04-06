@@ -10,15 +10,15 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXE = ROOT / "dist" / "FORGE-Desktop.exe"
 
 
 def main() -> int:
-    if not EXE.exists():
-        raise FileNotFoundError(f"Desktop binary is missing: {EXE}")
+    exe_path = Path(os.environ.get("FORGE_DESKTOP_BINARY_PATH", str(ROOT / "dist" / "FORGE-Desktop.exe"))).resolve()
+    if not exe_path.exists():
+        raise FileNotFoundError(f"Desktop binary is missing: {exe_path}")
 
     command = [
-        str(EXE),
+        str(exe_path),
         "--host",
         os.environ.get("FORGE_DESKTOP_TEST_HOST", "127.0.0.1"),
         "--port",
