@@ -11,6 +11,20 @@ DIST = ROOT / "dist"
 BUILD = ROOT / "build"
 ICON = ROOT / "assets" / "forge-desktop-icon.ico"
 ENTRYPOINT = ROOT / "forge_desktop.py"
+HIDDEN_IMPORTS = [
+    "forge.providers.registry",
+    "forge.providers.groq",
+    "forge.providers.gemini",
+    "forge.providers.ollama",
+    "forge.providers.deepseek",
+    "forge.providers.openrouter",
+    "forge.providers.mistral",
+    "forge.providers.together",
+    "forge.providers.nvidia",
+    "forge.providers.cloudflare",
+    "forge.providers.anthropic",
+    "forge.providers.openai",
+]
 
 
 def run(cmd: list[str]) -> None:
@@ -39,20 +53,12 @@ def main() -> None:
         "FORGE-Desktop",
         "--icon",
         str(ICON),
-        "--hidden-import",
-        "forge.providers.groq",
-        "--hidden-import",
-        "forge.providers.gemini",
-        "--hidden-import",
-        "forge.providers.ollama",
-        "--hidden-import",
-        "forge.providers.deepseek",
-        "--hidden-import",
-        "forge.providers.openrouter",
         "--add-data",
         f"{ROOT / 'forge' / 'skills_catalog'};forge/skills_catalog",
         str(ENTRYPOINT),
     ]
+    for module_name in HIDDEN_IMPORTS:
+        cmd.extend(["--hidden-import", module_name])
     run(cmd)
 
     exe = DIST / "FORGE-Desktop.exe"

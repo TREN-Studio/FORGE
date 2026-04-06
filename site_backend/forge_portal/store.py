@@ -576,6 +576,80 @@ class PortalStateStore:
             )
         return self.get_user(row["user_id"])
 
+    def create_device_login(
+        self,
+        *,
+        app_base_url: str,
+        display_name: str = "",
+        mode: str = "browser",
+        ttl_hours: int = 1,
+    ) -> dict[str, Any]:
+        normalized_mode = mode.strip().lower() or "browser"
+        if normalized_mode not in {"browser", "google"}:
+            normalized_mode = "browser"
+        issued = self.create_auth_token(
+            user_id="desktop-device",
+            kind="desktop_device_login",
+            ttl_hours=ttl_hours,
+            metadata={
+                "status": "pending",
+                "mode": normalized_mode,
+                "display_name": display_name.strip(),
+                "app_base_url": app_base_url.rstrip("/"),
+            },
+        )
+        return {
+            "device_code": issued["raw_token"],
+            "verification_url": (
+                f"{app_base_url.rstrip('/')}/?device_code={issued['raw_token']}"
+                f"&from=desktop&mode={normalized_mode}"
+            ),
+            "expires_at": issued["expires_at"],
+            "interval_seconds": 2,
+        }
+
+    def complete_device_login(self, *, token: str, user_id: str) -> dict[str, Any]:
+        row = self._get_auth_token(token=token, kind="desktop_device_login")
+        if row is None:
+            raise ValueError("Desktop sign-in token is invalid or expired.")
+        metadata = self._parse_token_metadata(row["metadata_json"])
+        metadata["status"] = "approved"
+        metadata["approved_user_id"] = user_id
+        metadata["approved_at"] = _utcnow()
+        with self._lock, self._conn:
+            self._conn.execute(
+                "UPDATE auth_tokens SET user_id = ?, metadata_json = ?, updated_at = ? WHERE token_id = ?",
+                (user_id, _json_dumps(metadata), _utcnow(), row["token_id"]),
+            )
+        return {
+            "status": "approved",
+            "approved_user_id": user_id,
+            "expires_at": float(row["expires_at"] or 0.0),
+        }
+
+    def get_device_login_status(self, *, token: str, ttl_days: int = 30) -> dict[str, Any]:
+        row = self._get_auth_token(token=token, kind="desktop_device_login")
+        if row is None:
+            return {"status": "expired"}
+        metadata = self._parse_token_metadata(row["metadata_json"])
+        status = str(metadata.get("status", "pending")).strip() or "pending"
+        if status != "approved":
+            return {
+                "status": status,
+                "expires_at": float(row["expires_at"] or 0.0),
+            }
+        session = self.create_session(user_id=row["user_id"], ttl_days=ttl_days)
+        with self._lock, self._conn:
+            self._conn.execute(
+                "UPDATE auth_tokens SET consumed_at = ?, updated_at = ? WHERE token_id = ?",
+                (_utcnow(), _utcnow(), row["token_id"]),
+            )
+        return {
+            "status": "approved",
+            "session_token": session["token"],
+            "user": self.get_user(row["user_id"]).to_dict(),
+        }
+
     def enqueue_outbox_message(
         self,
         *,
@@ -829,6 +903,30 @@ class PortalStateStore:
                 (_utcnow(), _utcnow(), row["token_id"]),
             )
         return row
+
+    def _get_auth_token(self, *, token: str, kind: str) -> sqlite3.Row | None:
+        with self._lock:
+            row = self._conn.execute(
+                """
+                SELECT *
+                FROM auth_tokens
+                WHERE token_hash = ? AND kind = ? AND consumed_at IS NULL
+                """,
+                (_hash_token(token.strip()), kind),
+            ).fetchone()
+        if row is None or float(row["expires_at"] or 0.0) < time.time():
+            return None
+        return row
+
+    @staticmethod
+    def _parse_token_metadata(raw: str | None) -> dict[str, Any]:
+        if not raw:
+            return {}
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            return {}
+        return payload if isinstance(payload, dict) else {}
 
     def _load_or_create_key(self) -> bytes:
         if self._key_path.exists():

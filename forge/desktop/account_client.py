@@ -53,6 +53,12 @@ class PortalAccountClient:
     def reset_password(self, token: str, password: str) -> PortalApiReply:
         return self._request("POST", "/auth/reset-password", payload={"token": token, "password": password})
 
+    def start_device_login(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        return self._request("POST", "/auth/device/start", payload=payload or {}).payload
+
+    def device_login_status(self, device_code: str) -> PortalApiReply:
+        return self._request("GET", f"/auth/device/status?device_code={device_code}")
+
     def list_user_keys(self, session_token: str) -> dict[str, Any]:
         return self._request("GET", "/user/keys", session_token=session_token).payload
 

@@ -1,10 +1,10 @@
 #define MyAppId "{{3E4D7F95-3BC3-4A59-92B0-0C493B4C07E2}"
 #define MyAppName "FORGE"
-#define MyAppVersion "1.1.2"
+#define MyAppVersion "1.1.3"
 #define MyAppPublisher "TREN Studio"
 #define MyAppURL "https://www.trenstudio.com/FORGE/"
 #define MyAppExeName "FORGE-Desktop.exe"
-#define MyAppFolder "..\\dist\\FORGE-Desktop-App"
+#define MyAppExePath AddBackslash(SourcePath) + "..\\dist\\FORGE-Desktop.exe"
 #define MyIconFile "..\\assets\\forge-desktop-icon.ico"
 #define MyLicenseFile "..\\LICENSE"
 #define MyWizardImage "assets\\forge-wizard.bmp"
@@ -53,8 +53,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
 
 [Files]
-Source: "{#MyAppFolder}\FORGE-Desktop-App.exe"; DestDir: "{app}"; DestName: "{#MyAppExeName}"; Flags: ignoreversion
-Source: "{#MyAppFolder}\*"; DestDir: "{app}"; Excludes: "FORGE-Desktop-App.exe"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#MyAppExePath}"; DestDir: "{app}"; DestName: "{#MyAppExeName}"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\FORGE"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"

@@ -394,14 +394,33 @@ def handle_request(
                 }
             )
 
+        if method == "GET" and route == "/auth/device/status":
+            device_code = str(query.get("device_code", [""])[0]).strip()
+            if not device_code:
+                return json_response({"error": "device_code is required."}, status=HTTPStatus.BAD_REQUEST)
+            status_payload = store.get_device_login_status(token=device_code, ttl_days=config.auth_session_days)
+            headers_out = None
+            if status_payload.get("status") == "approved" and status_payload.get("session_token"):
+                headers_out = {"Set-Cookie": _cookie_header(str(status_payload["session_token"]), path=config.cookie_path)}
+                status_payload = {
+                    "authenticated": True,
+                    "user": status_payload.get("user"),
+                    "google_oauth": _google_oauth_payload(config),
+                    "status": "approved",
+                }
+            return json_response(status_payload, headers=headers_out)
+
         if method == "GET" and route == "/auth/google/start":
             if config.google_oauth_mode not in {"oauth_code", "bridge_id_token"}:
                 return json_response({"error": "Google OAuth is not configured."}, status=HTTPStatus.SERVICE_UNAVAILABLE)
+            redirect_path = str(query.get("redirect_path", ["/"])[0]).strip() or "/"
+            if not redirect_path.startswith("/"):
+                redirect_path = "/"
             state_record = store.create_auth_token(
                 user_id="google-oauth",
                 kind="google_oauth_state",
                 ttl_hours=1,
-                metadata={"redirect_path": "/"},
+                metadata={"redirect_path": redirect_path},
             )
             if config.google_oauth_mode == "bridge_id_token":
                 return _redirect_response(_google_bridge_location(config, state_record["raw_token"]))
@@ -467,6 +486,32 @@ def handle_request(
                     "message": "Google sign-in completed.",
                 },
                 headers={"Set-Cookie": _cookie_header(session["token"], path=config.cookie_path)},
+            )
+
+        if method == "POST" and route == "/auth/device/start":
+            payload_display_name = str(payload.get("display_name", "")).strip()
+            payload_mode = str(payload.get("mode", "browser")).strip().lower() or "browser"
+            issued = store.create_device_login(
+                app_base_url=config.app_base_url,
+                display_name=payload_display_name,
+                mode=payload_mode,
+            )
+            return json_response(issued)
+
+        if method == "POST" and route == "/auth/device/complete":
+            user = _require_user(store, headers)
+            device_code = str(payload.get("device_code", "")).strip()
+            if not device_code:
+                return json_response({"error": "device_code is required."}, status=HTTPStatus.BAD_REQUEST)
+            try:
+                completed = store.complete_device_login(token=device_code, user_id=str(user["user_id"]))
+            except ValueError as exc:
+                return json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return json_response(
+                {
+                    "status": completed.get("status", "approved"),
+                    "message": "Desktop sign-in completed. You can return to FORGE Desktop.",
+                }
             )
 
         if method == "POST" and route == "/auth/google/bridge-complete":

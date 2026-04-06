@@ -40,6 +40,9 @@ jobs:
       - name: Run Portal UI smoke tests
         run: npm run test:portal
 
+      - name: Run Desktop onboarding smoke tests
+        run: npm run test:desktop-auth
+
   deploy-site:
     needs: portal-ui
     runs-on: ubuntu-latest

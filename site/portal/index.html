@@ -620,6 +620,10 @@
     let providerCatalog = [];
     let googleOauth = { enabled: false, provider: "google", mode: "disabled", client_id: "" };
     let googleButtonRendered = false;
+    const pageParams = new URLSearchParams(window.location.search);
+    const pendingDeviceCode = pageParams.get("device_code") || "";
+    const desktopEntryMode = pageParams.get("mode") || "";
+    let desktopGoogleRedirectStarted = false;
 
     function setStatus(node, message, tone = "") {
       node.textContent = message;
@@ -692,6 +696,33 @@
         lines.push(`debug_token=${payload.debug_token}`);
       }
       return lines.join("\n");
+    }
+
+    function currentPortalRelativePath() {
+      const path = window.location.pathname.replace(/\/+$/, "") || "/";
+      const search = window.location.search || "";
+      const hash = window.location.hash || "";
+      const portalIndex = path.indexOf("/portal");
+      const relativePath = portalIndex >= 0 ? path.slice(portalIndex + "/portal".length) || "/" : "/";
+      return `${relativePath}${search}${hash}`;
+    }
+
+    function beginGoogleOAuthRedirect() {
+      const redirectPath = encodeURIComponent(currentPortalRelativePath());
+      window.location.href = `./api/index.php/auth/google/start?redirect_path=${redirectPath}`;
+    }
+
+    async function completeDesktopLink() {
+      if (!pendingDeviceCode || !currentUser) return;
+      const response = await api("/auth/device/complete", {
+        method: "POST",
+        body: JSON.stringify({ device_code: pendingDeviceCode })
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || "Desktop sign-in completion failed.");
+      }
+      setStatus(accountStatus, payload.message || "Desktop sign-in completed.", "ok");
     }
 
     function resetGoogleSurface() {
@@ -775,6 +806,24 @@
       tryRender();
     }
 
+    function maybeStartDesktopGoogleFlow() {
+      if (desktopGoogleRedirectStarted || currentUser) {
+        return;
+      }
+      if (pageParams.get("from") !== "desktop" || desktopEntryMode !== "google") {
+        return;
+      }
+      if (pageParams.get("oauth") === "google_success" || pageParams.get("oauth_error")) {
+        return;
+      }
+      if (!(googleOauth.mode === "oauth_code" || googleOauth.mode === "bridge_id_token")) {
+        return;
+      }
+      desktopGoogleRedirectStarted = true;
+      setStatus(accountStatus, "Redirecting to Google sign-in to finish Desktop setup...", "ok");
+      beginGoogleOAuthRedirect();
+    }
+
     function applyAuthState(payload) {
       googleOauth = payload && payload.google_oauth ? payload.google_oauth : googleOauth;
       currentUser = payload && payload.authenticated ? payload.user : null;
@@ -836,6 +885,9 @@
         message = formatAuthMessage("Account created. Verification queued.", payload.verification);
       }
       setStatus(accountStatus, message, "ok");
+      if (pendingDeviceCode && currentUser) {
+        await completeDesktopLink();
+      }
       return payload;
     }
 
@@ -977,7 +1029,7 @@
     });
 
     googleLoginButton.addEventListener("click", () => {
-      window.location.href = "./api/index.php/auth/google/start";
+      beginGoogleOAuthRedirect();
     });
 
     document.getElementById("logout-button").addEventListener("click", async () => {
@@ -1105,9 +1157,13 @@
         if (health && health.google_oauth) {
           googleOauth = health.google_oauth;
           syncGoogleSurface();
+          maybeStartDesktopGoogleFlow();
         }
         if (currentUser) {
           await Promise.all([loadProviderKeys(), loadAdmin()]);
+          if (pendingDeviceCode) {
+            await completeDesktopLink();
+          }
         } else {
           providerCatalog = [
             { name: "cloudflare" },
@@ -1127,8 +1183,16 @@
         const params = new URLSearchParams(window.location.search);
         if (params.get("oauth") === "google_success") {
           setStatus(accountStatus, "Google sign-in completed.", "ok");
+          if (pendingDeviceCode && currentUser) {
+            await completeDesktopLink();
+          }
         } else if (params.get("from") === "download") {
           setStatus(accountStatus, "Desktop downloaded. Create your account or sign in to finish setup.", "ok");
+          if (pendingDeviceCode) {
+            setStatus(accountStatus, "Desktop is waiting for sign-in completion. Authenticate here to unlock the installed app.", "ok");
+          }
+        } else if (params.get("from") === "desktop") {
+          setStatus(accountStatus, "Desktop setup is waiting. Sign in here to unlock the installed app.", "ok");
         } else if (params.get("oauth_error")) {
           setStatus(accountStatus, "Google sign-in failed: " + params.get("oauth_error"), "error");
         } else if (params.get("verify_token")) {

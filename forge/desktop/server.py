@@ -7,6 +7,7 @@ from http.cookies import SimpleCookie
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 from forge.brain.orchestrator import MissionOrchestrator
 from forge import __version__
@@ -646,6 +647,7 @@ DESKTOP_HTML = """<!doctype html>
         <h2>Account</h2>
         <div id="account-summary" class="footnote">Login required. Every user must bring their own provider keys.</div>
         <div id="auth-logged-out" class="auth-grid">
+          <div class="footnote">First run: complete sign-in once, then FORGE Desktop will import your account and user-owned provider keys automatically.</div>
           <label class="field-label" for="auth-name">Display Name</label>
           <input id="auth-name" class="text-field" type="text" placeholder="Your name">
           <label class="field-label" for="auth-email">Email</label>
@@ -655,6 +657,10 @@ DESKTOP_HTML = """<!doctype html>
           <div class="button-grid">
             <button id="login-button" type="button" class="button-ghost">Login</button>
             <button id="register-button" type="button" class="button-ghost">Register</button>
+          </div>
+          <div class="button-grid">
+            <button id="google-login-button" type="button" class="button-ghost">Continue with Google</button>
+            <button id="browser-setup-button" type="button" class="button-ghost">Complete Setup in Browser</button>
           </div>
         </div>
         <div id="auth-logged-in" class="hidden">
@@ -921,6 +927,8 @@ DESKTOP_HTML = """<!doctype html>
     const authPassword = document.getElementById("auth-password");
     const loginButton = document.getElementById("login-button");
     const registerButton = document.getElementById("register-button");
+    const googleLoginButton = document.getElementById("google-login-button");
+    const browserSetupButton = document.getElementById("browser-setup-button");
     const logoutButton = document.getElementById("logout-button");
     const refreshAccountButton = document.getElementById("refresh-account-button");
     const sendVerificationButton = document.getElementById("send-verification-button");
@@ -947,6 +955,8 @@ DESKTOP_HTML = """<!doctype html>
     const adminSummary = document.getElementById("admin-summary");
     const adminUsers = document.getElementById("admin-users");
     let currentUser = null;
+    let pendingDeviceLogin = null;
+    let pendingDevicePoll = null;
 
     function appendNote(line) {
       notes.textContent += "\\n" + line;
@@ -969,6 +979,74 @@ DESKTOP_HTML = """<!doctype html>
       if (payload && payload.email) lines.push("email=" + payload.email);
       if (payload && payload.debug_token) lines.push("debug_token=" + payload.debug_token);
       return lines.join("\\n");
+    }
+
+    function stopDevicePolling() {
+      if (pendingDevicePoll) {
+        window.clearTimeout(pendingDevicePoll);
+        pendingDevicePoll = null;
+      }
+      pendingDeviceLogin = null;
+    }
+
+    async function pollDeviceLogin() {
+      if (!pendingDeviceLogin || !pendingDeviceLogin.device_code) {
+        return;
+      }
+      try {
+        const response = await fetch(`/api/auth/device/status?device_code=${encodeURIComponent(pendingDeviceLogin.device_code)}`);
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || "Desktop sign-in status failed.");
+        }
+        if (data.status === "approved" && data.authenticated && data.user) {
+          stopDevicePolling();
+          applyAuthState(data);
+          setAuthStatus("Browser sign-in completed. Desktop session is active.");
+          await Promise.all([loadProviderKeys(), loadAdmin(), loadBootStatus(), loadWorkspace(), loadWorkerTelemetry()]);
+          addBubble("assistant", "Desktop onboarding completed. FORGE imported your authenticated account and is ready to run missions.");
+          return;
+        }
+        if (data.status === "expired" || data.status === "rejected") {
+          stopDevicePolling();
+          setAuthStatus("Desktop sign-in expired. Start secure setup again.");
+          return;
+        }
+        setAuthStatus("Waiting for browser sign-in to finish...");
+        pendingDevicePoll = window.setTimeout(pollDeviceLogin, (pendingDeviceLogin.interval_seconds || 2) * 1000);
+      } catch (error) {
+        stopDevicePolling();
+        setAuthStatus(error.message || "Desktop sign-in failed.");
+      }
+    }
+
+    async function startDeviceLogin(mode) {
+      stopDevicePolling();
+      const setupWindow = window.open("about:blank", "_blank", "noopener");
+      try {
+        const response = await fetch("/api/auth/device/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ display_name: authName.value.trim(), mode })
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || "Desktop sign-in could not start.");
+        }
+        pendingDeviceLogin = data;
+        if (setupWindow) {
+          setupWindow.location.href = data.verification_url;
+        } else {
+          window.open(data.verification_url, "_blank", "noopener");
+        }
+        setAuthStatus("Secure browser setup opened. Finish sign-in there and FORGE Desktop will unlock automatically.");
+        pendingDevicePoll = window.setTimeout(pollDeviceLogin, (data.interval_seconds || 2) * 1000);
+      } catch (error) {
+        if (setupWindow) {
+          setupWindow.close();
+        }
+        setAuthStatus(error.message || "Desktop sign-in could not start.");
+      }
     }
 
     function requireAuthenticated() {
@@ -1033,6 +1111,7 @@ DESKTOP_HTML = """<!doctype html>
       adminPanel.classList.toggle("hidden", !(authenticated && data.user.is_admin));
       sendButton.disabled = !authenticated;
       if (authenticated) {
+        stopDevicePolling();
         accountEmail.textContent = data.user.email;
         accountRole.textContent = data.user.is_admin ? "Manager" : "User";
         accountManagerGate.textContent = data.user.is_admin ? "Open" : "Closed";
@@ -1049,7 +1128,7 @@ DESKTOP_HTML = """<!doctype html>
         renderProviderSecrets([]);
         setListPlaceholder(workerServices, "Login to view worker telemetry.");
         workspaceName.textContent = "Login required";
-        workspaceSummary.textContent = "Sign in to select a workspace and run FORGE.";
+        workspaceSummary.textContent = "Sign in to select a workspace and run FORGE. First-run setup can complete in your browser and return here automatically.";
       }
     }
 
@@ -1515,6 +1594,12 @@ DESKTOP_HTML = """<!doctype html>
         addBubble("error", error.message);
       }
     });
+    googleLoginButton.addEventListener("click", async () => {
+      await startDeviceLogin("google");
+    });
+    browserSetupButton.addEventListener("click", async () => {
+      await startDeviceLogin("browser");
+    });
     logoutButton.addEventListener("click", async () => {
       await fetch("/api/auth/logout", { method: "POST" });
       applyAuthState({ authenticated: false });
@@ -1658,10 +1743,14 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         self.server.touch()
-        if self.path in {"/", "/index.html"}:
+        parsed = urlparse(self.path)
+        route = parsed.path
+        query = parse_qs(parsed.query, keep_blank_values=True)
+
+        if route in {"/", "/index.html"}:
             self._send_html(DESKTOP_HTML)
             return
-        if self.path == "/api/auth/me":
+        if route == "/api/auth/me":
             token = self._session_token()
             if not token:
                 self._send_json(
@@ -1678,7 +1767,22 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
                 return
             self._send_json(payload)
             return
-        if self.path == "/api/boot":
+        if route == "/api/auth/device/status":
+            device_code = str(query.get("device_code", [""])[0]).strip()
+            if not device_code:
+                self._send_json({"error": "device_code is required."}, status=HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                reply = self.server.portal.device_login_status(device_code)
+            except PortalApiError as exc:
+                self._send_json(exc.payload, status=HTTPStatus(exc.status))
+                return
+            headers = {}
+            if reply.session_token:
+                headers["Set-Cookie"] = self._session_cookie(reply.session_token)
+            self._send_json(reply.payload, headers=headers or None)
+            return
+        if route == "/api/boot":
             user = self._require_user()
             if user is None:
                 return
@@ -1698,7 +1802,7 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
             }
             self._send_json(payload)
             return
-        if self.path == "/api/workspace":
+        if route == "/api/workspace":
             if self._require_user() is None:
                 return
             try:
@@ -1707,12 +1811,12 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
                 log_exception("Workspace status endpoint failed", exc)
                 self._send_json({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
             return
-        if self.path == "/api/workers":
+        if route == "/api/workers":
             if self._require_user() is None:
                 return
             self._send_json({"workers": MissionOrchestrator.worker_snapshot()})
             return
-        if self.path == "/api/user/keys":
+        if route == "/api/user/keys":
             if self._require_user() is None:
                 return
             try:
@@ -1724,7 +1828,7 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
                 payload["providers"] = supported_provider_names()
             self._send_json(payload)
             return
-        if self.path == "/api/admin/overview":
+        if route == "/api/admin/overview":
             if self._require_admin() is None:
                 return
             try:
@@ -1736,7 +1840,7 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
             payload["local_approvals"] = MissionOrchestrator.approvals_snapshot()
             self._send_json(payload)
             return
-        if self.path == "/api/admin/users":
+        if route == "/api/admin/users":
             if self._require_admin() is None:
                 return
             try:
@@ -1746,7 +1850,7 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
                 return
             self._send_json(payload)
             return
-        if self.path == "/api/admin/approvals":
+        if route == "/api/admin/approvals":
             if self._require_admin() is None:
                 return
             try:
@@ -1756,7 +1860,7 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
                 return
             self._send_json(payload)
             return
-        if self.path == "/api/admin/missions":
+        if route == "/api/admin/missions":
             if self._require_admin() is None:
                 return
             try:
@@ -1766,7 +1870,7 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
                 return
             self._send_json(payload)
             return
-        if self.path == "/api/admin/key-health":
+        if route == "/api/admin/key-health":
             if self._require_admin() is None:
                 return
             try:
@@ -1780,7 +1884,10 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         self.server.touch()
-        if self.path == "/api/auth/register":
+        parsed = urlparse(self.path)
+        route = parsed.path
+
+        if route == "/api/auth/register":
             payload = self._read_json()
             try:
                 reply = self.server.portal.register(
@@ -1798,7 +1905,7 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
                 headers["Set-Cookie"] = self._session_cookie(reply.session_token)
             self._send_json(reply.payload, headers=headers or None)
             return
-        if self.path == "/api/auth/login":
+        if route == "/api/auth/login":
             payload = self._read_json()
             try:
                 reply = self.server.portal.login(
@@ -1815,7 +1922,7 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
                 headers["Set-Cookie"] = self._session_cookie(reply.session_token)
             self._send_json(reply.payload, headers=headers or None)
             return
-        if self.path == "/api/auth/logout":
+        if route == "/api/auth/logout":
             token = self._session_token()
             if token:
                 try:
@@ -1827,7 +1934,7 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
                 headers={"Set-Cookie": self._session_cookie("", expire=True)},
             )
             return
-        if self.path == "/api/auth/request-verification":
+        if route == "/api/auth/request-verification":
             if self._require_user() is None:
                 return
             try:
@@ -1837,7 +1944,7 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
                 return
             self._send_json(payload)
             return
-        if self.path == "/api/auth/verify-email":
+        if route == "/api/auth/verify-email":
             payload = self._read_json()
             try:
                 response = self.server.portal.verify_email(
@@ -1849,7 +1956,7 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
                 return
             self._send_json(response)
             return
-        if self.path == "/api/auth/request-password-reset":
+        if route == "/api/auth/request-password-reset":
             payload = self._read_json()
             try:
                 response = self.server.portal.request_password_reset(str(payload.get("email", "")).strip())
@@ -1858,7 +1965,7 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
                 return
             self._send_json(response)
             return
-        if self.path == "/api/auth/reset-password":
+        if route == "/api/auth/reset-password":
             payload = self._read_json()
             try:
                 reply = self.server.portal.reset_password(
@@ -1873,10 +1980,27 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
                 headers["Set-Cookie"] = self._session_cookie(reply.session_token)
             self._send_json(reply.payload, headers=headers or None)
             return
-        if self.path == "/api/ping":
+        if route == "/api/auth/device/start":
+            payload = self._read_json()
+            mode = str(payload.get("mode", "browser")).strip().lower() or "browser"
+            if mode not in {"browser", "google"}:
+                mode = "browser"
+            try:
+                response = self.server.portal.start_device_login(
+                    {
+                        "display_name": str(payload.get("display_name", "")).strip(),
+                        "mode": mode,
+                    }
+                )
+            except PortalApiError as exc:
+                self._send_json(exc.payload, status=HTTPStatus(exc.status))
+                return
+            self._send_json(response)
+            return
+        if route == "/api/ping":
             self._send_json({"ok": True})
             return
-        if self.path == "/api/user/keys":
+        if route == "/api/user/keys":
             if self._require_user() is None:
                 return
             payload = self._read_json()
@@ -1889,7 +2013,7 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
                 response["providers"] = supported_provider_names()
             self._send_json(response)
             return
-        if self.path == "/api/workspace":
+        if route == "/api/workspace":
             if self._require_user() is None:
                 return
             payload = self._read_json()
@@ -1908,7 +2032,7 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
 
             self._send_json(result)
             return
-        if self.path == "/api/workspace/dialog":
+        if route == "/api/workspace/dialog":
             if self._require_user() is None:
                 return
             try:
@@ -1919,7 +2043,7 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
 
             self._send_json(result)
             return
-        if self.path == "/api/chat":
+        if route == "/api/chat":
             user = self._require_user()
             if user is None:
                 return
@@ -1943,7 +2067,7 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
             self._sync_remote_mission(user, result)
             self._send_json({"answer": result.get("answer"), "mode": "operator_only"})
             return
-        if self.path == "/api/operate":
+        if route == "/api/operate":
             user = self._require_user()
             if user is None:
                 return
