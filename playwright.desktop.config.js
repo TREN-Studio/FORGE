@@ -19,7 +19,7 @@ module.exports = defineConfig({
       timeout: 120000,
     },
     {
-      command: 'powershell -NoProfile -Command "$env:FORGE_PORTAL_API_BASE_URL=\'http://127.0.0.1:43017/api/index.php\'; python forge_desktop.py --host 127.0.0.1 --port 43018 --no-browser"',
+      command: 'python tools/run_desktop_source_server.py',
       url: 'http://127.0.0.1:43018',
       reuseExistingServer: true,
       timeout: 120000,
