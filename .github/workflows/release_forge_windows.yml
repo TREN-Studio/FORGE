@@ -61,6 +61,8 @@ jobs:
     env:
       RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
       RELEASE_PRERELEASE: ${{ github.event.inputs.prerelease || 'false' }}
+      HAS_AZURE_SIGNING: ${{ secrets.AZURE_CLIENT_ID != '' && secrets.AZURE_TENANT_ID != '' && secrets.AZURE_SUBSCRIPTION_ID != '' && secrets.AZURE_TRUSTED_SIGNING_ENDPOINT != '' && secrets.AZURE_TRUSTED_SIGNING_ACCOUNT_NAME != '' && secrets.AZURE_TRUSTED_SIGNING_CERT_PROFILE != '' }}
+      HAS_PFX_SIGNING: ${{ secrets.WINDOWS_PFX_BASE64 != '' && secrets.WINDOWS_PFX_PASSWORD != '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -92,7 +94,7 @@ jobs:
         run: python tools/package_release_assets.py
 
       - name: Azure login for Artifact Signing
-        if: ${{ secrets.AZURE_CLIENT_ID != '' && secrets.AZURE_TENANT_ID != '' && secrets.AZURE_SUBSCRIPTION_ID != '' && secrets.AZURE_TRUSTED_SIGNING_ENDPOINT != '' && secrets.AZURE_TRUSTED_SIGNING_ACCOUNT_NAME != '' && secrets.AZURE_TRUSTED_SIGNING_CERT_PROFILE != '' }}
+        if: ${{ env.HAS_AZURE_SIGNING == 'true' }}
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -100,7 +102,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Sign Windows desktop artifact with Azure Artifact Signing
-        if: ${{ secrets.AZURE_CLIENT_ID != '' && secrets.AZURE_TENANT_ID != '' && secrets.AZURE_SUBSCRIPTION_ID != '' && secrets.AZURE_TRUSTED_SIGNING_ENDPOINT != '' && secrets.AZURE_TRUSTED_SIGNING_ACCOUNT_NAME != '' && secrets.AZURE_TRUSTED_SIGNING_CERT_PROFILE != '' }}
+        if: ${{ env.HAS_AZURE_SIGNING == 'true' }}
         uses: azure/artifact-signing-action@v1
         with:
           azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -115,7 +117,7 @@ jobs:
           timestamp-digest: SHA256
 
       - name: Sign Windows installer artifact with Azure Artifact Signing
-        if: ${{ secrets.AZURE_CLIENT_ID != '' && secrets.AZURE_TENANT_ID != '' && secrets.AZURE_SUBSCRIPTION_ID != '' && secrets.AZURE_TRUSTED_SIGNING_ENDPOINT != '' && secrets.AZURE_TRUSTED_SIGNING_ACCOUNT_NAME != '' && secrets.AZURE_TRUSTED_SIGNING_CERT_PROFILE != '' }}
+        if: ${{ env.HAS_AZURE_SIGNING == 'true' }}
         uses: azure/artifact-signing-action@v1
         with:
           azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -131,7 +133,7 @@ jobs:
           timestamp-digest: SHA256
 
       - name: Sign Windows artifacts
-        if: ${{ (secrets.AZURE_CLIENT_ID == '' || secrets.AZURE_TENANT_ID == '' || secrets.AZURE_SUBSCRIPTION_ID == '' || secrets.AZURE_TRUSTED_SIGNING_ENDPOINT == '' || secrets.AZURE_TRUSTED_SIGNING_ACCOUNT_NAME == '' || secrets.AZURE_TRUSTED_SIGNING_CERT_PROFILE == '') && secrets.WINDOWS_PFX_BASE64 != '' && secrets.WINDOWS_PFX_PASSWORD != '' }}
+        if: ${{ env.HAS_AZURE_SIGNING != 'true' && env.HAS_PFX_SIGNING == 'true' }}
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
