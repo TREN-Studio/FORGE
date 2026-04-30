@@ -6,6 +6,7 @@ from typing import Any
 
 from forge.brain.contracts import CompletionState, ExecutionPlan, StepExecutionResult
 from forge.skills.contracts import SkillDefinition
+from forge.validation.json_validator import JSONValidationError, validate_json_strict
 
 
 @dataclass(slots=True)
@@ -68,6 +69,14 @@ class ResultValidator:
                         status=status,
                         notes=["File edit returned no diff output."],
                     )
+                if str(edited_path).lower().endswith(".json"):
+                    try:
+                        validate_json_strict(candidate.read_text(encoding="utf-8", errors="ignore"))
+                    except JSONValidationError as exc:
+                        return ValidationResult(
+                            status=CompletionState.FAILED,
+                            notes=[f"Edited JSON file is not valid JSON: {exc}"],
+                        )
 
             if output.get("command"):
                 exit_code = output.get("exit_code")

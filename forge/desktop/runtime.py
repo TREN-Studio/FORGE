@@ -419,11 +419,20 @@ def _serialize_operator_result(
     payload["evidence_count"] = sum(len(step.evidence) for step in result.step_results)
     payload["artifacts_count"] = len(result.artifacts)
     conversation_metadata = result.artifacts.get("conversation_metadata", {}) if isinstance(result.artifacts, dict) else {}
+    provider_telemetry = result.provider_telemetry or {}
     if isinstance(conversation_metadata, dict):
         payload["model_used"] = conversation_metadata.get("model_id")
         payload["provider_used"] = conversation_metadata.get("provider")
         payload["latency_ms"] = conversation_metadata.get("latency_ms")
         payload["total_tokens"] = conversation_metadata.get("total_tokens")
+        if not provider_telemetry and isinstance(conversation_metadata.get("routing_telemetry"), dict):
+            provider_telemetry = conversation_metadata["routing_telemetry"]
+    if provider_telemetry:
+        payload["provider_telemetry"] = provider_telemetry
+        payload["provider_used"] = provider_telemetry.get("final_provider_used") or payload.get("provider_used")
+        payload["latency_ms"] = provider_telemetry.get("provider_latency_ms") or payload.get("latency_ms")
+        payload["fallback_count"] = provider_telemetry.get("fallback_count", 0)
+        payload["attempted_providers"] = provider_telemetry.get("attempted_providers", [])
     payload.update(workspace_status)
     payload["workspace_root"] = str(workspace_root)
     payload["artifact_root"] = str(operator.settings.artifact_root)
@@ -449,12 +458,16 @@ def _stream_footer(result: dict[str, Any], *, elapsed_ms: float) -> str:
     provider = str(result.get("provider_used") or "").strip()
     latency_ms = result.get("latency_ms")
     total_tokens = result.get("total_tokens")
+    provider_telemetry = result.get("provider_telemetry") if isinstance(result.get("provider_telemetry"), dict) else {}
+    if provider_telemetry:
+        provider = str(provider_telemetry.get("final_provider_used") or provider).strip()
+        latency_ms = provider_telemetry.get("provider_latency_ms") or latency_ms
 
     if not model and isinstance(result.get("step_results"), list) and result["step_results"]:
         final_skill = result["step_results"][-1].get("skill") or result["step_results"][-1].get("tool")
         model = f"{final_skill or 'mission'}"
 
-    label = model or provider or "FORGE"
+    label = provider or model or "FORGE"
     parts = [label]
     if latency_ms:
         parts.append(f"{max(float(latency_ms), elapsed_ms) / 1000:.1f}s")
@@ -462,6 +475,8 @@ def _stream_footer(result: dict[str, Any], *, elapsed_ms: float) -> str:
         parts.append(f"{elapsed_ms / 1000:.1f}s")
     if total_tokens:
         parts.append(f"{int(total_tokens)} tok")
+    if provider_telemetry and int(provider_telemetry.get("fallback_count") or 0):
+        parts.append(f"fallbacks={int(provider_telemetry.get('fallback_count') or 0)}")
     return " | ".join(parts)
 
 
@@ -502,6 +517,7 @@ def _serialize_conversation_response(
                 "provider": response.provider,
                 "latency_ms": response.latency_ms,
                 "total_tokens": response.total_tokens,
+                "routing_telemetry": response.routing_telemetry,
             }
         },
         "mission_trace": [
@@ -517,6 +533,7 @@ def _serialize_conversation_response(
         "provider_used": response.provider,
         "latency_ms": response.latency_ms,
         "total_tokens": response.total_tokens,
+        "provider_telemetry": response.routing_telemetry,
         "completed_steps": 0,
         "total_steps": 0,
         "evidence_count": 0,

@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 
 from forge.tools.workspace import WorkspaceTools
+from forge.validation.json_validator import ensure_valid_json_text
 
 
 FILE_HINTS = ("/", "\\", ".py", ".ts", ".tsx", ".js", ".jsx", ".json", ".md", ".txt", ".toml", ".yaml", ".yml", ".sql")
@@ -36,6 +37,9 @@ CONTENT_BOUNDARY_PREFIXES = (
 def execute(payload: dict, context) -> dict:
     tools = WorkspaceTools(context.settings)
     spec = _resolve_edit_spec(payload)
+    json_repaired = False
+    if spec["target_path"].lower().endswith(".json") and spec.get("content") is not None:
+        spec["content"], json_repaired = ensure_valid_json_text(str(spec["content"]))
     preview = tools.preview_text_edit(
         relative_path=spec["target_path"],
         mode=spec["mode"],
@@ -53,6 +57,8 @@ def execute(payload: dict, context) -> dict:
         f"{'Previewed' if context.dry_run else 'Applied'} {preview['mode']} on `{preview['path']}`. "
         f"{'Change detected.' if preview['changed'] else 'No textual change was produced.'}"
     )
+    if json_repaired:
+        summary += " JSON content was auto-repaired and validated."
 
     if context.dry_run:
         return {
@@ -66,6 +72,7 @@ def execute(payload: dict, context) -> dict:
             "bytes_written": preview["bytes_after"],
             "content_preview": (spec.get("content") or spec.get("replace_text") or "")[:400],
             "evidence": evidence,
+            "structured_validation": {"format": "json", "repaired": json_repaired},
         }
 
     applied = tools.apply_text_edit(
@@ -86,6 +93,7 @@ def execute(payload: dict, context) -> dict:
         "bytes_written": applied["bytes_written"],
         "rollback": applied.get("rollback"),
         "evidence": evidence,
+        "structured_validation": {"format": "json", "repaired": json_repaired} if applied["path"].lower().endswith(".json") else None,
     }
 
 
@@ -132,7 +140,9 @@ def _infer_mode(request: str) -> str:
 
 def _extract_path(text: str) -> str:
     for token in re.findall(r"[\w./\\:-]+", text, flags=re.UNICODE):
-        cleaned = token.strip("`'\" ,:;()[]{}")
+        cleaned = token.strip("`'\" ,:;()[]{}<>")
+        while cleaned.endswith((".", ",", ";", ":", "!", "?")) and len(cleaned) > 1:
+            cleaned = cleaned[:-1]
         lowered = cleaned.lower()
         if len(cleaned) < 3:
             continue

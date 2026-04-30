@@ -32,7 +32,8 @@ def execute(payload: dict, context) -> dict:
 
 def _resolve_files(payload: dict, tools: WorkspaceTools) -> list[str]:
     request = str(payload.get("request", ""))
-    candidates = _extract_paths(request)
+    candidates = [str(path) for path in payload.get("source_paths", []) if str(path).strip()]
+    candidates.extend(_extract_paths(request))
 
     prior_results = payload.get("prior_results", {})
     for result in prior_results.values():
@@ -61,7 +62,9 @@ def _extract_paths(text: str) -> list[str]:
         lowered = token.lower()
         if not any(hint in lowered for hint in FILE_HINTS):
             continue
-        cleaned = token.strip("`'\" ,:;()[]{}")
+        cleaned = token.strip("`'\" ,:;()[]{}<>")
+        while cleaned.endswith((".", ",", ";", ":", "!", "?")) and len(cleaned) > 1:
+            cleaned = cleaned[:-1]
         if len(cleaned) < 3:
             continue
         if cleaned.startswith(("http://", "https://")):

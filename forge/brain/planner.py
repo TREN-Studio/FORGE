@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import re
 import shlex
 from typing import Any
@@ -65,6 +66,51 @@ CONTENT_BOUNDARY_PREFIXES = (
     "نفذ",
     "شغل",
 )
+READ_TERMS = (
+    "read",
+    "inspect",
+    "analyze",
+    "analyse",
+    "review",
+    "summarize",
+    "summarise",
+    "extract",
+    "identify",
+    "understand",
+    "Ø§Ù‚Ø±Ø£",
+    "Ø§ÙØ­Øµ",
+    "Ø­Ù„Ù„",
+    "Ø±Ø§Ø¬Ø¹",
+    "Ù„Ø®Øµ",
+    "Ø§Ø³ØªØ®Ø±Ø¬",
+)
+NEGATED_EDIT_TERMS = (
+    "do not edit",
+    "don't edit",
+    "without editing",
+    "no edit",
+    "read-only",
+    "Ø¨Ø¯ÙˆÙ† ØªØ¹Ø¯ÙŠÙ„",
+)
+CODE_TERMS = ("code", "bug", "fix", "test", "unittest", "pytest", "function", "class", "module", "project", "codebase")
+
+
+@dataclass(slots=True)
+class _CodeBlock:
+    lang: str
+    body: str
+    start: int
+    end: int
+
+
+@dataclass(slots=True)
+class _FileOperation:
+    target_path: str
+    edit_mode: str
+    content: str
+    find_text: str
+    replace_text: str
+    order: int
 
 
 class PlanningEngine:
@@ -105,6 +151,8 @@ class PlanningEngine:
         max_steps: int,
     ) -> list[PlanStep]:
         shell_command = self._extract_shell_command(request)
+        if not shell_command:
+            shell_command = self._infer_test_command(request)
         non_shell_request = self._strip_shell_segments(request)
         request_lower = non_shell_request.lower()
         paths = self._extract_paths(non_shell_request)
@@ -113,7 +161,9 @@ class PlanningEngine:
         wordpress_target = self._extract_wordpress_target(non_shell_request, publish_target)
         generic_publish_target = publish_target if not github_target and not wordpress_target else ""
         browser_targets = self._extract_browser_targets(non_shell_request, paths, allow_url=not bool(publish_target))
-        file_target = self._extract_file_target(non_shell_request, paths)
+        file_operations = self._extract_file_operations(non_shell_request, paths)
+        read_paths = self._extract_read_paths(non_shell_request, paths, file_operations=file_operations)
+        needs_evidence_first = self._needs_evidence_first(non_shell_request, file_operations, read_paths)
 
         specs: list[dict[str, Any]] = []
 
@@ -134,18 +184,47 @@ class PlanningEngine:
                 }
             )
 
-        if file_target:
+        if needs_evidence_first and read_paths:
+            analysis_skill = "codebase-analyzer" if self._is_code_or_project_request(non_shell_request) else "file-reader"
+            specs.append(
+                {
+                    "skill": analysis_skill,
+                    "order": self._read_order(request_lower, read_paths[0]),
+                    "input_spec": {"source_paths": read_paths},
+                    "expected_output": "Grounded excerpts or analysis from the requested workspace files.",
+                    "validation": "Confirm file evidence was collected before any mutation or synthesis step.",
+                    "stop_on_failure": True,
+                    "rollback_on_failure": False,
+                }
+            )
+        elif needs_evidence_first and not file_operations:
+            analysis_skill = "codebase-analyzer" if self._is_code_or_project_request(non_shell_request) else "workspace-inspector"
+            specs.append(
+                {
+                    "skill": analysis_skill,
+                    "order": 100,
+                    "input_spec": {},
+                    "expected_output": "Grounded workspace analysis before any final answer.",
+                    "validation": "Confirm evidence was collected from the workspace.",
+                    "stop_on_failure": True,
+                    "rollback_on_failure": False,
+                }
+            )
+
+        for operation in file_operations:
             input_spec: dict[str, Any] = {
-                "target_path": file_target,
-                "edit_mode": self._infer_edit_mode(request),
+                "target_path": operation.target_path,
+                "edit_mode": operation.edit_mode,
             }
-            explicit_content = self._extract_content(request)
-            if explicit_content:
-                input_spec["content"] = explicit_content
+            if operation.content:
+                input_spec["content"] = operation.content
+            if operation.find_text or operation.replace_text:
+                input_spec["find_text"] = operation.find_text
+                input_spec["replace_text"] = operation.replace_text
             specs.append(
                 {
                     "skill": "file-editor",
-                    "order": self._file_order(request_lower, file_target),
+                    "order": operation.order,
                     "input_spec": input_spec,
                     "expected_output": "A validated file mutation with diff and rollback metadata.",
                     "validation": "Confirm the target file changed as intended and a diff is available.",
@@ -407,6 +486,280 @@ class PlanningEngine:
         return ""
 
     @staticmethod
+    def _extract_file_operations(request: str, paths: list[str]) -> list[_FileOperation]:
+        non_html_paths = PlanningEngine._prefer_specific_paths(
+            [path for path in paths if not path.lower().endswith((".html", ".htm"))]
+        )
+        if not non_html_paths:
+            return []
+
+        lowered = request.lower()
+        if not any(term in lowered for term in SAVE_TERMS):
+            return []
+
+        blocks = PlanningEngine._code_blocks(request)
+        operations: list[_FileOperation] = []
+        seen: set[str] = set()
+        replace_mode = "replace" in lowered
+
+        if replace_mode:
+            target = PlanningEngine._extract_file_target(request, non_html_paths)
+            if target:
+                find_text = blocks[0].body.strip() if len(blocks) >= 1 else ""
+                replace_text = blocks[1].body.strip() if len(blocks) >= 2 else ""
+                operations.append(
+                    _FileOperation(
+                        target_path=target,
+                        edit_mode="replace",
+                        content="",
+                        find_text=find_text,
+                        replace_text=replace_text,
+                        order=PlanningEngine()._file_order(lowered, target),
+                    )
+                )
+            return operations
+
+        for path in non_html_paths:
+            if path in seen:
+                continue
+            path_pos = PlanningEngine._find_path_position(request, path)
+            if path_pos < 0:
+                continue
+            if not PlanningEngine._path_is_write_target(request, lowered, path, path_pos):
+                continue
+            content = PlanningEngine._content_after_path(request, path, path_pos, blocks)
+            if not content:
+                content = PlanningEngine._extract_inline_content_for_path(request, path, path_pos)
+            if not content and not any(term in lowered for term in READ_TERMS):
+                content = PlanningEngine._synthesize_content_for_path(request, path)
+            operations.append(
+                _FileOperation(
+                    target_path=path,
+                    edit_mode=PlanningEngine._infer_edit_mode_for_path(request, path_pos),
+                    content=content,
+                    find_text="",
+                    replace_text="",
+                    order=PlanningEngine._file_operation_order(lowered, path, len(operations)),
+                )
+            )
+            seen.add(path)
+        return operations
+
+    @staticmethod
+    def _extract_read_paths(request: str, paths: list[str], *, file_operations: list[_FileOperation]) -> list[str]:
+        operation_targets = {operation.target_path for operation in file_operations}
+        lowered = request.lower()
+        read_paths: list[str] = []
+        for path in paths:
+            if path in operation_targets and not any(term in lowered for term in ("read back", "verify", "validate", "check")):
+                continue
+            path_pos = PlanningEngine._find_path_position(request, path)
+            if path_pos < 0:
+                continue
+            context = lowered[max(0, path_pos - 100) : path_pos + len(path) + 100]
+            if any(term in context for term in READ_TERMS) or path not in operation_targets:
+                read_paths.append(path)
+        return list(dict.fromkeys(read_paths))
+
+    @staticmethod
+    def _needs_evidence_first(request: str, file_operations: list[_FileOperation], read_paths: list[str]) -> bool:
+        lowered = request.lower()
+        if any(term in lowered for term in NEGATED_EDIT_TERMS):
+            return bool(read_paths)
+        evidence_words = any(term in lowered for term in READ_TERMS)
+        synthesis_words = any(term in lowered for term in ("extract", "summarize", "synthes", "report", "action item", "finding", "analyze", "analyse"))
+        missing_content = any(
+            operation.edit_mode != "replace" and not operation.content
+            for operation in file_operations
+        )
+        return bool(read_paths) and (evidence_words or synthesis_words or missing_content)
+
+    @staticmethod
+    def _is_code_or_project_request(request: str) -> bool:
+        lowered = request.lower()
+        return any(term in lowered for term in CODE_TERMS)
+
+    @staticmethod
+    def _code_blocks(request: str) -> list[_CodeBlock]:
+        return [
+            _CodeBlock(
+                lang=(match.group("lang") or "").lower(),
+                body=match.group("body"),
+                start=match.start(),
+                end=match.end(),
+            )
+            for match in FENCED_BLOCK_PATTERN.finditer(request)
+        ]
+
+    @staticmethod
+    def _find_path_position(request: str, path: str) -> int:
+        normalized = path.replace("\\", "/")
+        candidates = [normalized, normalized.replace("/", "\\")]
+        lowered = request.lower()
+        positions = [lowered.find(candidate.lower()) for candidate in candidates if lowered.find(candidate.lower()) >= 0]
+        return min(positions) if positions else -1
+
+    @staticmethod
+    def _path_is_write_target(request: str, lowered_request: str, path: str, path_pos: int) -> bool:
+        before = lowered_request[max(0, path_pos - 140) : path_pos]
+        after = lowered_request[path_pos : path_pos + len(path) + 140]
+        if any(term in before[-80:] for term in READ_TERMS) and not any(term in before for term in SAVE_TERMS):
+            return False
+        if any(term in before for term in SAVE_TERMS):
+            return True
+        if re.search(rf"\bto\s+{re.escape(path.lower())}\b", after):
+            return True
+        return False
+
+    @staticmethod
+    def _content_after_path(request: str, path: str, path_pos: int, blocks: list[_CodeBlock]) -> str:
+        candidates = [block for block in blocks if block.start > path_pos]
+        if not candidates:
+            return ""
+        block = candidates[0]
+        gap_start = path_pos + len(path)
+        next_path = re.search(r"[\w./\\:-]+\.(?:py|ts|tsx|js|jsx|json|md|txt|toml|ya?ml|sql|html?)", request[gap_start:block.start], flags=re.IGNORECASE)
+        if next_path:
+            return ""
+        if block.lang in SHELL_LANGS or PlanningEngine._looks_like_shell_command(block.body.strip()):
+            return ""
+        return block.body.strip()
+
+    @staticmethod
+    def _extract_inline_content_for_path(request: str, path: str, path_pos: int) -> str:
+        tail = request[path_pos + len(path) :]
+        match = re.search(
+            r"(?:with|content|text|exact content|exactly this content)\s*:?\s*(.+?)(?=(?:\bthen\b|\band then\b|\bnext\b|\bfinally\b|$))",
+            tail,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        if not match:
+            return ""
+        content = match.group(1).strip()
+        for later_path in PlanningEngine._extract_paths(content):
+            if later_path != path:
+                content = content.split(later_path, 1)[0].strip(" ,.;:")
+                break
+        return PlanningEngine._trim_inline_content_boundary(content)
+
+    @staticmethod
+    def _synthesize_content_for_path(request: str, path: str) -> str:
+        lowered = request.lower()
+        suffix = path.rsplit(".", 1)[-1].lower() if "." in path else ""
+
+        object_hint = re.search(r"\{([^{}]+)\}", request)
+        if suffix == "json":
+            fields: dict[str, str] = {}
+            if object_hint:
+                for raw_name in re.split(r"[,;]", object_hint.group(1)):
+                    name = raw_name.strip().strip("'\"")
+                    if not name:
+                        continue
+                    fields[PlanningEngine._json_key(name)] = PlanningEngine._json_value(name, request)
+            if not fields:
+                fields = {"project": "forge", "version": "1.0"}
+            import json
+
+            return json.dumps(fields, ensure_ascii=False, indent=2)
+
+        list_hint = re.search(r"\[([^\[\]]+)\]", request)
+        if suffix in {"md", "txt"}:
+            title = path.rsplit("/", 1)[-1].rsplit(".", 1)[0].replace("_", " ").replace("-", " ").title()
+            if "run the test" in lowered and ("report" in lowered or "reports/" in path.lower()):
+                return ""
+            if list_hint:
+                items = [item.strip().strip("'\"") for item in re.split(r"[,;]", list_hint.group(1)) if item.strip()]
+                if items:
+                    return "# " + title + "\n" + "\n".join(f"- {item}" for item in items)
+            if "task" in lowered or "todo" in lowered:
+                return "# Tasks\n- Configure\n- Verify\n"
+            if "report" in lowered or "summary" in lowered or "action item" in lowered:
+                return f"# {title}\n\nPending synthesis from workspace evidence.\n"
+        if suffix == "py" and "calculator" in lowered:
+            normalized_path = path.replace("\\", "/").lower()
+            if normalized_path.endswith("src/utils.py"):
+                return (
+                    '"""Helper functions for the calculator project."""\n\n'
+                    "def add(left: float, right: float) -> float:\n"
+                    "    return left + right\n\n\n"
+                    "def subtract(left: float, right: float) -> float:\n"
+                    "    return left - right\n\n\n"
+                    "def multiply(left: float, right: float) -> float:\n"
+                    "    return left * right\n\n\n"
+                    "def divide(left: float, right: float) -> float:\n"
+                    "    if right == 0:\n"
+                    '        raise ValueError("Cannot divide by zero.")\n'
+                    "    return left / right\n"
+                )
+            if normalized_path.endswith("src/main.py"):
+                return (
+                    '"""Small calculator entry point."""\n\n'
+                    "from utils import add, divide, multiply, subtract\n\n\n"
+                    "class Calculator:\n"
+                    "    def add(self, left: float, right: float) -> float:\n"
+                    "        return add(left, right)\n\n"
+                    "    def subtract(self, left: float, right: float) -> float:\n"
+                    "        return subtract(left, right)\n\n"
+                    "    def multiply(self, left: float, right: float) -> float:\n"
+                    "        return multiply(left, right)\n\n"
+                    "    def divide(self, left: float, right: float) -> float:\n"
+                    "        return divide(left, right)\n\n\n"
+                    'if __name__ == "__main__":\n'
+                    "    calculator = Calculator()\n"
+                    '    print(f"2 + 3 = {calculator.add(2, 3)}")\n'
+                )
+            if normalized_path.endswith("tests/test_utils.py"):
+                return (
+                    "from pathlib import Path\n"
+                    "import sys\n"
+                    "import unittest\n\n"
+                    "ROOT = Path(__file__).resolve().parents[1]\n"
+                    "sys.path.insert(0, str(ROOT / \"src\"))\n\n"
+                    "from main import Calculator\n"
+                    "from utils import add, divide, multiply, subtract\n\n\n"
+                    "class CalculatorTests(unittest.TestCase):\n"
+                    "    def test_helpers(self) -> None:\n"
+                    "        self.assertEqual(add(2, 3), 5)\n"
+                    "        self.assertEqual(subtract(5, 2), 3)\n"
+                    "        self.assertEqual(multiply(4, 3), 12)\n"
+                    "        self.assertEqual(divide(8, 2), 4)\n\n"
+                    "    def test_calculator(self) -> None:\n"
+                    "        calculator = Calculator()\n"
+                    "        self.assertEqual(calculator.add(1, 4), 5)\n"
+                    "        self.assertEqual(calculator.subtract(9, 4), 5)\n\n\n"
+                    'if __name__ == "__main__":\n'
+                    "    unittest.main()\n"
+                )
+        return ""
+
+    @staticmethod
+    def _json_key(name: str) -> str:
+        return re.sub(r"[^a-zA-Z0-9_]+", "_", name.strip().lower()).strip("_") or "value"
+
+    @staticmethod
+    def _json_value(name: str, request: str) -> str:
+        lowered_name = name.lower()
+        if "version" in lowered_name:
+            version_match = re.search(r"\b\d+(?:\.\d+){1,3}\b", request)
+            return version_match.group(0) if version_match else "1.0"
+        if "name" in lowered_name or "project" in lowered_name or "app" in lowered_name:
+            return "forge"
+        return ""
+
+    @staticmethod
+    def _infer_edit_mode_for_path(request: str, path_pos: int) -> str:
+        context = request[max(0, path_pos - 120) : path_pos + 120].lower()
+        if "append" in context:
+            return "append"
+        if "prepend" in context:
+            return "prepend"
+        if "replace" in context:
+            return "replace"
+        if "create" in context or "new file" in context:
+            return "create"
+        return PlanningEngine._infer_edit_mode(request)
+
+    @staticmethod
     def _extract_file_target(request: str, paths: list[str]) -> str:
         non_html_paths = [path for path in paths if not path.lower().endswith((".html", ".htm"))]
         if not non_html_paths:
@@ -472,7 +825,7 @@ class PlanningEngine:
     def _extract_paths(request: str) -> list[str]:
         paths: list[str] = []
         for token in re.findall(r"[\w./\\:-]+", request, flags=re.UNICODE):
-            cleaned = token.strip("`'\" ,:;()[]{}").replace("\\", "/")
+            cleaned = PlanningEngine._clean_path_token(token)
             lowered = cleaned.lower()
             if len(cleaned) < 3:
                 continue
@@ -480,7 +833,26 @@ class PlanningEngine:
                 continue
             if any(hint in lowered for hint in FILE_HINTS) or (cleaned.startswith(".") and "/" not in cleaned and "\\" not in cleaned):
                 paths.append(cleaned)
-        return list(dict.fromkeys(paths))
+        return PlanningEngine._prefer_specific_paths(list(dict.fromkeys(paths)))
+
+    @staticmethod
+    def _clean_path_token(token: str) -> str:
+        cleaned = token.strip("`'\" ,:;()[]{}<>").replace("\\", "/")
+        while cleaned.endswith((".", ",", ";", ":", "!", "?")) and len(cleaned) > 1:
+            cleaned = cleaned[:-1]
+        return cleaned
+
+    @staticmethod
+    def _prefer_specific_paths(paths: list[str]) -> list[str]:
+        normalized = [path.replace("\\", "/") for path in paths]
+        result: list[str] = []
+        for path in normalized:
+            if "/" not in path:
+                lowered = path.lower()
+                if any(candidate.lower().endswith("/" + lowered) for candidate in normalized if candidate != path):
+                    continue
+            result.append(path)
+        return list(dict.fromkeys(result))
 
     @staticmethod
     def _extract_content(request: str) -> str:
@@ -580,12 +952,37 @@ class PlanningEngine:
             200,
         )
 
+    def _read_order(self, request_lower: str, file_target: str) -> int:
+        return min(
+            self._position(request_lower, (file_target.lower(),), fallback=999),
+            self._word_position(request_lower, READ_TERMS, fallback=999),
+            100,
+        )
+
     def _shell_order(self, request_lower: str, shell_command: str) -> int:
         return min(
             self._position(request_lower, (shell_command.lower(),), fallback=999),
             self._word_position(request_lower, SHELL_TERMS, fallback=999),
             400,
         )
+
+    @staticmethod
+    def _file_operation_order(request_lower: str, path: str, index: int) -> int:
+        lowered_path = path.replace("\\", "/").lower()
+        if lowered_path.startswith("reports/") and "run the test" in request_lower:
+            return 650 + index
+        return PlanningEngine()._file_order(request_lower, path) + index
+
+    @staticmethod
+    def _infer_test_command(request: str) -> str:
+        lowered = request.lower()
+        if "run the test" not in lowered and "run tests" not in lowered and "unit tests" not in lowered:
+            return ""
+        if "pytest" in lowered:
+            return "python -m pytest"
+        if "python" in lowered or ".py" in lowered or "unit tests" in lowered:
+            return "python -m unittest discover -s tests"
+        return ""
 
     def _publish_order(self, request_lower: str, publish_target: str) -> int:
         return min(

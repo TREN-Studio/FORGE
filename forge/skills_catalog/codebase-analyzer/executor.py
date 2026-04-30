@@ -47,7 +47,8 @@ def execute(payload: dict, context) -> dict:
     workspace = tools.workspace_summary()
     search_terms = _search_terms(payload)
     hits = tools.search_text(" ".join(search_terms), max_hits=16)
-    files_reviewed = _select_files(hits, workspace["key_files"])
+    explicit_files = _explicit_files(payload, tools)
+    files_reviewed = list(dict.fromkeys(explicit_files + _select_files(hits, workspace["key_files"])))[:5]
     excerpts = _build_excerpts(tools, hits, files_reviewed)
     evidence = _evidence_lines(hits, excerpts)
     analysis = _build_analysis_markdown(
@@ -89,6 +90,20 @@ def _search_terms(payload: dict) -> list[str]:
             continue
         terms.append(cleaned)
     return list(dict.fromkeys(terms))[:8]
+
+
+def _explicit_files(payload: dict, tools: WorkspaceTools) -> list[str]:
+    files: list[str] = []
+    for item in payload.get("source_paths", []):
+        path = str(item).replace("\\", "/").strip()
+        if not path:
+            continue
+        try:
+            tools.read_excerpt(path, start_line=1, end_line=10)
+        except Exception:
+            continue
+        files.append(path)
+    return list(dict.fromkeys(files))
 
 
 def _select_files(hits: list[dict], key_files: list[str], limit: int = 5) -> list[str]:

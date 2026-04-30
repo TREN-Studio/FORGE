@@ -48,6 +48,10 @@ COMMAND_TERMS = {"run", "execute", "command", "shell", "terminal", "compile", "p
 BROWSER_TERMS = {"browse", "visit", "website", "web", "page", "url", "browser", "navigate", "click", "fill", "form", "link", "site", "open", "extract", "افتح", "تصفح", "موقع", "صفحة", "رابط", "اضغط", "املأ", "متصفح", "استخرج"}
 
 
+READ_TERMS = {"read", "inspect", "analyze", "analyse", "review", "summarize", "summarise", "extract", "identify", "understand"}
+NEGATED_EDIT_PHRASES = ("do not edit", "don't edit", "without editing", "no edit", "read-only")
+
+
 class SkillRouter:
     """Structured skill routing with trust and safety awareness."""
 
@@ -101,6 +105,21 @@ class SkillRouter:
         )
 
     def _select_pipeline(self, intent: TaskIntent, matches: list[SkillMatch]) -> list[SkillMatch]:
+        if self._is_read_only_workspace_request(intent.raw_request):
+            preferred = "codebase-analyzer" if self._is_code_or_project_request(intent.raw_request) else "file-reader"
+            pipeline = self._specific_pipeline(matches, (preferred,))
+            if pipeline:
+                return pipeline
+            pipeline = self._specific_pipeline(matches, ("workspace-inspector",))
+            if pipeline:
+                return pipeline
+
+        if self._requires_evidence_before_edit(intent.raw_request):
+            preferred = "codebase-analyzer" if self._is_code_or_project_request(intent.raw_request) else "file-reader"
+            pipeline = self._specific_pipeline(matches, (preferred, "file-editor"))
+            if pipeline:
+                return pipeline
+
         if self._has_term_overlap(intent.raw_request, EDIT_TERMS) and self._has_term_overlap(intent.raw_request, COMMAND_TERMS):
             pipeline = self._specific_pipeline(matches, ("file-editor", "shell-executor"))
             if pipeline:
@@ -145,6 +164,26 @@ class SkillRouter:
             selected.append(match)
             used_names.add(match.skill_name)
         return selected[: self._settings.max_plan_steps]
+
+    def _is_read_only_workspace_request(self, text: str) -> bool:
+        lowered = text.lower()
+        if not self._has_explicit_path(text) and not self._is_workspace_task(text):
+            return False
+        if any(phrase in lowered for phrase in NEGATED_EDIT_PHRASES):
+            return True
+        return self._has_term_overlap(text, READ_TERMS) and not self._has_term_overlap(text, EDIT_TERMS)
+
+    def _requires_evidence_before_edit(self, text: str) -> bool:
+        if not self._has_explicit_path(text):
+            return False
+        if any(phrase in text.lower() for phrase in NEGATED_EDIT_PHRASES):
+            return False
+        return self._has_term_overlap(text, READ_TERMS) and self._has_term_overlap(text, EDIT_TERMS)
+
+    @staticmethod
+    def _is_code_or_project_request(text: str) -> bool:
+        lowered = text.lower()
+        return any(token in lowered for token in ("code", "bug", "fix", "test", "function", "class", "module", "project", "repo", "repository", "codebase"))
 
     @staticmethod
     def _specific_pipeline(matches: list[SkillMatch], names: tuple[str, ...]) -> list[SkillMatch]:
@@ -248,6 +287,9 @@ class SkillRouter:
         if "file-editor" in lowered_name and self._has_term_overlap(intent.raw_request, EDIT_TERMS):
             score += 0.30
             reasons.append("Skill is specialized for safe file mutation.")
+            if any(phrase in intent.raw_request.lower() for phrase in NEGATED_EDIT_PHRASES):
+                score -= 0.45
+                reasons.append("Request explicitly asks not to edit files.")
         if "shell-executor" in lowered_name and self._has_term_overlap(intent.raw_request, COMMAND_TERMS):
             score += 0.30
             reasons.append("Skill is specialized for guarded command execution.")

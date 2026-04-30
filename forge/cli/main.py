@@ -52,11 +52,13 @@ def _get_session():
     return ForgeSession()
 
 
-def _get_operator(no_memory: bool = False):
+def _get_operator(no_memory: bool = False, workspace_root: str | Path | None = None):
     from forge.brain.operator import ForgeOperator
     from forge.config.settings import OperatorSettings
 
-    settings = OperatorSettings(enable_memory=not no_memory)
+    normalized_workspace = Path(workspace_root).expanduser().resolve() if workspace_root else Path.cwd().resolve()
+    normalized_workspace.mkdir(parents=True, exist_ok=True)
+    settings = OperatorSettings(enable_memory=not no_memory, workspace_root=normalized_workspace)
     return ForgeOperator(settings=settings)
 
 
@@ -230,7 +232,10 @@ def ask(
 
 @cli.command()
 def operate(
-    prompt: str = typer.Argument(..., help="Request for the operator brain"),
+    prompt: Optional[str] = typer.Argument(None, help="Request for the operator brain"),
+    task: Optional[str] = typer.Option(None, "--task", "-t", help="Request for the operator brain"),
+    workspace: Optional[str] = typer.Option(None, "--workspace", help="Workspace root for this operator run"),
+    allow_real_changes: bool = typer.Option(False, "--allow-real-changes", help="Alias for --confirm on local file/shell tasks"),
     confirm: bool = typer.Option(False, "--confirm", help="Confirm high-risk execution"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Force dry-run mode"),
     no_memory: bool = typer.Option(False, "--no-memory", help="Disable memory injection for this run"),
@@ -238,23 +243,28 @@ def operate(
     raw: bool = typer.Option(False, "--raw", help="Print raw text only"),
 ):
     """Run the modular skill-based operator brain."""
+    request = (task or prompt or "").strip()
+    if not request:
+        raise typer.BadParameter("Provide a prompt argument or --task.")
+    confirmed = confirm or allow_real_changes
+
     if not raw:
-        console.print(f"[dim]FORGE operator ->[/dim] [dim]{prompt[:72]}[/dim]")
+        console.print(f"[dim]FORGE operator ->[/dim] [dim]{request[:72]}[/dim]")
 
     if raw:
-        operator = _get_operator(no_memory=no_memory)
+        operator = _get_operator(no_memory=no_memory, workspace_root=workspace)
         reply = operator.handle_as_text(
-            prompt,
-            confirmed=confirm,
+            request,
+            confirmed=confirmed,
             dry_run=dry_run,
             resume_mission_id=resume_mission,
         )
     else:
         with Live(Spinner("line", text="[dim]Planning and executing...[/dim]"), refresh_per_second=10, transient=True):
-            operator = _get_operator(no_memory=no_memory)
+            operator = _get_operator(no_memory=no_memory, workspace_root=workspace)
             reply = operator.handle_as_text(
-                prompt,
-                confirmed=confirm,
+                request,
+                confirmed=confirmed,
                 dry_run=dry_run,
                 resume_mission_id=resume_mission,
             )

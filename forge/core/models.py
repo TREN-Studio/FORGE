@@ -157,6 +157,7 @@ class ForgeResponse(BaseModel):
     output_tokens:  int   = 0
     finish_reason:  str   = "stop"
     score_used:     float = 0.0   # composite score at time of selection
+    routing_telemetry: dict[str, Any] = Field(default_factory=dict)
 
     @property
     def total_tokens(self) -> int:

@@ -199,6 +199,9 @@ class ForgeRouter:
             raise RuntimeError("No models available. Run `forge add-key` to add a provider.")
 
         last_error: Exception | None = None
+        attempts: list[dict[str, Any]] = []
+        total_started = time.monotonic()
+        timeout_label = f"{timeout:.0f}s" if timeout >= 1 else f"{timeout:.2f}s"
         for key, score in ranked:
             provider = self._providers[score.provider]
             spec     = provider.get_model(score.model_id)
@@ -222,6 +225,22 @@ class ForgeRouter:
                     score.record_success(latency, raw.input_tokens + raw.output_tokens)
 
                 raw.score_used = score.composite_score
+                attempts.append(
+                    {
+                        "provider": score.provider,
+                        "model": score.model_id,
+                        "status": "success",
+                        "latency_ms": round(latency, 2),
+                    }
+                )
+                raw.routing_telemetry = self._routing_telemetry(
+                    attempts=attempts,
+                    final_provider=score.provider,
+                    final_model=score.model_id,
+                    final_latency_ms=latency,
+                    total_started=total_started,
+                )
+                logger.info("provider_telemetry %s", raw.routing_telemetry)
                 logger.info(
                     f"✓ {score.provider}/{score.model_id} "
                     f"[{latency:.0f}ms · {raw.total_tokens} tok]"
@@ -229,18 +248,37 @@ class ForgeRouter:
                 return raw
 
             except asyncio.TimeoutError:
+                latency = (time.monotonic() - t_start) * 1000
                 async with self._lock:
                     score.record_failure("timeout")
                     score.status = ProviderStatus.SLOW
                 last_error = TimeoutError(f"{score.provider}/{score.model_id} timed out")
+                attempts.append(
+                    {
+                        "provider": score.provider,
+                        "model": score.model_id,
+                        "status": "timeout",
+                        "latency_ms": round(latency, 2),
+                        "error": f"timeout after {timeout_label}",
+                    }
+                )
                 logger.warning(f"✗ Timeout on {score.provider}/{score.model_id}")
-
             except Exception as exc:
+                latency = (time.monotonic() - t_start) * 1000
                 async with self._lock:
                     score.record_failure(str(exc))
                     if "quota" in str(exc).lower() or "rate" in str(exc).lower():
                         score.status = ProviderStatus.QUOTA
                 last_error = exc
+                attempts.append(
+                    {
+                        "provider": score.provider,
+                        "model": score.model_id,
+                        "status": "error",
+                        "latency_ms": round(latency, 2),
+                        "error": str(exc),
+                    }
+                )
                 logger.warning(f"✗ Error on {score.provider}/{score.model_id}: {exc}")
 
         raise RuntimeError(
@@ -260,6 +298,8 @@ class ForgeRouter:
             raise RuntimeError("No models available. Run `forge add-key` to add a provider.")
 
         last_error: Exception | None = None
+        attempts: list[dict[str, Any]] = []
+        total_started = time.monotonic()
         for key, score in ranked:
             provider = self._providers[score.provider]
             spec = provider.get_model(score.model_id)
@@ -268,6 +308,7 @@ class ForgeRouter:
 
             logger.debug(f"Streaming with {score.provider}/{score.model_id} (score={score.composite_score:.3f})")
             response: ForgeResponse | None = None
+            t_start = time.monotonic()
             try:
                 yield {
                     "type": "start",
@@ -295,6 +336,22 @@ class ForgeRouter:
                 async with self._lock:
                     score.record_success(response.latency_ms, response.input_tokens + response.output_tokens)
                 response.score_used = score.composite_score
+                attempts.append(
+                    {
+                        "provider": score.provider,
+                        "model": score.model_id,
+                        "status": "success",
+                        "latency_ms": round(response.latency_ms, 2),
+                    }
+                )
+                response.routing_telemetry = self._routing_telemetry(
+                    attempts=attempts,
+                    final_provider=score.provider,
+                    final_model=score.model_id,
+                    final_latency_ms=response.latency_ms,
+                    total_started=total_started,
+                )
+                logger.info("provider_telemetry %s", response.routing_telemetry)
                 logger.info(
                     f"✓ {score.provider}/{score.model_id} "
                     f"[{response.latency_ms:.0f}ms · {response.total_tokens} tok · stream]"
@@ -302,17 +359,37 @@ class ForgeRouter:
                 yield {"type": "response", "response": response}
                 return
             except asyncio.TimeoutError:
+                latency = (time.monotonic() - t_start) * 1000
                 async with self._lock:
                     score.record_failure("timeout")
                     score.status = ProviderStatus.SLOW
                 last_error = TimeoutError(f"{score.provider}/{score.model_id} timed out")
+                attempts.append(
+                    {
+                        "provider": score.provider,
+                        "model": score.model_id,
+                        "status": "timeout",
+                        "latency_ms": round(latency, 2),
+                        "error": "stream timeout",
+                    }
+                )
                 logger.warning(f"✗ Stream timeout on {score.provider}/{score.model_id}")
             except Exception as exc:
+                latency = (time.monotonic() - t_start) * 1000
                 async with self._lock:
                     score.record_failure(str(exc))
                     if "quota" in str(exc).lower() or "rate" in str(exc).lower():
                         score.status = ProviderStatus.QUOTA
                 last_error = exc
+                attempts.append(
+                    {
+                        "provider": score.provider,
+                        "model": score.model_id,
+                        "status": "error",
+                        "latency_ms": round(latency, 2),
+                        "error": str(exc),
+                    }
+                )
                 logger.warning(f"✗ Stream error on {score.provider}/{score.model_id}: {exc}")
 
         raise RuntimeError(
@@ -440,6 +517,30 @@ class ForgeRouter:
         await self.reset_provider_quotas()
 
     # ── Helpers ───────────────────────────────────────────────────
+
+    @staticmethod
+    def _routing_telemetry(
+        *,
+        attempts: list[dict[str, Any]],
+        final_provider: str,
+        final_model: str,
+        final_latency_ms: float,
+        total_started: float,
+    ) -> dict[str, Any]:
+        attempted_providers = [f"{item['provider']}/{item['model']}" for item in attempts]
+        failed_attempts = [item for item in attempts if item.get("status") != "success"]
+        timeout_attempt = next((item for item in failed_attempts if item.get("status") == "timeout"), None)
+        timeout_reason = str(timeout_attempt.get("error") or "") if timeout_attempt else ""
+        return {
+            "selected_provider": attempted_providers[0] if attempted_providers else "",
+            "attempted_providers": attempted_providers,
+            "fallback_count": len(failed_attempts),
+            "timeout_reason": timeout_reason,
+            "provider_latency_ms": round(final_latency_ms, 2),
+            "total_model_time_ms": round((time.monotonic() - total_started) * 1000, 2),
+            "final_provider_used": f"{final_provider}/{final_model}",
+            "attempts": attempts,
+        }
 
     @staticmethod
     def _key(provider: str, model_id: str) -> str:

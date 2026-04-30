@@ -4,10 +4,11 @@ from dataclasses import dataclass, field
 import hashlib
 import json
 from pathlib import Path
+import re
 from typing import Any, Callable
 
 from forge.brain.approval import ApprovalDecision, ApprovalPolicyEngine
-from forge.brain.contracts import AgentReview, CompletionState, ExecutionPlan, StepExecutionResult, TaskIntent
+from forge.brain.contracts import AgentReview, CompletionState, ExecutionPlan, PlanStep, StepExecutionResult, TaskIntent
 from forge.brain.council import ActionAgent, CriticAgent, ResearchAgent
 from forge.brain.mission_store import MissionAuditStore, MissionResumeState
 from forge.brain.worker_executor import decode_agent_review, serialize_operator_settings
@@ -512,6 +513,37 @@ class MissionOrchestrator:
                     )
                     agent_reviews.append(critic_review)
                     self._remember_critique(mission_id, critique_memory, step.id, current_skill.name, critic_review)
+                    if self._is_missing_file_editor_content_failure(current_skill.name, exc) and attempt < max(1, step.retry_limit):
+                        recovery_result = self._execute_content_recovery_step(
+                            request=request,
+                            intent=intent,
+                            memory_context=memory_context,
+                            critique_memory=critique_memory,
+                            failed_step=step,
+                            failed_payload=payload,
+                            runtime_context=runtime_context,
+                            mission_id=mission_id,
+                            attempt=attempt,
+                        )
+                        if recovery_result is not None and recovery_result.status == CompletionState.FINISHED:
+                            step_results.append(recovery_result)
+                            if recovery_result.skill:
+                                prior_results[recovery_result.skill] = recovery_result.output
+                            artifacts[recovery_result.step_id] = recovery_result.output
+                            mission_trace.append(f"{step.id}: recovered missing editor content via `{recovery_result.skill}`.")
+                            step_trace.append("Recovery inserted evidence step, then retrying file-editor with preserved evidence.")
+                            self._persist_progress(
+                                mission_id,
+                                audit_log_path,
+                                request,
+                                plan,
+                                CompletionState.NEEDS_RETRY.value,
+                                step_results,
+                                artifacts,
+                                mission_trace,
+                                resumed_from_step,
+                            )
+                            continue
                     if recovery.action == "retry" and attempt < max(1, step.retry_limit):
                         step_trace.append(f"Retrying step: {recovery.reason}")
                         mission_trace.append(f"{step.id}: retrying after exception `{exc}`.")
@@ -1178,6 +1210,11 @@ class MissionOrchestrator:
         if payload.get("content") or payload.get("find_text") or payload.get("replace_text"):
             return
 
+        synthesized = MissionOrchestrator._synthesize_file_editor_content(payload, prior_results)
+        if synthesized:
+            payload["content"] = synthesized
+            return
+
         ordered = list(prior_results.values())[::-1]
         for result in ordered:
             if not isinstance(result, dict):
@@ -1206,6 +1243,197 @@ class MissionOrchestrator:
                 if isinstance(value, str) and value.strip():
                     payload["content"] = value
                     return
+
+    def _execute_content_recovery_step(
+        self,
+        *,
+        request: str,
+        intent: TaskIntent,
+        memory_context: str,
+        critique_memory: dict[str, list[str]],
+        failed_step,
+        failed_payload: dict[str, Any],
+        runtime_context: SkillExecutionContext,
+        mission_id: str,
+        attempt: int,
+    ) -> StepExecutionResult | None:
+        target = str(failed_payload.get("target_path") or "").replace("\\", "/")
+        source_paths = [
+            path
+            for path in self._extract_request_paths(request)
+            if path and path.replace("\\", "/") != target
+        ]
+        recovery_skill_name = "file-reader" if source_paths else "workspace-inspector"
+        recovery_skill = self._registry.get(recovery_skill_name)
+        if recovery_skill is None:
+            return None
+
+        recovery_step = PlanStep(
+            id=f"{failed_step.id}_recovery_{attempt}",
+            action="Recover missing file-editor content by gathering workspace evidence.",
+            skill=recovery_skill_name,
+            tool=recovery_skill_name,
+            input_spec={"source_paths": source_paths} if source_paths else {},
+            expected_output="Grounded evidence that can be used to synthesize editor content.",
+            validation="Confirm evidence exists before retrying the failed write step.",
+            depends_on=list(getattr(failed_step, "depends_on", [])),
+            retry_limit=1,
+            stop_on_failure=False,
+            rollback_on_failure=False,
+        )
+        payload = self._build_step_payload(
+            request=request,
+            intent=intent,
+            memory_context=memory_context,
+            prior_results={},
+            critique_memory=critique_memory,
+            step=recovery_step,
+        )
+        trace = [
+            "Critic recovery: file-editor was missing content.",
+            f"Inserted `{recovery_skill_name}` before retrying `{failed_step.skill}`.",
+            f"Attempt {attempt}: dispatching recovery skill `{recovery_skill_name}`.",
+        ]
+        try:
+            output = self._workers.submit_task(
+                self._execute_skill_task(
+                    recovery_skill.name,
+                    payload,
+                    runtime_context,
+                    mission_id=mission_id,
+                    step_id=recovery_step.id,
+                    attempt=attempt,
+                )
+            )
+            validation = self._validator.validate_step(
+                recovery_skill,
+                output,
+                recovery_step.expected_output,
+                request,
+                workspace_root=runtime_context.settings.workspace_root,
+            )
+            critic_review = self._critic_agent.review_step(request, recovery_step, output, validation.status)
+            status = self._merge_status(validation.status, critic_review.status)
+            trace.append(f"Recovery validation result: {validation.status.value}.")
+            trace.extend(f"Critic: {note}" for note in critic_review.notes)
+            return StepExecutionResult(
+                step_id=recovery_step.id,
+                skill=recovery_skill.name,
+                tool=recovery_skill.name,
+                status=status,
+                output=output,
+                evidence=self._extract_evidence(output),
+                validation_status=validation.status,
+                validation_notes=list(dict.fromkeys(validation.notes + critic_review.notes)),
+                attempts=1,
+                input_snapshot=self._input_snapshot(payload),
+                trace=trace,
+                agent_reviews=self._review_lines([critic_review]),
+            )
+        except Exception as exc:
+            return StepExecutionResult(
+                step_id=recovery_step.id,
+                skill=recovery_skill.name,
+                tool=recovery_skill.name,
+                status=CompletionState.FAILED,
+                output=None,
+                evidence=[],
+                validation_status=CompletionState.FAILED,
+                validation_notes=[str(exc)],
+                attempts=1,
+                input_snapshot=self._input_snapshot(payload),
+                trace=trace + [f"Recovery failed: {exc}"],
+                error=str(exc),
+            )
+
+    @staticmethod
+    def _is_missing_file_editor_content_failure(skill_name: str, exc: Exception) -> bool:
+        return skill_name == "file-editor" and "requires explicit content" in str(exc).lower()
+
+    @staticmethod
+    def _extract_request_paths(request: str) -> list[str]:
+        paths: list[str] = []
+        for token in re.findall(r"[\w./\\:-]+", request, flags=re.UNICODE):
+            cleaned = token.strip("`'\" ,:;()[]{}<>").replace("\\", "/")
+            while cleaned.endswith((".", ",", ";", ":", "!", "?")) and len(cleaned) > 1:
+                cleaned = cleaned[:-1]
+            lowered = cleaned.lower()
+            if len(cleaned) < 3 or cleaned.startswith(("http://", "https://")):
+                continue
+            if any(lowered.endswith(suffix) for suffix in (".py", ".ts", ".tsx", ".js", ".jsx", ".json", ".md", ".txt", ".toml", ".yaml", ".yml", ".sql")):
+                paths.append(cleaned)
+        return list(dict.fromkeys(paths))
+
+    @staticmethod
+    def _synthesize_file_editor_content(payload: dict[str, Any], prior_results: dict[str, Any]) -> str:
+        target = str(payload.get("target_path") or "").lower()
+        request = str(payload.get("request") or "").lower()
+        prior_text = MissionOrchestrator._prior_text(prior_results)
+        if not prior_text.strip():
+            return ""
+
+        if target.endswith(".json"):
+            import json as _json
+
+            return _json.dumps({"summary": MissionOrchestrator._short_text(prior_text)}, ensure_ascii=False, indent=2)
+
+        if "action item" in request or "action_items" in target or "todo" in request:
+            bullets = MissionOrchestrator._extract_bullets(prior_text)
+            if bullets:
+                return "# Action Items\n" + "\n".join(f"- {item}" for item in bullets[:12])
+
+        if target.endswith((".md", ".txt")):
+            heading = "Summary" if "summary" in request else "Report"
+            bullets = MissionOrchestrator._extract_bullets(prior_text)
+            if bullets:
+                return f"# {heading}\n\n" + "\n".join(f"- {item}" for item in bullets[:12])
+            return f"# {heading}\n\n{MissionOrchestrator._short_text(prior_text)}"
+        return ""
+
+    @staticmethod
+    def _prior_text(prior_results: dict[str, Any]) -> str:
+        chunks: list[str] = []
+        for result in prior_results.values():
+            if not isinstance(result, dict):
+                chunks.append(str(result))
+                continue
+            for key in (
+                "file_excerpt_markdown",
+                "analysis_markdown",
+                "brief_markdown",
+                "article_markdown",
+                "scorecard_markdown",
+                "content",
+                "summary",
+                "stdout",
+            ):
+                value = result.get(key)
+                if isinstance(value, str) and value.strip():
+                    chunks.append(value.strip())
+        return "\n\n".join(chunks)
+
+    @staticmethod
+    def _extract_bullets(text: str) -> list[str]:
+        bullets: list[str] = []
+        in_action_section = False
+        for raw_line in text.splitlines():
+            line = raw_line.strip()
+            lowered = line.lower()
+            if "action items" in lowered or "action item" in lowered:
+                in_action_section = True
+                continue
+            if in_action_section and line.startswith("#") and "action" not in lowered:
+                break
+            if line.startswith(("-", "*")):
+                item = line.lstrip("-* ").strip()
+                if item:
+                    bullets.append(item)
+        return list(dict.fromkeys(bullets))
+
+    @staticmethod
+    def _short_text(text: str, limit: int = 3000) -> str:
+        compact = "\n".join(line.rstrip() for line in text.splitlines() if line.strip())
+        return compact[:limit].rstrip()
 
     @staticmethod
     def _review_lines(reviews: list[AgentReview]) -> list[str]:

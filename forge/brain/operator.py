@@ -185,6 +185,7 @@ class ForgeOperator:
             audit_log_path=mission.audit_log_path,
             resumed_from_step=mission.resumed_from_step,
             agent_reviews=mission.agent_reviews,
+            provider_telemetry=self._provider_telemetry(),
         )
 
     def handle_as_text(
@@ -292,6 +293,7 @@ class ForgeOperator:
                     "provider": reply_response.provider,
                     "latency_ms": reply_response.latency_ms,
                     "total_tokens": reply_response.total_tokens,
+                    "routing_telemetry": reply_response.routing_telemetry,
                 }
             }
         except Exception as exc:
@@ -326,6 +328,7 @@ class ForgeOperator:
             audit_log_path=audit_log_path,
             resumed_from_step=resumed_from_step,
             agent_reviews=[],
+            provider_telemetry=reply_response.routing_telemetry if status == CompletionState.FINISHED else {},
         )
         self.audit_store.save_progress(
             mission_id,
@@ -334,7 +337,7 @@ class ForgeOperator:
             plan=plan,
             status=result.validation_status.value,
             step_results=[],
-            artifacts={},
+            artifacts=artifacts,
             mission_trace=mission_trace,
             resumed_from_step=resumed_from_step,
         )
@@ -405,6 +408,12 @@ class ForgeOperator:
             return (50, lowered)
 
         return sorted(skill_names, key=priority)
+
+    def _provider_telemetry(self) -> dict[str, Any]:
+        response = self.session.last_response
+        if response is None:
+            return {}
+        return dict(response.routing_telemetry or {})
 
     @staticmethod
     def _compact_prior_results(prior_results: dict[str, Any]) -> dict[str, Any]:

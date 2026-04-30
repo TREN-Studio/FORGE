@@ -123,3 +123,4 @@ class OperatorResult(BaseModel):
     audit_log_path: str = ""
     resumed_from_step: str | None = None
     agent_reviews: list[AgentReview] = Field(default_factory=list)
+    provider_telemetry: dict[str, Any] = Field(default_factory=dict)
