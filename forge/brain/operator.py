@@ -28,11 +28,14 @@ class ForgeOperator:
         self,
         settings: OperatorSettings | None = None,
         session: ForgeSession | None = None,
+        provider_secrets: dict[str, dict[str, str]] | None = None,
     ) -> None:
         self.settings = settings or OperatorSettings()
         self.session = session or ForgeSession(
             system_prompt=CORE_BRAIN_PROMPT,
             memory=self.settings.enable_memory,
+            provider_secrets=provider_secrets,
+            allow_host_fallback=provider_secrets is None,
         )
         self.memory = ContextMemory(self.session._memory) if self.session._memory else None
         self.registry = SkillRegistry(self.settings)
@@ -90,18 +93,10 @@ class ForgeOperator:
         )
 
         if intent.primary_intent == IntentKind.CONVERSATION and not routing.selected_skills:
-            return self._clarification_result(
+            return self._conversation_result(
                 request=request,
                 intent=intent,
                 routing=routing,
-                plan=ExecutionPlan(
-                    objective="Clarify the mission before execution.",
-                    task_type=intent.task_type,
-                    risk_level=safety.risk_level,
-                    steps=[],
-                    fallbacks=[],
-                    completion_criteria=["The user provides one concrete, verifiable mission."],
-                ),
                 mission_id=mission_id,
                 audit_log_path=audit_log_path,
                 resumed_from_step=resume_state.resumed_from_step if resume_state else None,
@@ -244,6 +239,88 @@ class ForgeOperator:
             plan=plan,
             step_results=[],
             artifacts={},
+            mission_trace=mission_trace,
+            mission_id=mission_id,
+            audit_log_path=audit_log_path,
+            resumed_from_step=resumed_from_step,
+            agent_reviews=[],
+        )
+        self.audit_store.save_progress(
+            mission_id,
+            audit_log_path,
+            request=request,
+            plan=plan,
+            status=result.validation_status.value,
+            step_results=[],
+            artifacts={},
+            mission_trace=mission_trace,
+            resumed_from_step=resumed_from_step,
+        )
+        return result
+
+    def _conversation_result(
+        self,
+        request: str,
+        intent,
+        routing,
+        mission_id: str,
+        audit_log_path: str,
+        resumed_from_step: str | None,
+    ) -> OperatorResult:
+        plan = ExecutionPlan(
+            objective=intent.objective or "Answer the user directly.",
+            task_type=intent.task_type,
+            risk_level=intent.risk_level,
+            steps=[],
+            fallbacks=[],
+            completion_criteria=["Return a natural, direct answer without fake execution."],
+        )
+        try:
+            reply_response = self.session.ask_response(request, task_type=intent.task_type, remember=False)
+            reply = reply_response.content
+            status = CompletionState.FINISHED
+            risks: list[str] = []
+            best_next_action = "Continue the conversation or give FORGE a concrete task to execute."
+            mission_trace = [
+                "Intent resolved as conversation.",
+                "No tools were required.",
+                "FORGE selected the strongest available model path for a direct reply.",
+            ]
+            artifacts = {
+                "conversation_metadata": {
+                    "model_id": reply_response.model_id,
+                    "provider": reply_response.provider,
+                    "latency_ms": reply_response.latency_ms,
+                    "total_tokens": reply_response.total_tokens,
+                }
+            }
+        except Exception as exc:
+            reply = self._clarification_text(request)
+            status = CompletionState.PARTIALLY_FINISHED
+            risks = [str(exc)]
+            best_next_action = "Add a working provider key or give FORGE an executable task inside a selected workspace."
+            mission_trace = [
+                "Intent resolved as conversation.",
+                "Direct model reply failed.",
+                "FORGE returned a safe fallback clarification instead of pretending success.",
+            ]
+            artifacts = {}
+
+        result = OperatorResult(
+            objective=intent.objective or "Answer the user directly.",
+            approach_taken=[
+                f"Intent resolved as `{intent.primary_intent.value}`.",
+                "No execution skills were needed.",
+                "FORGE used direct model routing for a natural reply.",
+            ],
+            result=reply,
+            validation_status=status,
+            risks_or_limitations=risks,
+            best_next_action=best_next_action,
+            intent=intent,
+            plan=plan,
+            step_results=[],
+            artifacts=artifacts,
             mission_trace=mission_trace,
             mission_id=mission_id,
             audit_log_path=audit_log_path,

@@ -40,6 +40,31 @@ SHELL_HINT_EXECUTABLES = {
     "cmd",
     "make",
 }
+CONTENT_BOUNDARY_PREFIXES = (
+    "then ",
+    "then run",
+    "then execute",
+    "and then",
+    "next ",
+    "after that",
+    "afterwards",
+    "finally",
+    "now ",
+    "run ",
+    "execute ",
+    "compile ",
+    "test ",
+    "push ",
+    "publish ",
+    "ثم",
+    "بعد ذلك",
+    "بعدها",
+    "اخيرا",
+    "أخيراً",
+    "الآن",
+    "نفذ",
+    "شغل",
+)
 
 
 class PlanningEngine:
@@ -462,8 +487,38 @@ class PlanningEngine:
         blocks = re.findall(r"```(?:[\w.+-]+)?\n(.*?)```", request, flags=re.DOTALL)
         if blocks:
             return blocks[-1].strip()
-        match = re.search(r"(?:content|text)\s*:\s*(.+)$", request, flags=re.IGNORECASE | re.DOTALL)
-        return match.group(1).strip() if match else ""
+        match = re.search(r"(?:(?:exactly|only)\s+this\s+)?(?:content|text)\s*:\s*", request, flags=re.IGNORECASE)
+        if not match:
+            return ""
+
+        remainder = request[match.end() :]
+        collected: list[str] = []
+        for raw_line in remainder.splitlines():
+            line = raw_line.rstrip()
+            stripped = line.strip()
+            lowered = stripped.lower()
+            if collected and any(lowered.startswith(prefix) for prefix in CONTENT_BOUNDARY_PREFIXES):
+                break
+            collected.append(line)
+
+        while collected and not collected[-1].strip():
+            collected.pop()
+        return PlanningEngine._trim_inline_content_boundary("\n".join(collected).strip())
+
+    @staticmethod
+    def _trim_inline_content_boundary(content: str) -> str:
+        if not content:
+            return ""
+        boundary = re.search(
+            r"(?i)(?:(?<=[.!?])\s+|\n+)\b("
+            r"then\s+run|then\s+execute|then|and\s+then|next|after\s+that|afterwards|finally|now|"
+            r"run|execute|compile|test|push|publish|ثم|بعد\s+ذلك|بعدها|اخيرا|أخيراً|الآن|نفذ|شغل"
+            r")\b",
+            content,
+        )
+        if not boundary:
+            return content
+        return content[: boundary.start()].rstrip()
 
     @staticmethod
     def _looks_like_shell_command(candidate: str) -> bool:

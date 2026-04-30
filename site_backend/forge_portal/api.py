@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from dataclasses import dataclass
 from http import HTTPStatus
@@ -14,6 +15,62 @@ try:
     from .store import PROVIDER_REQUIREMENTS, PortalStateStore
 except ImportError:  # pragma: no cover
     from store import PROVIDER_REQUIREMENTS, PortalStateStore
+
+try:
+    from forge.providers.base import normalize_secret_value
+except ModuleNotFoundError as exc:  # pragma: no cover - production portal is deployed standalone
+    if exc.name != "forge":
+        raise
+
+    SECRET_TOKEN_PATTERNS: dict[str, tuple[str, ...]] = {
+        "api_key": (
+            r"(nvapi-[A-Za-z0-9._-]+)",
+            r"(sk-proj-[A-Za-z0-9._-]+)",
+            r"(sk-[A-Za-z0-9._-]+)",
+            r"(gsk_[A-Za-z0-9._-]+)",
+            r"(AIza[0-9A-Za-z_-]{20,})",
+            r"(hf_[A-Za-z0-9]{20,})",
+        ),
+        "global_key": (
+            r"([A-Fa-f0-9]{32,64})",
+        ),
+        "account_id": (
+            r"([A-Fa-f0-9]{32})",
+        ),
+        "email": (
+            r"([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})",
+        ),
+    }
+
+    def normalize_secret_value(name: str, value: str | None) -> str | None:
+        text = (value or "").strip()
+        if not text:
+            return None
+
+        if name in {"api_key", "global_key"} and text.lower().startswith("bearer "):
+            text = text.split(None, 1)[1].strip()
+
+        patterns = SECRET_TOKEN_PATTERNS.get(name, ())
+        for pattern in patterns:
+            match = re.search(pattern, text, flags=re.IGNORECASE)
+            if match:
+                return match.group(1).strip()
+
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        if len(lines) <= 1:
+            return text
+
+        compact_candidates = [
+            line
+            for line in lines
+            if " " not in line
+            and not line.endswith(":")
+            and len(line) >= 12
+            and not re.fullmatch(r"[A-Za-z][A-Za-z0-9 _-]{0,40}", line)
+        ]
+        if compact_candidates:
+            return compact_candidates[-1]
+        return lines[-1]
 
 
 SESSION_COOKIE = "forge_portal_session"
@@ -645,11 +702,13 @@ def handle_request(
             provider = str(payload.get("provider", "")).strip().lower()
             if provider not in SUPPORTED_PROVIDERS:
                 return json_response({"error": "Unsupported provider."}, status=HTTPStatus.BAD_REQUEST)
-            secret_payload = {
-                key: str(value).strip()
-                for key, value in payload.items()
-                if key in ALLOWED_SECRET_FIELDS and str(value).strip()
-            }
+            secret_payload: dict[str, str] = {}
+            for key, value in payload.items():
+                if key not in ALLOWED_SECRET_FIELDS:
+                    continue
+                normalized = normalize_secret_value(key, str(value))
+                if normalized:
+                    secret_payload[key] = normalized
             if secret_payload:
                 store.save_user_provider_secret(user_id=str(user["user_id"]), provider=provider, payload=secret_payload)
             else:

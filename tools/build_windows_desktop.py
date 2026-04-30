@@ -3,28 +3,17 @@ from __future__ import annotations
 import shutil
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
 DIST = ROOT / "dist"
 BUILD = ROOT / "build"
+TEMP_DIST = ROOT / ".build-dist"
+TEMP_BUILD = ROOT / ".build-work"
 ICON = ROOT / "assets" / "forge-desktop-icon.ico"
-ENTRYPOINT = ROOT / "forge_desktop.py"
-HIDDEN_IMPORTS = [
-    "forge.providers.registry",
-    "forge.providers.groq",
-    "forge.providers.gemini",
-    "forge.providers.ollama",
-    "forge.providers.deepseek",
-    "forge.providers.openrouter",
-    "forge.providers.mistral",
-    "forge.providers.together",
-    "forge.providers.nvidia",
-    "forge.providers.cloudflare",
-    "forge.providers.anthropic",
-    "forge.providers.openai",
-]
+SPEC_FILE = ROOT / "FORGE-Desktop.spec"
 
 
 def run(cmd: list[str]) -> None:
@@ -32,14 +21,35 @@ def run(cmd: list[str]) -> None:
     subprocess.run(cmd, cwd=ROOT, check=True)
 
 
+def _safe_rmtree(path: Path) -> None:
+    if path.exists():
+        shutil.rmtree(path)
+
+
+def _finalize_binary(built_exe: Path) -> Path:
+    DIST.mkdir(parents=True, exist_ok=True)
+    primary = DIST / "FORGE-Desktop.exe"
+    try:
+        if primary.exists():
+            primary.unlink()
+        shutil.copy2(built_exe, primary)
+        return primary
+    except PermissionError:
+        timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+        fallback = DIST / f"FORGE-Desktop-{timestamp}.exe"
+        shutil.copy2(built_exe, fallback)
+        return fallback
+
+
 def main() -> None:
     if not ICON.exists():
         run([sys.executable, str(ROOT / "tools" / "build_forge_icon.py")])
+    if not SPEC_FILE.exists():
+        raise FileNotFoundError(f"Spec file is missing: {SPEC_FILE}")
 
-    if DIST.exists():
-        shutil.rmtree(DIST)
-    if BUILD.exists():
-        shutil.rmtree(BUILD)
+    _safe_rmtree(TEMP_DIST)
+    _safe_rmtree(TEMP_BUILD)
+    _safe_rmtree(BUILD)
 
     cmd = [
         sys.executable,
@@ -47,24 +57,19 @@ def main() -> None:
         "PyInstaller",
         "--noconfirm",
         "--clean",
-        "--onefile",
-        "--windowed",
-        "--name",
-        "FORGE-Desktop",
-        "--icon",
-        str(ICON),
-        "--add-data",
-        f"{ROOT / 'forge' / 'skills_catalog'};forge/skills_catalog",
-        str(ENTRYPOINT),
+        "--distpath",
+        str(TEMP_DIST),
+        "--workpath",
+        str(TEMP_BUILD),
+        str(SPEC_FILE),
     ]
-    for module_name in HIDDEN_IMPORTS:
-        cmd.extend(["--hidden-import", module_name])
     run(cmd)
 
-    exe = DIST / "FORGE-Desktop.exe"
+    exe = TEMP_DIST / "FORGE-Desktop.exe"
     if not exe.exists():
         raise FileNotFoundError(f"Build succeeded but {exe} is missing.")
-    print(f"Built {exe}")
+    final_exe = _finalize_binary(exe)
+    print(f"Built {final_exe}")
 
 
 if __name__ == "__main__":

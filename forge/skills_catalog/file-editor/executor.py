@@ -6,6 +6,31 @@ from forge.tools.workspace import WorkspaceTools
 
 
 FILE_HINTS = ("/", "\\", ".py", ".ts", ".tsx", ".js", ".jsx", ".json", ".md", ".txt", ".toml", ".yaml", ".yml", ".sql")
+CONTENT_BOUNDARY_PREFIXES = (
+    "then ",
+    "then run",
+    "then execute",
+    "and then",
+    "next ",
+    "after that",
+    "afterwards",
+    "finally",
+    "now ",
+    "run ",
+    "execute ",
+    "compile ",
+    "test ",
+    "push ",
+    "publish ",
+    "ثم",
+    "بعد ذلك",
+    "بعدها",
+    "اخيرا",
+    "أخيراً",
+    "الآن",
+    "نفذ",
+    "شغل",
+)
 
 
 def execute(payload: dict, context) -> dict:
@@ -123,10 +148,36 @@ def _extract_content(text: str) -> str:
     if blocks:
         return blocks[-1].strip()
 
-    match = re.search(r"(?:content|text)\s*:\s*(.+)$", text, flags=re.IGNORECASE | re.DOTALL)
+    match = re.search(r"(?:(?:exactly|only)\s+this\s+)?(?:content|text)\s*:\s*", text, flags=re.IGNORECASE)
     if match:
-        return match.group(1).strip()
+        remainder = text[match.end() :]
+        collected: list[str] = []
+        for raw_line in remainder.splitlines():
+            line = raw_line.rstrip()
+            stripped = line.strip()
+            lowered = stripped.lower()
+            if collected and any(lowered.startswith(prefix) for prefix in CONTENT_BOUNDARY_PREFIXES):
+                break
+            collected.append(line)
+        while collected and not collected[-1].strip():
+            collected.pop()
+        return _trim_inline_content_boundary("\n".join(collected).strip())
     return ""
+
+
+def _trim_inline_content_boundary(content: str) -> str:
+    if not content:
+        return ""
+    boundary = re.search(
+        r"(?i)(?:(?<=[.!?])\s+|\n+)\b("
+        r"then\s+run|then\s+execute|then|and\s+then|next|after\s+that|afterwards|finally|now|"
+        r"run|execute|compile|test|push|publish|ثم|بعد\s+ذلك|بعدها|اخيرا|أخيراً|الآن|نفذ|شغل"
+        r")\b",
+        content,
+    )
+    if not boundary:
+        return content
+    return content[: boundary.start()].rstrip()
 
 
 def _extract_replace_payload(payload: dict, request: str) -> dict[str, str]:

@@ -14,14 +14,18 @@ env/
 Thumbs.db
 
 .forge_artifacts/
+.portal-dev.*.log
 forge/memory/persistent.db
 .forge_mission_tests/mock_*request.json
 .forge_mission_tests/mock_*state.json
 
 dist/
 build/
+.build-dist/
+.build-work/
+output/
 *.egg-info/
-release-assets/installer-output/
+release-assets/
 node_modules/
 playwright-report/
 test-results/

@@ -1,45 +1,10 @@
 # -*- mode: python ; coding: utf-8 -*-
+"""Unsupported legacy PyInstaller spec.
 
+Use tools/build_windows_desktop.py, which invokes FORGE-Desktop.spec.
+"""
 
-a = Analysis(
-    ['forge_desktop.py'],
-    pathex=[],
-    binaries=[],
-    datas=[('forge\\skills_catalog', 'forge/skills_catalog')],
-    hiddenimports=['forge.providers.groq', 'forge.providers.gemini', 'forge.providers.ollama', 'forge.providers.deepseek', 'forge.providers.openrouter'],
-    hookspath=[],
-    hooksconfig={},
-    runtime_hooks=[],
-    excludes=[],
-    noarchive=False,
-    optimize=0,
-)
-pyz = PYZ(a.pure)
-
-exe = EXE(
-    pyz,
-    a.scripts,
-    [],
-    exclude_binaries=True,
-    name='FORGE-Desktop-App-Debug',
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=True,
-    console=True,
-    disable_windowed_traceback=False,
-    argv_emulation=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
-    icon=['assets\\forge-desktop-icon.ico'],
-)
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.datas,
-    strip=False,
-    upx=True,
-    upx_exclude=[],
-    name='FORGE-Desktop-App-Debug',
+raise SystemExit(
+    "FORGE-Desktop-App-Debug.spec is a legacy spec. "
+    "Use: python tools/build_windows_desktop.py"
 )

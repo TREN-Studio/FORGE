@@ -1,16 +1,53 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from pathlib import Path
+
+
+ROOT = Path(SPECPATH).resolve()
+ENTRYPOINT = ROOT / "forge_desktop.py"
+ICON = ROOT / "assets" / "forge-desktop-icon.ico"
+
+HIDDEN_IMPORTS = [
+    "forge.providers.registry",
+    "forge.providers.groq",
+    "forge.providers.gemini",
+    "forge.providers.nvidia",
+    "forge.providers.cloudflare",
+    "forge.providers.deepseek",
+    "forge.providers.openrouter",
+    "forge.providers.mistral",
+    "forge.providers.together",
+    "forge.providers.ollama",
+    "forge.providers.anthropic",
+    "forge.providers.openai",
+    "pydantic.deprecated.class_validators",
+    "pydantic_core",
+    "httpx._transports.default",
+]
+
+DATA_FILES = [
+    (str(ROOT / "forge" / "skills_catalog"), "forge/skills_catalog"),
+    (str(ROOT / "assets"), "assets"),
+]
+
+EXCLUDES = [
+    "matplotlib",
+    "numpy",
+    "pandas",
+    "torch",
+]
+
 
 a = Analysis(
-    ['C:\\Users\\larbi\\My Projects\\FORGE\\forge-agent-v1.0\\forge-agent\\forge_desktop.py'],
-    pathex=[],
+    [str(ENTRYPOINT)],
+    pathex=[str(ROOT)],
     binaries=[],
-    datas=[('C:\\Users\\larbi\\My Projects\\FORGE\\forge-agent-v1.0\\forge-agent\\forge\\skills_catalog', 'forge/skills_catalog')],
-    hiddenimports=['forge.providers.groq', 'forge.providers.gemini', 'forge.providers.ollama', 'forge.providers.deepseek', 'forge.providers.openrouter'],
+    datas=DATA_FILES,
+    hiddenimports=HIDDEN_IMPORTS,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=EXCLUDES,
     noarchive=False,
     optimize=0,
 )
@@ -22,7 +59,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='FORGE-Desktop',
+    name="FORGE-Desktop",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -35,5 +72,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['C:\\Users\\larbi\\My Projects\\FORGE\\forge-agent-v1.0\\forge-agent\\assets\\forge-desktop-icon.ico'],
+    icon=[str(ICON)],
 )

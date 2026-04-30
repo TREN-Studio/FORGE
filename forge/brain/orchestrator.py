@@ -1,13 +1,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import hashlib
+import json
+from pathlib import Path
 from typing import Any, Callable
 
+from forge.brain.approval import ApprovalDecision, ApprovalPolicyEngine
 from forge.brain.contracts import AgentReview, CompletionState, ExecutionPlan, StepExecutionResult, TaskIntent
 from forge.brain.council import ActionAgent, CriticAgent, ResearchAgent
 from forge.brain.mission_store import MissionAuditStore, MissionResumeState
+from forge.brain.worker_executor import decode_agent_review, serialize_operator_settings
+from forge.brain.worker_protocol import WorkerHeartbeat, WorkerRegistration, WorkerTask
 from forge.brain.worker_runtime import DistributedCouncilRuntime
+from forge.config.settings import OperatorSettings
 from forge.recovery.manager import RecoveryManager
+from forge.runtime.state_store import PersistentStateStore
 from forge.skills.registry import SkillRegistry
 from forge.skills.runtime import SkillExecutionContext, SkillRuntime
 from forge.tools.workspace import WorkspaceTools
@@ -35,12 +43,71 @@ class _RollbackEntry:
 class MissionOrchestrator:
     """Dispatch mission steps with retries, checkpoints, audit logs, and a critic pass."""
     _shared_workers: DistributedCouncilRuntime | None = None
+    _shared_approval_engine: ApprovalPolicyEngine | None = None
 
     @classmethod
     def worker_snapshot(cls) -> dict[str, Any]:
         if cls._shared_workers is None:
-            cls._shared_workers = DistributedCouncilRuntime()
+            cls._ensure_cluster()
         return cls._shared_workers.snapshot()
+
+    @classmethod
+    def register_worker(cls, registration: WorkerRegistration) -> None:
+        if cls._shared_workers is None:
+            cls._ensure_cluster()
+        cls._shared_workers.register_remote_worker(registration)
+
+    @classmethod
+    def heartbeat_worker(cls, heartbeat: WorkerHeartbeat) -> None:
+        if cls._shared_workers is None:
+            cls._ensure_cluster()
+        cls._shared_workers.heartbeat_worker(heartbeat)
+
+    @classmethod
+    def approvals_snapshot(cls) -> list[dict[str, Any]]:
+        if cls._shared_approval_engine is None:
+            cls._ensure_cluster()
+        return cls._shared_approval_engine.list_pending()
+
+    @classmethod
+    def approval_status(cls, approval_id: str) -> dict[str, Any] | None:
+        if cls._shared_approval_engine is None:
+            cls._ensure_cluster()
+        return cls._shared_approval_engine.approval_status(approval_id)
+
+    @classmethod
+    def approve(cls, approval_id: str, *, notes: str = "") -> dict[str, Any] | None:
+        if cls._shared_approval_engine is None:
+            cls._ensure_cluster()
+        return cls._shared_approval_engine.approve(approval_id, notes=notes)
+
+    @classmethod
+    def reject(cls, approval_id: str, *, notes: str = "") -> dict[str, Any] | None:
+        if cls._shared_approval_engine is None:
+            cls._ensure_cluster()
+        return cls._shared_approval_engine.reject(approval_id, notes=notes)
+
+    @classmethod
+    def _ensure_cluster(cls, state_store: PersistentStateStore | None = None, settings: OperatorSettings | None = None) -> None:
+        active_settings = settings or OperatorSettings(workspace_root=Path.cwd().resolve())
+        active_store = state_store or PersistentStateStore(
+            active_settings.state_db_path,
+            encryption_key_path=active_settings.approval_key_path,
+        )
+        if (
+            cls._shared_workers is not None
+            and cls._shared_approval_engine is not None
+            and getattr(getattr(cls._shared_workers, "_state_store", None), "path", None) == active_store.path
+        ):
+            return
+        if cls._shared_workers is not None:
+            cls._shared_workers.close()
+        cls._shared_workers = DistributedCouncilRuntime(
+            state_store=active_store,
+            max_queue_per_lane=active_settings.worker_max_queue_per_lane,
+            remote_request_timeout_seconds=active_settings.worker_remote_timeout_seconds,
+        )
+        cls._shared_approval_engine = ApprovalPolicyEngine(active_store)
 
     def __init__(
         self,
@@ -63,9 +130,9 @@ class MissionOrchestrator:
         self._research_agent = ResearchAgent()
         self._action_agent = ActionAgent()
         self._critic_agent = CriticAgent()
-        if MissionOrchestrator._shared_workers is None:
-            MissionOrchestrator._shared_workers = DistributedCouncilRuntime()
+        MissionOrchestrator._ensure_cluster(audit_store.state_store, registry._settings if hasattr(registry, "_settings") else None)
         self._workers = MissionOrchestrator._shared_workers
+        self._approval_engine = MissionOrchestrator._shared_approval_engine
 
     def execute(
         self,
@@ -95,7 +162,7 @@ class MissionOrchestrator:
         prior_results = self._prior_results_from_steps(step_results)
         resumed_from_step = step_results[-1].step_id if step_results else None
         rollback_stack = self._rebuild_rollback_stack(step_results)
-        critique_memory = self._restore_critique_memory(step_results)
+        critique_memory = self._restore_critique_memory(mission_id, step_results)
         agent_reviews: list[AgentReview] = []
         mission_failed = False
         mission_status = "running"
@@ -191,34 +258,45 @@ class MissionOrchestrator:
                     critique_memory=critique_memory,
                     step=step,
                 )
+                step_trace.extend(self._workers.submit_task(self._dispatch_notes_task(step, mission_id=mission_id, attempt=attempt)))
                 step_trace.extend(
-                    self._workers.submit(
-                        "council:action",
-                        lambda step=step: self._action_agent.dispatch_notes(step),
-                    )
-                )
-                step_trace.extend(
-                    self._workers.submit(
-                        "council:research",
-                        lambda request=request, step=step, payload=payload: self._research_agent.prepare_step(request, step, payload),
+                    self._workers.submit_task(
+                        self._prepare_research_task(
+                            request=request,
+                            step=step,
+                            payload=payload,
+                            mission_id=mission_id,
+                            attempt=attempt,
+                        )
                     )
                 )
                 if critique_memory:
                     step_trace.append(f"Cross-agent critique injected: {sum(len(v) for v in critique_memory.values())} note(s).")
 
-                checkpoint_notes = self._approval_checkpoint(step, payload, request, confirmed=confirmed)
                 input_snapshot = self._input_snapshot(payload)
-                if checkpoint_notes:
+                approval_decision = self._approval_decision(
+                    mission_id=mission_id,
+                    request=request,
+                    step=step,
+                    payload=payload,
+                    confirmed=confirmed,
+                )
+                if approval_decision.approval_required:
                     checkpoint_review = AgentReview(
                         agent="critic",
                         status=CompletionState.NEEDS_HUMAN_CONFIRMATION,
-                        notes=checkpoint_notes,
+                        notes=approval_decision.notes,
                         confidence=0.2,
                     )
                     agent_reviews.append(checkpoint_review)
-                    self._remember_critique(critique_memory, step.id, current_skill.name, checkpoint_review)
+                    self._remember_critique(mission_id, critique_memory, step.id, current_skill.name, checkpoint_review)
                     step_trace.append("Approval checkpoint blocked execution before side effects.")
-                    step_trace.extend(f"Checkpoint: {note}" for note in checkpoint_notes)
+                    step_trace.extend(f"Checkpoint: {note}" for note in approval_decision.notes)
+                    artifacts.setdefault("pending_approvals", {})[step.id] = {
+                        "approval_id": approval_decision.approval_id,
+                        "approval_class": approval_decision.approval_class,
+                        "status": approval_decision.status,
+                    }
                     step_results.append(
                         StepExecutionResult(
                             step_id=step.id,
@@ -228,7 +306,7 @@ class MissionOrchestrator:
                             output=None,
                             evidence=[],
                             validation_status=CompletionState.NEEDS_HUMAN_CONFIRMATION,
-                            validation_notes=checkpoint_notes,
+                            validation_notes=approval_decision.notes,
                             attempts=attempt,
                             input_snapshot=input_snapshot,
                             trace=list(step_trace),
@@ -257,21 +335,35 @@ class MissionOrchestrator:
                 try:
                     if current_skill.name == "browser-executor" and isinstance(payload.get("fanout_targets"), list) and len(payload["fanout_targets"]) > 1:
                         step_trace.append(f"Fan-out dispatch across {len(payload['fanout_targets'])} browser target(s).")
-                        output = self._execute_browser_fanout(current_skill, payload, runtime_context)
+                        output = self._execute_browser_fanout(current_skill, payload, runtime_context, mission_id=mission_id, step_id=step.id, attempt=attempt)
                     else:
                         step_trace.append("Worker lane: council:action")
-                        output = self._workers.submit(
-                            "council:action",
-                            lambda current_skill=current_skill, payload=payload, runtime_context=runtime_context: self._runtime.execute(current_skill, payload, runtime_context),
+                        output = self._workers.submit_task(
+                            self._execute_skill_task(
+                                current_skill.name,
+                                payload,
+                                runtime_context,
+                                mission_id=mission_id,
+                                step_id=step.id,
+                                attempt=attempt,
+                            )
                         )
                     last_output = output
 
                     research_review: AgentReview | None = None
                     step_trace.append("Worker lane: council:research")
-                    output, research_review = self._workers.submit(
-                        "council:research",
-                        lambda request=request, step=step, output=output: self._research_agent.enrich_output(request, step, output),
+                    research_result = self._workers.submit_task(
+                        self._enrich_research_task(
+                            request=request,
+                            step=step,
+                            output=output,
+                            mission_id=mission_id,
+                            attempt=attempt,
+                        )
                     )
+                    output = research_result.get("output")
+                    review_payload = research_result.get("review")
+                    research_review = decode_agent_review(review_payload) if review_payload else None
                     if research_review is not None:
                         agent_reviews.append(research_review)
                         step_trace.extend(f"Research: {note}" for note in research_review.notes)
@@ -289,12 +381,20 @@ class MissionOrchestrator:
                     if critique:
                         combined_notes = list(dict.fromkeys(combined_notes + critique))
                     step_trace.append("Worker lane: council:critic")
-                    critic_review = self._workers.submit(
-                        "council:critic",
-                        lambda request=request, step=step, output=output, status=validation.status: self._critic_agent.review_step(request, step, output, status),
+                    critic_review = decode_agent_review(
+                        self._workers.submit_task(
+                            self._critic_review_task(
+                                request=request,
+                                step=step,
+                                output=output,
+                                validation_status=validation.status,
+                                mission_id=mission_id,
+                                attempt=attempt,
+                            )
+                        )
                     )
                     agent_reviews.append(critic_review)
-                    self._remember_critique(critique_memory, step.id, current_skill.name, critic_review)
+                    self._remember_critique(mission_id, critique_memory, step.id, current_skill.name, critic_review)
                     final_status = self._merge_status(validation.status, critic_review.status)
                     combined_notes = list(dict.fromkeys(combined_notes + critic_review.notes))
 
@@ -411,7 +511,7 @@ class MissionOrchestrator:
                         ),
                     )
                     agent_reviews.append(critic_review)
-                    self._remember_critique(critique_memory, step.id, current_skill.name, critic_review)
+                    self._remember_critique(mission_id, critique_memory, step.id, current_skill.name, critic_review)
                     if recovery.action == "retry" and attempt < max(1, step.retry_limit):
                         step_trace.append(f"Retrying step: {recovery.reason}")
                         mission_trace.append(f"{step.id}: retrying after exception `{exc}`.")
@@ -468,9 +568,14 @@ class MissionOrchestrator:
             rollback_events = self._rollback_stack(rollback_stack, runtime_context, step_results)
             mission_trace.extend(rollback_events)
 
-        mission_review = self._workers.submit(
-            "council:critic",
-            lambda plan=plan, step_results=step_results: self._critic_agent.review_mission(plan, step_results),
+        mission_review = decode_agent_review(
+            self._workers.submit_task(
+                self._critic_mission_review_task(
+                    plan=plan,
+                    step_results=step_results,
+                    mission_id=mission_id,
+                )
+            )
         )
         agent_reviews.append(mission_review)
         mission_trace.extend(f"Critic review: {note}" for note in mission_review.notes)
@@ -597,6 +702,216 @@ class MissionOrchestrator:
         if step.skill == "file-editor":
             self._inject_file_editor_content(payload, prior_results)
         return payload
+
+    def _dispatch_notes_task(self, step, *, mission_id: str, attempt: int) -> WorkerTask:
+        return WorkerTask(
+            service_name="council:action",
+            operation="dispatch_notes",
+            payload={"step": step.model_dump(mode="json")},
+            mission_id=mission_id,
+            step_id=step.id,
+            idempotency_key=self._idempotency_key(mission_id, step.id, "dispatch_notes", attempt),
+            remote_allowed=True,
+            lease_ttl_seconds=self._audit_store._settings.worker_lease_ttl_seconds,
+        )
+
+    def _prepare_research_task(
+        self,
+        *,
+        request: str,
+        step,
+        payload: dict[str, Any],
+        mission_id: str,
+        attempt: int,
+    ) -> WorkerTask:
+        return WorkerTask(
+            service_name="council:research",
+            operation="prepare_step",
+            payload={
+                "request": request,
+                "step": step.model_dump(mode="json"),
+                "payload": payload,
+            },
+            mission_id=mission_id,
+            step_id=step.id,
+            idempotency_key=self._idempotency_key(mission_id, step.id, "prepare_step", attempt, self._payload_fingerprint(payload)),
+            remote_allowed=True,
+            lease_ttl_seconds=self._audit_store._settings.worker_lease_ttl_seconds,
+        )
+
+    def _execute_skill_task(
+        self,
+        skill_name: str,
+        payload: dict[str, Any],
+        runtime_context: SkillExecutionContext,
+        *,
+        mission_id: str,
+        step_id: str,
+        attempt: int,
+    ) -> WorkerTask:
+        return WorkerTask(
+            service_name="council:action",
+            operation="execute_skill",
+            payload={
+                "skill_name": skill_name,
+                "skill_payload": payload,
+                "context": {
+                    "settings": serialize_operator_settings(runtime_context.settings),
+                    "dry_run": runtime_context.dry_run,
+                    "state": dict(runtime_context.state),
+                },
+            },
+            mission_id=mission_id,
+            step_id=step_id,
+            idempotency_key=self._idempotency_key(
+                mission_id,
+                step_id,
+                f"execute:{skill_name}",
+                attempt,
+                self._payload_fingerprint(payload),
+            ),
+            remote_allowed=True,
+            lease_ttl_seconds=runtime_context.settings.worker_lease_ttl_seconds,
+            timeout_seconds=runtime_context.settings.worker_remote_timeout_seconds,
+        )
+
+    def _enrich_research_task(
+        self,
+        *,
+        request: str,
+        step,
+        output: Any,
+        mission_id: str,
+        attempt: int,
+    ) -> WorkerTask:
+        return WorkerTask(
+            service_name="council:research",
+            operation="enrich_output",
+            payload={
+                "request": request,
+                "step": step.model_dump(mode="json"),
+                "output": output,
+            },
+            mission_id=mission_id,
+            step_id=step.id,
+            idempotency_key=self._idempotency_key(mission_id, step.id, "enrich_output", attempt, self._payload_fingerprint(output)),
+            remote_allowed=True,
+            lease_ttl_seconds=self._audit_store._settings.worker_lease_ttl_seconds,
+        )
+
+    def _critic_review_task(
+        self,
+        *,
+        request: str,
+        step,
+        output: Any,
+        validation_status: CompletionState,
+        mission_id: str,
+        attempt: int,
+    ) -> WorkerTask:
+        return WorkerTask(
+            service_name="council:critic",
+            operation="review_step",
+            payload={
+                "request": request,
+                "step": step.model_dump(mode="json"),
+                "output": output,
+                "validation_status": validation_status.value,
+            },
+            mission_id=mission_id,
+            step_id=step.id,
+            idempotency_key=self._idempotency_key(
+                mission_id,
+                step.id,
+                "critic_review",
+                attempt,
+                self._payload_fingerprint({"output": output, "status": validation_status.value}),
+            ),
+            remote_allowed=True,
+            lease_ttl_seconds=self._audit_store._settings.worker_lease_ttl_seconds,
+        )
+
+    def _critic_mission_review_task(
+        self,
+        *,
+        plan: ExecutionPlan,
+        step_results: list[StepExecutionResult],
+        mission_id: str,
+    ) -> WorkerTask:
+        return WorkerTask(
+            service_name="council:critic",
+            operation="review_mission",
+            payload={
+                "plan": plan.model_dump(mode="json"),
+                "step_results": [step.model_dump(mode="json") for step in step_results],
+            },
+            mission_id=mission_id,
+            step_id="mission",
+            idempotency_key=self._idempotency_key(
+                mission_id,
+                "mission",
+                "critic_mission",
+                len(step_results),
+                self._payload_fingerprint([step.model_dump(mode="json") for step in step_results]),
+            ),
+            remote_allowed=True,
+            lease_ttl_seconds=self._audit_store._settings.worker_lease_ttl_seconds,
+        )
+
+    def _approval_decision(
+        self,
+        *,
+        mission_id: str,
+        request: str,
+        step,
+        payload: dict[str, Any],
+        confirmed: bool,
+    ) -> ApprovalDecision:
+        approval_class = self._approval_class_for_step(step, payload, request)
+        return self._approval_engine.evaluate(
+            mission_id=mission_id,
+            step_id=step.id,
+            approval_class=approval_class,
+            request_excerpt=request,
+            payload=payload,
+            summary=step.action,
+            confirmed=confirmed,
+        )
+
+    @staticmethod
+    def _approval_class_for_step(step, payload: dict[str, Any], request: str) -> str | None:
+        request_lower = request.lower()
+        if step.skill == "file-editor":
+            target = str(payload.get("target_path", "")).lower()
+            if any(token in target for token in (".env", "secret", "credential", "token", "password", "key")):
+                return "sensitive_file_write"
+        if step.skill == "shell-executor":
+            command = str(payload.get("command", "")).lower()
+            if any(token in command for token in ("post ", "-x post", "--request post")):
+                return "network_post"
+            if any(token in command for token in ("curl", "wget", "invoke-webrequest", "http://", "https://")):
+                return "network_egress"
+            if any(token in command for token in ("rm ", "del ", "remove-item", "shutdown", "format", "drop ")):
+                return "destructive_shell"
+        if step.skill == "browser-executor":
+            if any(token in request_lower for token in ("login", "signin", "password", "checkout", "purchase", "buy", "pay", "account")):
+                return "authenticated_browser"
+            if any(token in request_lower for token in ("publish", "post live", "deploy", "submit form", "upload")):
+                return "external_publish"
+        if step.skill == "github-publisher":
+            return "network_post"
+        if step.skill in {"wordpress-publisher", "external-publisher"}:
+            return "external_publish"
+        return None
+
+    @staticmethod
+    def _idempotency_key(mission_id: str, step_id: str, operation: str, attempt: int, extra: str = "") -> str:
+        return f"{mission_id}:{step_id}:{operation}:{attempt}:{extra}".strip(":")
+
+    @staticmethod
+    def _payload_fingerprint(payload: Any) -> str:
+        encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+        return hashlib.sha1(encoded.encode("utf-8")).hexdigest()[:16]
 
     @staticmethod
     def _resume_artifacts(resume_state: MissionResumeState | None) -> dict[str, Any]:
@@ -756,20 +1071,35 @@ class MissionOrchestrator:
                     step_result.rollback_notes.append(note)
         return notes
 
-    def _execute_browser_fanout(self, current_skill, payload: dict[str, Any], runtime_context: SkillExecutionContext) -> dict[str, Any]:
+    def _execute_browser_fanout(
+        self,
+        current_skill,
+        payload: dict[str, Any],
+        runtime_context: SkillExecutionContext,
+        *,
+        mission_id: str,
+        step_id: str,
+        attempt: int,
+    ) -> dict[str, Any]:
         targets = [str(item).strip() for item in payload.get("fanout_targets", []) if str(item).strip()]
         if len(targets) <= 1:
             return self._runtime.execute(current_skill, payload, runtime_context)
 
         futures = []
-        for target in targets:
+        for index, target in enumerate(targets, start=1):
             child_payload = dict(payload)
             child_payload["start_url"] = target
             child_payload.pop("fanout_targets", None)
             futures.append(
-                self._workers.submit_future(
-                    "council:action",
-                    lambda current_skill=current_skill, child_payload=child_payload, runtime_context=runtime_context: self._runtime.execute(current_skill, child_payload, runtime_context),
+                self._workers.submit_task_future(
+                    self._execute_skill_task(
+                        current_skill.name,
+                        child_payload,
+                        runtime_context,
+                        mission_id=mission_id,
+                        step_id=f"{step_id}:fanout:{index}",
+                        attempt=attempt,
+                    )
                 )
             )
 
@@ -884,9 +1214,8 @@ class MissionOrchestrator:
             lines.extend(f"{review.agent}: {note}" for note in review.notes)
         return lines
 
-    @staticmethod
-    def _restore_critique_memory(step_results: list[StepExecutionResult]) -> dict[str, list[str]]:
-        memory: dict[str, list[str]] = {}
+    def _restore_critique_memory(self, mission_id: str, step_results: list[StepExecutionResult]) -> dict[str, list[str]]:
+        memory = self._audit_store.state_store.load_critique_memory(mission_id)
         for step in step_results:
             if step.agent_reviews:
                 memory[step.step_id] = list(step.agent_reviews[:6])
@@ -894,8 +1223,9 @@ class MissionOrchestrator:
                     memory[step.skill] = list(step.agent_reviews[:6])
         return memory
 
-    @staticmethod
     def _remember_critique(
+        self,
+        mission_id: str,
         memory: dict[str, list[str]],
         step_id: str,
         skill_name: str,
@@ -904,6 +1234,7 @@ class MissionOrchestrator:
         lines = [f"{review.agent}: {note}" for note in review.notes]
         memory[step_id] = lines[:6]
         memory[skill_name] = lines[:6]
+        self._audit_store.state_store.save_critique_notes(mission_id, step_id, skill_name, lines[:6])
 
     @staticmethod
     def _merge_status(validation_status: CompletionState, critic_status: CompletionState) -> CompletionState:

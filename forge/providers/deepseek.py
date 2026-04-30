@@ -98,3 +98,32 @@ class DeepSeekProvider(BaseProvider):
             output_tokens=usage.get("completion_tokens", 0),
             finish_reason=choice.get("finish_reason", "stop"),
         )
+
+    async def stream(
+        self,
+        model: ModelSpec,
+        messages: list[Message],
+        max_tokens: int = 2048,
+        temperature: float = 0.7,
+    ):
+        payload: dict[str, object] = {
+            "model": model.id,
+            "messages": [message.model_dump(exclude_none=True) for message in messages],
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        }
+        if model.id == "deepseek-reasoner":
+            payload["thinking"] = {"type": "enabled"}
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": "application/json",
+        }
+        async for event in self._stream_openai_compatible(
+            api_url=_API_URL,
+            payload=payload,
+            headers=headers,
+            model=model,
+            provider_name="deepseek",
+            timeout=90,
+        ):
+            yield event

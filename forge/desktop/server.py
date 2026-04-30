@@ -26,6 +26,7 @@ from forge.desktop.runtime import (
     operate_prompt,
     run_prompt,
     set_workspace_root,
+    stream_prompt,
 )
 from forge.providers import supported_provider_names
 
@@ -80,13 +81,27 @@ DESKTOP_HTML = """<!doctype html>
       opacity: 0.45;
     }
 
+    body.sidebar-open { overflow: hidden; }
+
     .shell {
       position: relative;
-      display: grid;
-      grid-template-columns: 360px minmax(0, 1fr);
-      gap: 24px;
       min-height: 100vh;
-      padding: 28px;
+      padding: 0;
+    }
+
+    .sidebar-scrim {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.52);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.18s ease;
+      z-index: 30;
+    }
+
+    body.sidebar-open .sidebar-scrim {
+      opacity: 1;
+      pointer-events: auto;
     }
 
     .panel {
@@ -98,10 +113,23 @@ DESKTOP_HTML = """<!doctype html>
     }
 
     .sidebar {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      bottom: 20px;
+      width: min(360px, calc(100vw - 40px));
       display: flex;
       flex-direction: column;
       gap: 18px;
       padding: 24px;
+      overflow: auto;
+      z-index: 40;
+      transform: translateX(calc(-100% - 28px));
+      transition: transform 0.2s ease;
+    }
+
+    body.sidebar-open .sidebar {
+      transform: translateX(0);
     }
 
     .brand {
@@ -196,6 +224,9 @@ DESKTOP_HTML = """<!doctype html>
       font-weight: 600;
       font-size: 14px;
       text-align: right;
+      max-width: 62%;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
 
     .mode-toggle {
@@ -313,28 +344,150 @@ DESKTOP_HTML = """<!doctype html>
 
     .workspace {
       display: grid;
-      grid-template-rows: auto auto 1fr auto;
-      min-height: calc(100vh - 56px);
+      grid-template-rows: auto auto 1fr;
+      min-height: 100vh;
+      width: min(1180px, calc(100vw - 40px));
+      margin: 0 auto;
       overflow: hidden;
+      background: transparent;
+      border: 0;
+      box-shadow: none;
+      backdrop-filter: none;
     }
 
     .workspace-header {
-      padding: 26px 28px 18px;
-      border-bottom: 1px solid var(--line);
+      width: min(980px, 100%);
+      margin: 0 auto;
+      padding: 26px 0 10px;
+      border-bottom: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
     }
 
     .workspace-header h2 {
       margin: 0;
-      font-size: 30px;
+      font-size: 24px;
       letter-spacing: 0.02em;
     }
 
     .workspace-header p {
-      margin: 10px 0 0;
-      max-width: 820px;
+      margin: 6px 0 0;
+      max-width: 720px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .auth-gate {
+      width: min(720px, 100%);
+      margin: 4px auto 0;
+      padding: 22px 24px;
+      border-radius: 26px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.02));
+      box-shadow: 0 24px 60px rgba(0,0,0,0.22);
+    }
+
+    .auth-gate-kicker {
+      color: var(--accent-soft);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .auth-gate h3 {
+      margin: 8px 0 10px;
+      font-size: 31px;
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+    }
+
+    .auth-gate p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.7;
+    }
+
+    .auth-gate-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 18px;
+    }
+
+    .auth-gate-actions button {
+      min-height: 48px;
+      padding: 0 18px;
+      border-radius: 14px;
+      font-size: 14px;
+    }
+
+    .chat-shell {
+      width: min(980px, 100%);
+      min-height: calc(100vh - 128px);
+      margin: 0 auto;
+      display: grid;
+      grid-template-rows: minmax(0, 1fr) auto;
+    }
+
+    .chat-empty {
+      align-self: center;
+      justify-self: center;
+      width: min(760px, 100%);
+      padding: 22px 18px;
+      text-align: center;
+    }
+
+    .chat-empty-kicker {
+      color: var(--accent-soft);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .chat-empty h3 {
+      margin: 10px 0 12px;
+      font-size: clamp(38px, 7vw, 58px);
+      line-height: 0.98;
+      letter-spacing: -0.05em;
+    }
+
+    .chat-empty p {
+      max-width: 680px;
+      margin: 0 auto;
       color: var(--muted);
       font-size: 15px;
-      line-height: 1.6;
+      line-height: 1.75;
+    }
+
+    .workspace-kicker {
+      margin-bottom: 6px;
+      color: var(--accent-soft);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .workspace-topbar-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .sidebar-toggle {
+      min-height: 42px;
+      padding: 0 18px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.05);
+      color: var(--text);
+      box-shadow: none;
     }
 
     .operator-deck {
@@ -378,6 +531,11 @@ DESKTOP_HTML = """<!doctype html>
       grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
       gap: 18px;
       padding: 20px 28px 0;
+    }
+
+    .operator-deck,
+    .operator-grid {
+      display: none;
     }
 
     .operator-panel {
@@ -456,7 +614,10 @@ DESKTOP_HTML = """<!doctype html>
     .status-pill.running { color: var(--accent-soft); border-color: rgba(255,180,77,0.28); background: rgba(255,180,77,0.08); }
 
     .chat {
-      padding: 24px 28px;
+      width: 100%;
+      max-width: 100%;
+      margin: 0 auto;
+      padding: 12px 0 16px;
       overflow: auto;
       display: flex;
       flex-direction: column;
@@ -464,16 +625,17 @@ DESKTOP_HTML = """<!doctype html>
     }
 
     .bubble {
-      max-width: min(820px, 92%);
-      padding: 18px 18px 16px;
-      border-radius: 20px;
-      border: 1px solid var(--line);
-      background: rgba(255,255,255,0.03);
+      max-width: min(920px, 100%);
+      padding: 15px 16px 14px;
+      border-radius: 22px;
+      border: 1px solid rgba(255,255,255,0.06);
+      background: rgba(255,255,255,0.028);
       box-shadow: inset 0 1px 0 rgba(255,255,255,0.02);
     }
 
     .bubble.user {
       align-self: flex-end;
+      max-width: min(720px, 88%);
       background: linear-gradient(180deg, rgba(255,107,26,0.18), rgba(255,107,26,0.07));
       border-color: rgba(255,107,26,0.28);
     }
@@ -481,6 +643,11 @@ DESKTOP_HTML = """<!doctype html>
     .bubble.assistant {
       align-self: flex-start;
       background: rgba(255,255,255,0.035);
+    }
+
+    .bubble.streaming {
+      border-color: rgba(255,107,26,0.2);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.03), 0 0 0 1px rgba(255,107,26,0.05);
     }
 
     .bubble.error {
@@ -505,27 +672,51 @@ DESKTOP_HTML = """<!doctype html>
       font-size: 15px;
     }
 
+    .bubble-footer {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0.04em;
+    }
+
+    .cursor {
+      display: inline-block;
+      margin-left: 2px;
+      color: var(--accent-soft);
+      animation: forge-blink 0.9s steps(1) infinite;
+    }
+
+    @keyframes forge-blink {
+      0%, 48% { opacity: 1; }
+      49%, 100% { opacity: 0; }
+    }
+
     .composer {
-      padding: 20px 28px 28px;
-      border-top: 1px solid var(--line);
-      background: linear-gradient(180deg, rgba(8,8,8,0.02), rgba(8,8,8,0.36));
+      width: 100%;
+      max-width: 100%;
+      margin: 0 auto;
+      padding: 6px 0 24px;
+      border-top: 0;
+      background: none;
     }
 
     .composer-grid {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 160px;
-      gap: 16px;
+      grid-template-columns: minmax(0, 1fr) 120px;
+      gap: 14px;
+      align-items: end;
     }
 
     textarea {
       width: 100%;
-      min-height: 132px;
+      min-height: 68px;
+      max-height: 240px;
       resize: vertical;
-      border-radius: 20px;
+      border-radius: 24px;
       border: 1px solid rgba(255,255,255,0.08);
       background: rgba(0,0,0,0.3);
       color: var(--text);
-      padding: 18px 18px;
+      padding: 16px 18px;
       font: 15px/1.55 "Segoe UI", sans-serif;
       outline: none;
       box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02);
@@ -566,11 +757,24 @@ DESKTOP_HTML = """<!doctype html>
       border: 1px solid rgba(255,255,255,0.08);
     }
 
+    #result-panel {
+      display: none;
+    }
+
     .footnote {
       margin-top: 12px;
       color: var(--muted);
       font-size: 12px;
       line-height: 1.5;
+    }
+
+    .chat-shell.guest-mode .composer {
+      opacity: 0.56;
+    }
+
+    .chat-shell.guest-mode textarea,
+    .chat-shell.guest-mode #send {
+      pointer-events: none;
     }
 
     .hidden { display: none !important; }
@@ -616,23 +820,35 @@ DESKTOP_HTML = """<!doctype html>
     }
 
     @media (max-width: 1080px) {
-      .shell {
-        grid-template-columns: 1fr;
-      }
       .workspace {
         min-height: auto;
       }
-      .operator-deck,
-      .operator-grid {
-        grid-template-columns: 1fr;
+      .chat-shell {
+        min-height: calc(100vh - 110px);
       }
       .composer-grid {
         grid-template-columns: 1fr;
+      }
+      .workspace-header {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      .auth-gate,
+      .chat-shell,
+      .workspace-header {
+        width: 100%;
+      }
+      .sidebar {
+        top: 12px;
+        left: 12px;
+        bottom: 12px;
+        width: min(360px, calc(100vw - 24px));
       }
     }
   </style>
 </head>
 <body>
+  <div id="sidebar-scrim" class="sidebar-scrim"></div>
   <div class="shell">
     <aside class="panel sidebar">
       <div class="brand">
@@ -701,6 +917,41 @@ DESKTOP_HTML = """<!doctype html>
       </section>
 
       <section class="card">
+        <h3>My Provider Keys</h3>
+        <label class="field-label" for="provider-select">Provider</label>
+        <select id="provider-select" class="text-field">
+          <option value="cloudflare">cloudflare</option>
+          <option value="nvidia">nvidia</option>
+          <option value="openai">openai</option>
+          <option value="anthropic">anthropic</option>
+          <option value="gemini">gemini</option>
+          <option value="groq">groq</option>
+          <option value="deepseek">deepseek</option>
+          <option value="openrouter">openrouter</option>
+          <option value="mistral">mistral</option>
+          <option value="together">together</option>
+        </select>
+        <div class="provider-grid">
+          <label class="field-label" for="provider-api-key">API Key / Token</label>
+          <input id="provider-api-key" class="text-field" type="password" placeholder="API key or token">
+          <label class="field-label" for="provider-account-id">Account ID / Extra Field</label>
+          <input id="provider-account-id" class="text-field" type="text" placeholder="Cloudflare account_id or leave empty">
+          <label class="field-label" for="provider-organization">Organization / Email</label>
+          <input id="provider-organization" class="text-field" type="text" placeholder="OpenAI organization or Cloudflare email">
+          <label class="field-label" for="provider-project">Project / Global Key</label>
+          <input id="provider-project" class="text-field" type="text" placeholder="OpenAI project or Cloudflare global key">
+        </div>
+        <div class="button-grid">
+          <button id="save-provider-key" type="button" class="button-ghost">Save Key</button>
+          <button id="refresh-provider-keys" type="button" class="button-ghost">Reload</button>
+        </div>
+        <div id="provider-status" class="inline-status">Provider secrets are encrypted and bound to the logged-in user.</div>
+        <div id="provider-secret-list" class="secret-list">
+          <div class="operator-copy">Login to manage your provider keys.</div>
+        </div>
+      </section>
+
+      <section class="card">
         <h2>Boot Status</h2>
         <div class="status-line">
           <span class="status-key">Runtime</span>
@@ -727,7 +978,7 @@ DESKTOP_HTML = """<!doctype html>
           <span>Agent Mode Locked</span>
         </label>
         <p class="footnote">
-          Direct chat mode is removed. FORGE always runs through the operator path and must return steps, evidence, validation, or a clarification request.
+          FORGE replies like a real assistant by default, then switches into verified execution mode only when your request actually needs tools.
         </p>
       </section>
 
@@ -766,41 +1017,6 @@ DESKTOP_HTML = """<!doctype html>
       </section>
 
       <section class="card">
-        <h3>My Provider Keys</h3>
-        <label class="field-label" for="provider-select">Provider</label>
-        <select id="provider-select" class="text-field">
-          <option value="cloudflare">cloudflare</option>
-          <option value="nvidia">nvidia</option>
-          <option value="openai">openai</option>
-          <option value="anthropic">anthropic</option>
-          <option value="gemini">gemini</option>
-          <option value="groq">groq</option>
-          <option value="deepseek">deepseek</option>
-          <option value="openrouter">openrouter</option>
-          <option value="mistral">mistral</option>
-          <option value="together">together</option>
-        </select>
-        <div class="provider-grid">
-          <label class="field-label" for="provider-api-key">API Key / Token</label>
-          <input id="provider-api-key" class="text-field" type="password" placeholder="API key or token">
-          <label class="field-label" for="provider-account-id">Account ID / Extra Field</label>
-          <input id="provider-account-id" class="text-field" type="text" placeholder="Cloudflare account_id or leave empty">
-          <label class="field-label" for="provider-organization">Organization / Email</label>
-          <input id="provider-organization" class="text-field" type="text" placeholder="OpenAI organization or Cloudflare email">
-          <label class="field-label" for="provider-project">Project / Global Key</label>
-          <input id="provider-project" class="text-field" type="text" placeholder="OpenAI project or Cloudflare global key">
-        </div>
-        <div class="button-grid">
-          <button id="save-provider-key" type="button" class="button-ghost">Save Key</button>
-          <button id="refresh-provider-keys" type="button" class="button-ghost">Reload</button>
-        </div>
-        <div id="provider-status" class="inline-status">Provider secrets are encrypted and bound to the logged-in user.</div>
-        <div id="provider-secret-list" class="secret-list">
-          <div class="operator-copy">Login to manage your provider keys.</div>
-        </div>
-      </section>
-
-      <section class="card">
         <h3>Boot Notes</h3>
         <div id="notes" class="notes">Preparing FORGE runtime...</div>
       </section>
@@ -823,11 +1039,29 @@ DESKTOP_HTML = """<!doctype html>
 
     <main class="panel workspace">
       <header class="workspace-header">
-        <h2>Operator Mission Console</h2>
-        <p>
-          FORGE runs on-device, executes through skills inside the selected workspace, and must prove every file mutation, command, and validation step with visible evidence.
-        </p>
+        <div>
+          <div class="workspace-kicker">FORGE Desktop</div>
+          <h2>Talk to FORGE</h2>
+          <p id="workspace-subtitle">
+            Ask in Arabic or English. FORGE replies naturally, chooses the strongest available provider path, and only switches into execution mode when your request actually needs tools.
+          </p>
+        </div>
+        <div class="workspace-topbar-actions">
+          <button id="sidebar-toggle" type="button" class="sidebar-toggle">Sign In</button>
+        </div>
       </header>
+
+      <section id="auth-gate" class="auth-gate hidden">
+        <div class="auth-gate-kicker">Secure setup</div>
+        <h3>Sign in once, then just chat.</h3>
+        <p>
+          FORGE uses each user’s own encrypted provider keys. Finish account setup first, then talk to FORGE like a normal assistant. It will automatically choose the strongest available provider path when your request needs real intelligence or execution.
+        </p>
+        <div class="auth-gate-actions">
+          <button id="auth-gate-google" type="button">Continue with Google</button>
+          <button id="auth-gate-account" type="button" class="button-ghost">Email or Settings</button>
+        </div>
+      </section>
 
       <section class="operator-deck">
         <article class="operator-card">
@@ -867,28 +1101,30 @@ DESKTOP_HTML = """<!doctype html>
         </article>
       </section>
 
-      <section id="chat" class="chat">
-        <article class="bubble assistant">
-          <header>FORGE</header>
-          <div class="body">Agent console online. Select a real project folder, then ask FORGE to inspect the repo, edit a file, run a safe command, or complete a verified development mission.</div>
-        </article>
-        <article class="bubble assistant">
-          <header>Status</header>
-          <div id="result-panel" class="body">The verified result, evidence summary, and mission notes will appear here.</div>
-        </article>
-      </section>
+      <section id="chat-shell" class="chat-shell guest-mode">
+        <section id="chat-empty" class="chat-empty">
+          <div class="chat-empty-kicker">Conversation first</div>
+          <h3>How can FORGE help?</h3>
+          <p>
+            Ask naturally. FORGE should sound human, think through the request, then choose the strongest available model path and only drop into tools when the task truly requires execution.
+          </p>
+        </section>
 
-      <section class="composer">
-        <div class="composer-grid">
-          <textarea id="prompt" placeholder="Give FORGE a real development mission: analyze this workspace, edit a file, run compile or tests, or save a verified report..."></textarea>
-          <div class="actions">
-            <button id="send" type="button">Run Mission</button>
-            <button id="clear" type="button">Reset</button>
+        <section id="chat" class="chat"></section>
+        <div id="result-panel"></div>
+
+        <section class="composer">
+          <div class="composer-grid">
+            <textarea id="prompt" placeholder="Message FORGE..."></textarea>
+            <div class="actions">
+              <button id="send" type="button">Send</button>
+              <button id="clear" type="button">New Chat</button>
+            </div>
           </div>
-        </div>
-        <div class="footnote">
-          Press Ctrl+Enter to dispatch. All file and shell actions are confined to the selected workspace and return objective, plan, validation status, step evidence, and the best next action.
-        </div>
+          <div class="footnote">
+            Press Enter to send. Use Shift+Enter for a new line. Real file and shell actions stay confined to the selected workspace.
+          </div>
+        </section>
       </section>
     </main>
   </div>
@@ -898,6 +1134,8 @@ DESKTOP_HTML = """<!doctype html>
     const promptBox = document.getElementById("prompt");
     const sendButton = document.getElementById("send");
     const clearButton = document.getElementById("clear");
+    const sidebarToggle = document.getElementById("sidebar-toggle");
+    const sidebarScrim = document.getElementById("sidebar-scrim");
     const notes = document.getElementById("notes");
     const workerServices = document.getElementById("worker-services");
     const operatorMode = document.getElementById("operator-mode");
@@ -919,6 +1157,12 @@ DESKTOP_HTML = """<!doctype html>
     const planList = document.getElementById("plan-list");
     const stepList = document.getElementById("step-list");
     const resultPanel = document.getElementById("result-panel");
+    const workspaceSubtitle = document.getElementById("workspace-subtitle");
+    const authGate = document.getElementById("auth-gate");
+    const authGateGoogleButton = document.getElementById("auth-gate-google");
+    const authGateAccountButton = document.getElementById("auth-gate-account");
+    const chatShell = document.getElementById("chat-shell");
+    const chatEmpty = document.getElementById("chat-empty");
     const accountSummary = document.getElementById("account-summary");
     const authLoggedOut = document.getElementById("auth-logged-out");
     const authLoggedIn = document.getElementById("auth-logged-in");
@@ -957,10 +1201,29 @@ DESKTOP_HTML = """<!doctype html>
     let currentUser = null;
     let pendingDeviceLogin = null;
     let pendingDevicePoll = null;
+    let activeStream = null;
+
+    function openSidebar() {
+      document.body.classList.add("sidebar-open");
+    }
+
+    function closeSidebar() {
+      document.body.classList.remove("sidebar-open");
+    }
+
+    function toggleSidebar() {
+      document.body.classList.toggle("sidebar-open");
+    }
 
     function appendNote(line) {
       notes.textContent += "\\n" + line;
       notes.scrollTop = notes.scrollHeight;
+    }
+
+    function updateConversationLayout() {
+      const hasMessages = chat.querySelector(".bubble") !== null;
+      chatEmpty.classList.toggle("hidden", hasMessages || !currentUser);
+      chatShell.classList.toggle("guest-mode", !currentUser);
     }
 
     function clearNode(node) {
@@ -1108,17 +1371,27 @@ DESKTOP_HTML = """<!doctype html>
       currentUser = authenticated ? data.user : null;
       authLoggedOut.classList.toggle("hidden", authenticated);
       authLoggedIn.classList.toggle("hidden", !authenticated);
+      authGate.classList.toggle("hidden", authenticated);
       adminPanel.classList.toggle("hidden", !(authenticated && data.user.is_admin));
       sendButton.disabled = !authenticated;
+      promptBox.disabled = !authenticated;
+
       if (authenticated) {
         stopDevicePolling();
+        sidebarToggle.textContent = "Settings";
+        closeSidebar();
         accountEmail.textContent = data.user.email;
         accountRole.textContent = data.user.is_admin ? "Manager" : "User";
         accountManagerGate.textContent = data.user.is_admin ? "Open" : "Closed";
         accountEmailVerification.textContent = data.user.email_verified ? "Verified" : "Pending";
         accountSummary.textContent = "Each account keeps its own encrypted provider secrets. FORGE must use the signed-in user's keys.";
         setAuthStatus("Signed in as " + data.user.email);
+        workspaceSubtitle.textContent = "Ask naturally. FORGE will answer like a real assistant, and execute only when your request requires tools.";
+        promptBox.placeholder = "Message FORGE...";
+        promptBox.focus();
       } else {
+        sidebarToggle.textContent = "Sign In";
+        closeSidebar();
         accountSummary.textContent = "Login required. Every user must bring their own provider keys.";
         accountEmail.textContent = "-";
         accountRole.textContent = "User";
@@ -1129,7 +1402,10 @@ DESKTOP_HTML = """<!doctype html>
         setListPlaceholder(workerServices, "Login to view worker telemetry.");
         workspaceName.textContent = "Login required";
         workspaceSummary.textContent = "Sign in to select a workspace and run FORGE. First-run setup can complete in your browser and return here automatically.";
+        workspaceSubtitle.textContent = "Sign in first, then talk to FORGE naturally or give it a real task inside your workspace.";
+        promptBox.placeholder = "Sign in first, then message FORGE...";
       }
+      updateConversationLayout();
     }
 
     async function loadAuth() {
@@ -1199,6 +1475,7 @@ DESKTOP_HTML = """<!doctype html>
       providerAccountId.value = "";
       providerOrganization.value = "";
       providerProject.value = "";
+      closeSidebar();
       await loadBootStatus();
     }
 
@@ -1228,7 +1505,7 @@ DESKTOP_HTML = """<!doctype html>
       renderAdminUsers(usersData.users || []);
     }
 
-    function addBubble(role, text) {
+    function createBubble(role, text = "") {
       const article = document.createElement("article");
       article.className = "bubble " + role;
 
@@ -1237,12 +1514,49 @@ DESKTOP_HTML = """<!doctype html>
 
       const body = document.createElement("div");
       body.className = "body";
-      body.textContent = text;
+      const footer = document.createElement("div");
+      footer.className = "bubble-footer hidden";
 
       article.appendChild(header);
       article.appendChild(body);
+      article.appendChild(footer);
+      article._body = body;
+      article._footer = footer;
+      setBubbleText(article, text, false);
       chat.appendChild(article);
       chat.scrollTop = chat.scrollHeight;
+      updateConversationLayout();
+      return article;
+    }
+
+    function setBubbleText(article, text, streaming) {
+      const body = article._body;
+      clearNode(body);
+      body.appendChild(document.createTextNode(text || ""));
+      article.classList.toggle("streaming", !!streaming);
+      if (streaming) {
+        const cursor = document.createElement("span");
+        cursor.className = "cursor";
+        cursor.textContent = "|";
+        body.appendChild(cursor);
+      }
+    }
+
+    function setBubbleFooter(article, text) {
+      if (!article || !article._footer) return;
+      article._footer.textContent = text || "";
+      article._footer.classList.toggle("hidden", !text);
+    }
+
+    function addBubble(role, text) {
+      return createBubble(role, text);
+    }
+
+    function closeActiveStream() {
+      if (activeStream) {
+        activeStream.close();
+        activeStream = null;
+      }
     }
 
     function setMissionStatus(value) {
@@ -1407,6 +1721,7 @@ DESKTOP_HTML = """<!doctype html>
         ? data.approach_taken.join(" | ")
         : "No approach notes.";
       resultPanel.textContent = data.result || data.answer || "No result produced.";
+      workspaceSubtitle.textContent = data.best_next_action || "FORGE responded successfully.";
       renderPlan(data.plan);
       renderSteps(data.step_results);
     }
@@ -1471,6 +1786,7 @@ DESKTOP_HTML = """<!doctype html>
         }
         renderWorkspace(data);
         appendNote("Workspace set to " + data.workspace_root);
+        closeSidebar();
       } catch (error) {
         appendNote("Workspace update failed: " + error.message);
         addBubble("error", "Workspace update failed: " + error.message);
@@ -1493,6 +1809,7 @@ DESKTOP_HTML = """<!doctype html>
         renderWorkspace(data);
         if (!data.cancelled) {
           appendNote("Workspace selected via native picker: " + data.workspace_root);
+          closeSidebar();
         }
       } catch (error) {
         appendNote("Workspace picker failed: " + error.message);
@@ -1525,48 +1842,112 @@ DESKTOP_HTML = """<!doctype html>
       if (!prompt || sendButton.disabled) return;
       if (!requireAuthenticated()) return;
 
+      closeActiveStream();
       addBubble("user", prompt);
-      appendNote("Dispatching mission inside workspace: " + (workspacePath.value.trim() || "<unset>"));
+      appendNote("Routing request inside workspace: " + (workspacePath.value.trim() || "<unset>"));
       promptBox.value = "";
       sendButton.disabled = true;
-      sendButton.textContent = "Running...";
+      sendButton.textContent = "Sending...";
       setMissionStatus("running");
+      closeSidebar();
+      resultPanel.textContent = "FORGE is choosing the strongest path...";
 
-      try {
-        const response = await fetch("/api/operate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            prompt,
-            operator: true,
-            confirmed: confirmMode.checked,
-            dry_run: dryRunMode.checked,
-            workspace_root: workspacePath.value.trim()
-          })
-        });
-        const data = await response.json();
-        if (!response.ok) {
-          throw new Error(data.error || "Execution failed.");
-        }
-        if (data.workspace_root) {
-          renderWorkspace(data);
-        }
-        renderOperatorResult(data);
-        addBubble("assistant", data.answer || data.result || "No result produced.");
-        appendNote("Response completed successfully.");
-      } catch (error) {
-        addBubble("error", error.message);
-        setMissionStatus("failed");
-        appendNote("Execution failed: " + error.message);
-        resultPanel.textContent = "Execution failed. Recovery path: check your provider keys, workspace path, and mission wording, then retry.";
-      } finally {
+      const assistantBubble = createBubble("assistant", "");
+      let streamedText = "";
+      let streamFinished = false;
+
+      const params = new URLSearchParams({
+        prompt,
+        confirmed: confirmMode.checked ? "true" : "false",
+        dry_run: dryRunMode.checked ? "true" : "false",
+        workspace_root: workspacePath.value.trim(),
+      });
+
+      const stream = new EventSource("/api/stream?" + params.toString());
+      activeStream = stream;
+
+      function finishStream() {
+        streamFinished = true;
+        closeActiveStream();
         sendButton.disabled = false;
-        sendButton.textContent = "Run Mission";
+        sendButton.textContent = "Send";
         promptBox.focus();
       }
+
+      stream.onmessage = (event) => {
+        const data = JSON.parse(event.data || "{}");
+
+        if (data.type === "start") {
+          const label = data.display_name || data.model || data.provider || "FORGE";
+          workspaceSubtitle.textContent = "Using " + label + (data.provider ? " via " + data.provider : "") + ".";
+          if (!streamedText) {
+            setBubbleText(assistantBubble, "Using " + label + "...", true);
+          }
+          return;
+        }
+
+        if (data.type === "status") {
+          setMissionStatus("running");
+          workspaceSubtitle.textContent = data.message || "FORGE is working...";
+          if (!streamedText) {
+            setBubbleText(assistantBubble, data.message || "FORGE is working...", true);
+          }
+          return;
+        }
+
+        if (data.type === "delta") {
+          streamedText += data.delta || "";
+          setBubbleText(assistantBubble, streamedText, true);
+          return;
+        }
+
+        if (data.type === "done") {
+          const payload = data.payload || {};
+          if (payload.workspace_root) {
+            renderWorkspace(payload);
+          }
+          renderOperatorResult(payload);
+          const finalText = streamedText || payload.answer || payload.result || "No result produced.";
+          setBubbleText(assistantBubble, finalText, false);
+          setBubbleFooter(assistantBubble, data.footer || payload.stream_footer || "");
+          appendNote("Response completed successfully.");
+          finishStream();
+          return;
+        }
+
+        if (data.type === "error") {
+          assistantBubble.className = "bubble error";
+          setBubbleText(assistantBubble, data.error || "Execution failed.", false);
+          setMissionStatus("failed");
+          appendNote("Execution failed: " + (data.error || "Unknown error"));
+          resultPanel.textContent = "Execution failed. Recovery path: check your provider keys, workspace path, and mission wording, then retry.";
+          finishStream();
+        }
+      };
+
+      stream.onerror = () => {
+        if (streamFinished) {
+          return;
+        }
+        assistantBubble.className = "bubble error";
+        setBubbleText(assistantBubble, "Streaming connection failed before FORGE could finish the response.", false);
+        setMissionStatus("failed");
+        appendNote("Execution failed: streaming connection lost.");
+        resultPanel.textContent = "Streaming failed. Retry the mission, and if it repeats inspect provider keys and workspace configuration.";
+        finishStream();
+      };
     }
 
     sendButton.addEventListener("click", sendPrompt);
+    authGateGoogleButton.addEventListener("click", async () => {
+      await startDeviceLogin("google");
+    });
+    authGateAccountButton.addEventListener("click", () => {
+      openSidebar();
+      authEmail.focus();
+    });
+    sidebarToggle.addEventListener("click", toggleSidebar);
+    sidebarScrim.addEventListener("click", closeSidebar);
     applyWorkspaceButton.addEventListener("click", () => applyWorkspace(workspacePath.value.trim()));
     browseWorkspaceButton.addEventListener("click", browseWorkspace);
     loginButton.addEventListener("click", async () => {
@@ -1601,6 +1982,7 @@ DESKTOP_HTML = """<!doctype html>
       await startDeviceLogin("browser");
     });
     logoutButton.addEventListener("click", async () => {
+      closeActiveStream();
       await fetch("/api/auth/logout", { method: "POST" });
       applyAuthState({ authenticated: false });
       setAuthStatus("Logged out.");
@@ -1690,8 +2072,9 @@ DESKTOP_HTML = """<!doctype html>
       }
     });
     clearButton.addEventListener("click", () => {
+      closeActiveStream();
       chat.innerHTML = "";
-      addBubble("assistant", "Mission console cleared. FORGE is ready for the next task.");
+      updateConversationLayout();
       objective.textContent = "No active objective.";
       objectiveNote.textContent = "Submit a serious task to generate a real operator mission.";
       setMissionStatus("idle");
@@ -1701,12 +2084,14 @@ DESKTOP_HTML = """<!doctype html>
       nextAction.textContent = "Awaiting mission.";
       nextNote.textContent = "FORGE must say what should happen next when a task is partial or blocked.";
       resultPanel.textContent = "The verified result, evidence summary, and mission notes will appear here.";
+      workspaceSubtitle.textContent = "Ask in Arabic or English. FORGE replies naturally, and executes only when your request needs tools.";
       setListPlaceholder(planList, "No execution plan yet.");
       setListPlaceholder(stepList, "No steps executed yet.");
+      promptBox.focus();
     });
 
     promptBox.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" && event.ctrlKey) {
+      if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
         sendPrompt();
       }
@@ -1720,6 +2105,7 @@ DESKTOP_HTML = """<!doctype html>
     setListPlaceholder(planList, "No execution plan yet.");
     setListPlaceholder(stepList, "No steps executed yet.");
     setListPlaceholder(workerServices, "Worker telemetry loading...");
+    updateConversationLayout();
     loadAuth()
       .then(async () => {
         if (currentUser) {
@@ -1781,6 +2167,40 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
             if reply.session_token:
                 headers["Set-Cookie"] = self._session_cookie(reply.session_token)
             self._send_json(reply.payload, headers=headers or None)
+            return
+        if route == "/api/stream":
+            user = self._require_user()
+            if user is None:
+                return
+            prompt = str(query.get("prompt", [""])[0]).strip()
+            if not prompt:
+                self._send_json({"error": "Prompt is empty."}, status=HTTPStatus.BAD_REQUEST)
+                return
+
+            confirmed = str(query.get("confirmed", ["false"])[0]).strip().lower() in {"1", "true", "yes", "on"}
+            dry_run = str(query.get("dry_run", ["false"])[0]).strip().lower() in {"1", "true", "yes", "on"}
+            workspace_root = str(query.get("workspace_root", [""])[0]).strip() or None
+            try:
+                self._start_sse()
+                for event in stream_prompt(
+                    prompt,
+                    confirmed=confirmed,
+                    dry_run=dry_run,
+                    workspace_root=workspace_root,
+                    provider_secrets=self._provider_secrets(),
+                ):
+                    if event.get("type") == "done" and isinstance(event.get("payload"), dict):
+                        self._sync_remote_mission(user, event["payload"])
+                    self._send_sse(event)
+            except BrokenPipeError:
+                return
+            except ConnectionResetError:
+                return
+            except Exception as exc:
+                try:
+                    self._send_sse({"type": "error", "error": str(exc)})
+                except Exception:
+                    pass
             return
         if route == "/api/boot":
             user = self._require_user()
@@ -2198,6 +2618,19 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
             return json.loads(raw.decode("utf-8"))
         except json.JSONDecodeError:
             return {}
+
+    def _start_sse(self) -> None:
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self.send_header("X-Accel-Buffering", "no")
+        self.end_headers()
+
+    def _send_sse(self, payload: dict[str, object]) -> None:
+        body = f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode("utf-8")
+        self.wfile.write(body)
+        self.wfile.flush()
 
     def _send_html(self, html: str, headers: dict[str, str] | None = None) -> None:
         body = html.encode("utf-8")

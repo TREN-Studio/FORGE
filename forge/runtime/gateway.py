@@ -6,6 +6,8 @@ import time
 
 from aiohttp import WSMsgType, web
 
+from forge.brain.orchestrator import MissionOrchestrator
+from forge.brain.worker_protocol import WorkerHeartbeat, WorkerRegistration
 from forge.runtime.agent import AgentRuntimeSettings, ForgeAgentRuntime
 from forge.runtime.contracts import GatewayEnvelope
 
@@ -97,6 +99,42 @@ def create_app(
         guard.authorize(request)
         return web.json_response({"workers": runtime.snapshot().get("workers", {})})
 
+    async def worker_register_handler(request: web.Request) -> web.Response:
+        guard.authorize(request)
+        payload = WorkerRegistration.model_validate(await request.json())
+        MissionOrchestrator.register_worker(payload)
+        return web.json_response({"ok": True, "worker_id": payload.worker_id})
+
+    async def worker_heartbeat_handler(request: web.Request) -> web.Response:
+        guard.authorize(request)
+        payload = WorkerHeartbeat.model_validate(await request.json())
+        MissionOrchestrator.heartbeat_worker(payload)
+        return web.json_response({"ok": True, "worker_id": payload.worker_id})
+
+    async def approvals_handler(request: web.Request) -> web.Response:
+        guard.authorize(request)
+        return web.json_response({"approvals": MissionOrchestrator.approvals_snapshot()})
+
+    async def approval_status_handler(request: web.Request) -> web.Response:
+        guard.authorize(request)
+        approval = MissionOrchestrator.approval_status(request.match_info["approval_id"])
+        if approval is None:
+            raise web.HTTPNotFound(text="Approval not found.")
+        return web.json_response(approval)
+
+    async def approval_decision_handler(request: web.Request) -> web.Response:
+        guard.authorize(request)
+        approval_id = request.match_info["approval_id"]
+        payload = await request.json()
+        notes = str(payload.get("notes", "")).strip()
+        if request.match_info["decision"] == "approve":
+            result = MissionOrchestrator.approve(approval_id, notes=notes)
+        else:
+            result = MissionOrchestrator.reject(approval_id, notes=notes)
+        if result is None:
+            raise web.HTTPNotFound(text="Approval not found.")
+        return web.json_response(result)
+
     async def ws_handler(request: web.Request) -> web.StreamResponse:
         guard.authorize(request)
         ws = web.WebSocketResponse(heartbeat=30)
@@ -127,8 +165,13 @@ def create_app(
         [
             web.get("/health", health_handler),
             web.get("/api/workers", workers_handler),
+            web.post("/api/workers/register", worker_register_handler),
+            web.post("/api/workers/heartbeat", worker_heartbeat_handler),
             web.post("/api/message", message_handler),
             web.post("/api/heartbeat", heartbeat_handler),
+            web.get("/api/approvals", approvals_handler),
+            web.get("/api/approvals/{approval_id}", approval_status_handler),
+            web.post("/api/approvals/{approval_id}/{decision:approve|reject}", approval_decision_handler),
             web.get("/ws", ws_handler),
         ]
     )

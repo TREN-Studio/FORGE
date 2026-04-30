@@ -4,11 +4,14 @@ from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
+from queue import Empty, Queue
+import re
 import threading
+import time
 from typing import Any
 
 from forge import __version__
-from forge.brain.contracts import OperatorResult
+from forge.brain.contracts import CompletionState, ExecutionPlan, IntentKind, OperatorResult
 from forge.brain.operator import ForgeOperator
 from forge.config.settings import OperatorSettings
 from forge.core.session import ForgeSession
@@ -203,6 +206,183 @@ def operate_prompt(
     return _serialize_operator_result(result, operator, normalized_workspace_root)
 
 
+def stream_prompt(
+    prompt: str,
+    confirmed: bool = False,
+    dry_run: bool = False,
+    workspace_root: str | Path | None = None,
+    provider_secrets: dict[str, dict[str, str]] | None = None,
+):
+    prompt = prompt.strip()
+    if not prompt:
+        raise ValueError("Prompt is empty.")
+
+    normalized_workspace_root = _normalize_workspace_root(workspace_root)
+    if workspace_root is not None:
+        set_workspace_root(normalized_workspace_root)
+
+    operator = ForgeOperator(
+        settings=OperatorSettings(
+            enable_memory=False,
+            workspace_root=normalized_workspace_root,
+        ),
+        provider_secrets=provider_secrets,
+    )
+    intent = operator.intent_resolver.resolve(prompt)
+    routing = operator.skill_router.route(intent, operator.registry.list())
+
+    if intent.primary_intent == IntentKind.CONVERSATION and not routing.selected_skills:
+        started = time.monotonic()
+        yield {
+            "type": "status",
+            "stage": "routing",
+            "message": "Selecting the strongest available provider path...",
+        }
+        try:
+            response = None
+            streamed_text = ""
+            for event in operator.session.stream_response(
+                prompt,
+                task_type=intent.task_type,
+                remember=False,
+            ):
+                kind = str(event.get("type") or "").strip().lower()
+                if kind == "start":
+                    provider = str(event.get("provider") or "").strip()
+                    display_name = str(event.get("display_name") or event.get("model") or provider).strip()
+                    yield {
+                        "type": "status",
+                        "stage": "routing",
+                        "message": f"Using {display_name} on {provider}.",
+                    }
+                    continue
+                if kind == "delta":
+                    delta = str(event.get("delta") or "")
+                    streamed_text += delta
+                    yield {"type": "delta", "delta": delta}
+                    continue
+                if kind == "response":
+                    maybe_response = event.get("response")
+                    if maybe_response is not None:
+                        response = maybe_response
+
+            if response is None:
+                raise RuntimeError("Streaming finished without a final response.")
+
+            payload = _serialize_conversation_response(
+                answer=streamed_text or response.content,
+                intent=intent,
+                response=response,
+                workspace_root=normalized_workspace_root,
+            )
+            footer = _stream_footer(payload, elapsed_ms=(time.monotonic() - started) * 1000)
+            payload["stream_footer"] = footer
+            yield {
+                "type": "done",
+                "done": True,
+                "payload": payload,
+                "footer": footer,
+            }
+            return
+        except Exception as exc:
+            fallback = operator._clarification_text(prompt)
+            payload = _serialize_clarification_response(
+                answer=fallback,
+                intent=intent,
+                workspace_root=normalized_workspace_root,
+                error=str(exc),
+            )
+            for delta in _iter_text_deltas(fallback):
+                yield {"type": "delta", "delta": delta}
+            yield {
+                "type": "done",
+                "done": True,
+                "payload": payload,
+                "footer": payload.get("stream_footer", ""),
+            }
+            return
+
+    events: Queue[tuple[str, Any]] = Queue()
+    started = time.monotonic()
+    spinner_messages = [
+        "Selecting the strongest available model path...",
+        "Planning the response inside your workspace...",
+        "Running the best path FORGE found for this request...",
+    ]
+
+    def worker() -> None:
+        try:
+            result = operate_prompt(
+                prompt,
+                confirmed=confirmed,
+                dry_run=dry_run,
+                workspace_root=normalized_workspace_root,
+                provider_secrets=provider_secrets,
+            )
+            events.put(("result", result))
+        except Exception as exc:  # pragma: no cover - surfaced to SSE client
+            events.put(("error", str(exc)))
+        finally:
+            events.put(("done", None))
+
+    yield {
+        "type": "status",
+        "stage": "routing",
+        "message": "Selecting the strongest available provider path...",
+    }
+    yield {
+        "type": "status",
+        "stage": "workspace",
+        "message": f"Using workspace: {normalized_workspace_root}",
+    }
+
+    threading.Thread(target=worker, daemon=True).start()
+    heartbeat_index = 0
+    result_emitted = False
+
+    while True:
+        try:
+            kind, payload = events.get(timeout=0.45)
+        except Empty:
+            if not result_emitted:
+                yield {
+                    "type": "status",
+                    "stage": "running",
+                    "message": spinner_messages[heartbeat_index % len(spinner_messages)],
+                }
+                heartbeat_index += 1
+            continue
+
+        if kind == "error":
+            yield {"type": "error", "error": str(payload)}
+            result_emitted = True
+            continue
+
+        if kind == "result":
+            result = payload
+            yield {
+                "type": "status",
+                "stage": "streaming",
+                "message": "Response ready. Streaming output...",
+            }
+            answer = str(result.get("answer") or result.get("result") or "No result produced.")
+            footer = _stream_footer(result, elapsed_ms=(time.monotonic() - started) * 1000)
+            result["stream_footer"] = footer
+            for delta in _iter_text_deltas(answer):
+                yield {"type": "delta", "delta": delta}
+            yield {
+                "type": "done",
+                "done": True,
+                "payload": result,
+                "footer": footer,
+            }
+            result_emitted = True
+            continue
+
+        if kind == "done":
+            break
+
+
 def boot_status_for_user(provider_secrets: dict[str, dict[str, str]] | None = None) -> DesktopBootStatus:
     session = ForgeSession(
         memory=False,
@@ -238,7 +418,164 @@ def _serialize_operator_result(
     payload["total_steps"] = len(result.step_results)
     payload["evidence_count"] = sum(len(step.evidence) for step in result.step_results)
     payload["artifacts_count"] = len(result.artifacts)
+    conversation_metadata = result.artifacts.get("conversation_metadata", {}) if isinstance(result.artifacts, dict) else {}
+    if isinstance(conversation_metadata, dict):
+        payload["model_used"] = conversation_metadata.get("model_id")
+        payload["provider_used"] = conversation_metadata.get("provider")
+        payload["latency_ms"] = conversation_metadata.get("latency_ms")
+        payload["total_tokens"] = conversation_metadata.get("total_tokens")
     payload.update(workspace_status)
     payload["workspace_root"] = str(workspace_root)
     payload["artifact_root"] = str(operator.settings.artifact_root)
+    return payload
+
+
+def _iter_text_deltas(text: str) -> list[str]:
+    chunks: list[str] = []
+    buffer = ""
+    for token in re.findall(r"\S+\s*|\n+", text):
+        if len(buffer) + len(token) > 20 and buffer:
+            chunks.append(buffer)
+            buffer = token
+        else:
+            buffer += token
+    if buffer:
+        chunks.append(buffer)
+    return chunks or [text]
+
+
+def _stream_footer(result: dict[str, Any], *, elapsed_ms: float) -> str:
+    model = str(result.get("model_used") or "").strip()
+    provider = str(result.get("provider_used") or "").strip()
+    latency_ms = result.get("latency_ms")
+    total_tokens = result.get("total_tokens")
+
+    if not model and isinstance(result.get("step_results"), list) and result["step_results"]:
+        final_skill = result["step_results"][-1].get("skill") or result["step_results"][-1].get("tool")
+        model = f"{final_skill or 'mission'}"
+
+    label = model or provider or "FORGE"
+    parts = [label]
+    if latency_ms:
+        parts.append(f"{max(float(latency_ms), elapsed_ms) / 1000:.1f}s")
+    else:
+        parts.append(f"{elapsed_ms / 1000:.1f}s")
+    if total_tokens:
+        parts.append(f"{int(total_tokens)} tok")
+    return " | ".join(parts)
+
+
+def _serialize_conversation_response(
+    *,
+    answer: str,
+    intent,
+    response,
+    workspace_root: Path,
+) -> dict[str, Any]:
+    workspace_status = get_workspace_status()
+    plan = ExecutionPlan(
+        objective=intent.objective or "Answer the user directly.",
+        task_type=intent.task_type,
+        risk_level=intent.risk_level,
+        steps=[],
+        fallbacks=[],
+        completion_criteria=["Return a natural, direct answer without fake execution."],
+    )
+    payload = {
+        "objective": intent.objective or "Answer the user directly.",
+        "approach_taken": [
+            f"Intent resolved as `{intent.primary_intent.value}`.",
+            "No execution skills were needed.",
+            "FORGE used direct model routing for a natural reply.",
+        ],
+        "result": answer,
+        "answer": answer,
+        "validation_status": CompletionState.FINISHED.value,
+        "risks_or_limitations": [],
+        "best_next_action": "Continue the conversation or give FORGE a concrete task to execute.",
+        "intent": intent.model_dump(mode="json"),
+        "plan": plan.model_dump(mode="json"),
+        "step_results": [],
+        "artifacts": {
+            "conversation_metadata": {
+                "model_id": response.model_id,
+                "provider": response.provider,
+                "latency_ms": response.latency_ms,
+                "total_tokens": response.total_tokens,
+            }
+        },
+        "mission_trace": [
+            "Intent resolved as conversation.",
+            "No tools were required.",
+            "FORGE selected the strongest available model path for a direct reply.",
+        ],
+        "mission_id": "",
+        "audit_log_path": "",
+        "resumed_from_step": None,
+        "agent_reviews": [],
+        "model_used": response.model_id,
+        "provider_used": response.provider,
+        "latency_ms": response.latency_ms,
+        "total_tokens": response.total_tokens,
+        "completed_steps": 0,
+        "total_steps": 0,
+        "evidence_count": 0,
+        "artifacts_count": 1,
+        "workspace_root": str(workspace_root),
+        "artifact_root": workspace_status["artifact_root"],
+    }
+    payload.update(workspace_status)
+    return payload
+
+
+def _serialize_clarification_response(
+    *,
+    answer: str,
+    intent,
+    workspace_root: Path,
+    error: str,
+) -> dict[str, Any]:
+    workspace_status = get_workspace_status()
+    plan = ExecutionPlan(
+        objective="Clarify the mission before execution.",
+        task_type=intent.task_type,
+        risk_level=intent.risk_level,
+        steps=[],
+        fallbacks=[],
+        completion_criteria=["Clarify the mission before execution."],
+    )
+    payload = {
+        "objective": "Clarify the mission before execution.",
+        "approach_taken": [
+            f"Intent resolved as `{intent.primary_intent.value}`.",
+            "Direct model routing failed.",
+            "FORGE returned a safe fallback clarification instead of pretending success.",
+        ],
+        "result": answer,
+        "answer": answer,
+        "validation_status": CompletionState.PARTIALLY_FINISHED.value,
+        "risks_or_limitations": [error],
+        "best_next_action": "Add a working provider key or give FORGE an executable task inside a selected workspace.",
+        "intent": intent.model_dump(mode="json"),
+        "plan": plan.model_dump(mode="json"),
+        "step_results": [],
+        "artifacts": {},
+        "mission_trace": [
+            "Intent resolved as conversation.",
+            "Direct model reply failed.",
+            "FORGE returned a safe fallback clarification instead of pretending success.",
+        ],
+        "mission_id": "",
+        "audit_log_path": "",
+        "resumed_from_step": None,
+        "agent_reviews": [],
+        "completed_steps": 0,
+        "total_steps": 0,
+        "evidence_count": 0,
+        "artifacts_count": 0,
+        "workspace_root": str(workspace_root),
+        "artifact_root": workspace_status["artifact_root"],
+        "stream_footer": "FORGE | fallback",
+    }
+    payload.update(workspace_status)
     return payload

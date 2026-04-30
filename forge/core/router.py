@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from typing import Any
 from typing import TYPE_CHECKING
 
 from forge.core.models import (
@@ -241,6 +242,78 @@ class ForgeRouter:
                         score.status = ProviderStatus.QUOTA
                 last_error = exc
                 logger.warning(f"✗ Error on {score.provider}/{score.model_id}: {exc}")
+
+        raise RuntimeError(
+            f"All models failed for task '{task_type}'. Last error: {last_error}"
+        )
+
+    async def route_stream(
+        self,
+        messages: list[Message],
+        task_type: TaskType = TaskType.GENERAL,
+        max_tokens: int = 2048,
+        temperature: float = 0.7,
+        require_vision: bool = False,
+    ):
+        ranked = self._rank(task_type, require_vision)
+        if not ranked:
+            raise RuntimeError("No models available. Run `forge add-key` to add a provider.")
+
+        last_error: Exception | None = None
+        for key, score in ranked:
+            provider = self._providers[score.provider]
+            spec = provider.get_model(score.model_id)
+            if spec is None:
+                continue
+
+            logger.debug(f"Streaming with {score.provider}/{score.model_id} (score={score.composite_score:.3f})")
+            response: ForgeResponse | None = None
+            try:
+                yield {
+                    "type": "start",
+                    "provider": score.provider,
+                    "model": score.model_id,
+                    "display_name": spec.display_name,
+                }
+                async for event in provider.stream(
+                    model=spec,
+                    messages=messages,
+                    max_tokens=min(max_tokens, spec.max_output_tokens),
+                    temperature=temperature,
+                ):
+                    kind = str(event.get("type") or "").strip().lower()
+                    if kind == "delta":
+                        yield event
+                    elif kind == "response":
+                        maybe_response = event.get("response")
+                        if isinstance(maybe_response, ForgeResponse):
+                            response = maybe_response
+
+                if response is None:
+                    raise RuntimeError(f"{score.provider}/{score.model_id} stream ended without a response")
+
+                async with self._lock:
+                    score.record_success(response.latency_ms, response.input_tokens + response.output_tokens)
+                response.score_used = score.composite_score
+                logger.info(
+                    f"✓ {score.provider}/{score.model_id} "
+                    f"[{response.latency_ms:.0f}ms · {response.total_tokens} tok · stream]"
+                )
+                yield {"type": "response", "response": response}
+                return
+            except asyncio.TimeoutError:
+                async with self._lock:
+                    score.record_failure("timeout")
+                    score.status = ProviderStatus.SLOW
+                last_error = TimeoutError(f"{score.provider}/{score.model_id} timed out")
+                logger.warning(f"✗ Stream timeout on {score.provider}/{score.model_id}")
+            except Exception as exc:
+                async with self._lock:
+                    score.record_failure(str(exc))
+                    if "quota" in str(exc).lower() or "rate" in str(exc).lower():
+                        score.status = ProviderStatus.QUOTA
+                last_error = exc
+                logger.warning(f"✗ Stream error on {score.provider}/{score.model_id}: {exc}")
 
         raise RuntimeError(
             f"All models failed for task '{task_type}'. Last error: {last_error}"

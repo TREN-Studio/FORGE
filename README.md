@@ -112,8 +112,12 @@ Current foundation includes:
 
 ## Windows Releases
 
+- Current public release line: `1.1.4`.
 - The repository now includes a Windows release workflow in `.github/workflows/release_forge_windows.yml`.
 - It builds `FORGE-Desktop.exe` and `FORGE-Setup-<version>.exe` on GitHub Actions.
+- The supported desktop build entrypoint is `python tools/build_windows_desktop.py`; that script is the source of truth for orchestration and invokes the portable `FORGE-Desktop.spec`.
+- Release packaging runs through `python tools/package_release_assets.py`, which publishes the portable ZIP, source ZIP, and SHA256 manifest from the same build output.
+- Legacy spec files such as `FORGE-Desktop-App.spec`, `FORGE-Desktop-App-Debug.spec`, `FORGE-Desktop-Debug.spec`, and `FORGE-Desktop-Dir.spec` are intentionally unsupported and must not be used for releases.
 - If `WINDOWS_PFX_BASE64` and `WINDOWS_PFX_PASSWORD` are configured in GitHub Secrets, the workflow signs both artifacts before publishing the GitHub Release.
 - Until code signing is configured, Windows SmartScreen and local execution reputation checks can still block downloaded installers.
 
@@ -145,7 +149,16 @@ MIT
 
 ## Production Deployment
 
-FORGE now keeps the public website bundle inside [`site/`](site), which makes GitHub the source of truth for `https://www.trenstudio.com/FORGE`.
+FORGE keeps the public website bundle inside [`site/`](site). The production page at `https://www.trenstudio.com/FORGE/` must be deployed from this directory, and published download links must point only at files that exist either under `site/downloads/` on the server or on the matching GitHub Release.
+
+The current public download set is:
+
+- `downloads/FORGE-Setup-1.1.4.exe`
+- `downloads/FORGE-Windows-Portable-1.1.4.zip`
+- `downloads/FORGE-Source-v1.1.4.zip`
+- `downloads/SHA256SUMS-1.1.4.txt`
+- `downloads/FORGE-macOS-Starter.zip`
+- `downloads/FORGE-Linux-Starter.zip`
 
 ### Auto-Deploy Pipeline
 

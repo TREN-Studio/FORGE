@@ -14,6 +14,7 @@ from forge.runtime.contracts import AgentReply, GatewayEnvelope
 from forge.runtime.heartbeat import HeartbeatDaemon, ScheduledTask
 from forge.runtime.lanes import LaneQueueManager
 from forge.runtime.markdown_memory import MarkdownMemoryStore
+from forge.runtime.state_store import PersistentStateStore
 
 
 @dataclass(slots=True)
@@ -35,11 +36,17 @@ class ForgeAgentRuntime:
         self.memory = MarkdownMemoryStore(self.settings.runtime_root)
         self.lanes = LaneQueueManager()
         self.heartbeat = HeartbeatDaemon()
+        self.operator_settings = OperatorSettings(enable_memory=False, workspace_root=self.settings.workspace_root)
+        self.state_store = PersistentStateStore(
+            self.operator_settings.state_db_path,
+            encryption_key_path=self.operator_settings.approval_key_path,
+        )
         self._started = False
 
     async def start(self) -> None:
         if self._started:
             return
+        MissionOrchestrator._ensure_cluster(self.state_store, self.operator_settings)
         if self.settings.enable_heartbeat:
             self._register_heartbeat_tasks()
             await self.heartbeat.start()
@@ -59,6 +66,7 @@ class ForgeAgentRuntime:
         return {
             "lanes": self.lanes.snapshot(),
             "workers": MissionOrchestrator.worker_snapshot(),
+            "approvals": MissionOrchestrator.approvals_snapshot(),
             "memory": self.memory.health(),
             "heartbeat": self.heartbeat.snapshot(),
         }
@@ -143,11 +151,7 @@ class ForgeAgentRuntime:
         confirmed: bool,
         dry_run: bool,
     ) -> dict[str, Any]:
-        settings = OperatorSettings(
-            enable_memory=False,
-            workspace_root=self.settings.workspace_root,
-        )
-        operator = ForgeOperator(settings=settings)
+        operator = ForgeOperator(settings=self.operator_settings)
         result = operator.handle(
             user_request,
             confirmed=confirmed,

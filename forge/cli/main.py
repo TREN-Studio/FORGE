@@ -28,7 +28,7 @@ cli = typer.Typer(
 )
 
 FORGE_BANNER = """[bold #FF6B1A]FORGE[/bold #FF6B1A]
-[dim]Free Open Reasoning & Generation Engine  v1.1.2[/dim]
+[dim]Free Open Reasoning & Generation Engine  v1.1.4[/dim]
 [dim]https://www.trenstudio.com/FORGE[/dim]
 """
 
@@ -55,6 +55,12 @@ def _save_key(provider: str, key: str) -> None:
     keydir = Path.home() / ".forge" / "keys"
     keydir.mkdir(parents=True, exist_ok=True)
     (keydir / provider).write_text(key.strip())
+
+
+def _save_provider_value(provider: str, name: str, value: str) -> None:
+    keydir = Path.home() / ".forge" / "keys"
+    keydir.mkdir(parents=True, exist_ok=True)
+    (keydir / f"{provider}.{name}").write_text(value.strip())
 
 
 def _format_leaderboard(rows: list[dict]) -> Table:
@@ -239,13 +245,44 @@ def operate(
 
 @cli.command("add-key")
 def add_key(
-    provider: str = typer.Argument(..., help="Provider name: groq, gemini, deepseek, openrouter"),
+    provider: str = typer.Argument(
+        ...,
+        help="Provider name: ollama, groq, gemini, deepseek, openrouter, mistral, together, nvidia, cloudflare, anthropic, openai",
+    ),
     key: str = typer.Argument(..., help="Your API key"),
+    account_id: str | None = typer.Option(None, "--account-id", help="Required for cloudflare"),
+    organization: str | None = typer.Option(None, "--organization", help="Optional OpenAI organization"),
+    project: str | None = typer.Option(None, "--project", help="Optional OpenAI project"),
 ):
     """Save a provider API key."""
+    from forge.providers import supported_provider_names
+
     provider = provider.lower()
+    if provider not in supported_provider_names():
+        raise typer.BadParameter(
+            f"Unsupported provider '{provider}'. Supported: {', '.join(supported_provider_names())}"
+        )
+
     _save_key(provider, key)
+    saved_notes = [f"key -> [dim]~/.forge/keys/{provider}[/dim]"]
+
+    if provider == "cloudflare":
+        if not account_id:
+            raise typer.BadParameter("--account-id is required for cloudflare")
+        _save_provider_value(provider, "account_id", account_id)
+        saved_notes.append(f"account_id -> [dim]~/.forge/keys/{provider}.account_id[/dim]")
+
+    if provider == "openai":
+        if organization:
+            _save_provider_value(provider, "organization", organization)
+            saved_notes.append(f"organization -> [dim]~/.forge/keys/{provider}.organization[/dim]")
+        if project:
+            _save_provider_value(provider, "project", project)
+            saved_notes.append(f"project -> [dim]~/.forge/keys/{provider}.project[/dim]")
+
     console.print(f"[#4ade80]OK[/] Key saved for [bold]{provider}[/bold] -> [dim]~/.forge/keys/{provider}[/dim]")
+    for note in saved_notes[1:]:
+        console.print(f"[dim]{note}[/dim]")
     console.print("[dim]Run `forge status` to verify the provider is online.[/dim]")
 
 
@@ -442,6 +479,31 @@ def heartbeat(
             await runtime.stop()
 
     asyncio.run(_run_once() if once else _watch())
+
+
+@cli.command("worker-host")
+def worker_host(
+    host: str = typer.Option("127.0.0.1", "--host", help="Worker bind host"),
+    port: int = typer.Option(18895, "--port", help="Worker bind port"),
+    gateway_url: str = typer.Option("http://127.0.0.1:18789", "--gateway-url", help="Gateway base URL"),
+    gateway_token: str = typer.Option("", "--gateway-token", help="Optional gateway Bearer token"),
+    worker_id: str = typer.Option("", "--worker-id", help="Optional fixed worker id"),
+):
+    """Run a separate council worker host that registers to the gateway."""
+    from forge.runtime.worker_host import WorkerHostSettings, run_worker_host
+
+    _print_banner()
+    console.print(f"[dim]Worker host starting on http://{host}:{port} -> gateway {gateway_url}[/dim]")
+    run_worker_host(
+        WorkerHostSettings(
+            host=host,
+            port=port,
+            gateway_url=gateway_url,
+            gateway_token=gateway_token,
+            worker_id=worker_id,
+            workspace_root=Path.cwd().resolve(),
+        )
+    )
 
 
 if __name__ == "__main__":

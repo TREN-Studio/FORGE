@@ -108,3 +108,32 @@ class OpenRouterProvider(BaseProvider):
             output_tokens=usage.get("completion_tokens", 0),
             finish_reason=choice.get("finish_reason", "stop"),
         )
+
+    async def stream(
+        self,
+        model: ModelSpec,
+        messages: list[Message],
+        max_tokens: int = 2048,
+        temperature: float = 0.7,
+    ):
+        payload = {
+            "model": model.id,
+            "messages": [message.model_dump(exclude_none=True) for message in messages],
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        }
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://www.trenstudio.com/FORGE",
+            "X-Title": "FORGE",
+        }
+        async for event in self._stream_openai_compatible(
+            api_url=_API_URL,
+            payload=payload,
+            headers=headers,
+            model=model,
+            provider_name="openrouter",
+            timeout=90,
+        ):
+            yield event

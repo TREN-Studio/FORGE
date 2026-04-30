@@ -17,6 +17,7 @@ class LaneMetrics:
     active_jobs: int
     processed_jobs: int
     last_duration_ms: float
+    avg_processing_ms: float
     last_error: str = ""
 
 
@@ -34,6 +35,7 @@ class _LaneWorker:
         self.active_jobs = 0
         self.processed_jobs = 0
         self.last_duration_ms = 0.0
+        self.total_duration_ms = 0.0
         self.last_error = ""
         self._task = asyncio.create_task(self._run(), name=f"forge-lane-{lane_id}")
 
@@ -54,6 +56,7 @@ class _LaneWorker:
             active_jobs=self.active_jobs,
             processed_jobs=self.processed_jobs,
             last_duration_ms=round(self.last_duration_ms, 2),
+            avg_processing_ms=round((self.total_duration_ms / self.processed_jobs), 2) if self.processed_jobs else 0.0,
             last_error=self.last_error,
         )
 
@@ -80,6 +83,7 @@ class _LaneWorker:
                 self.active_jobs = max(0, self.active_jobs - 1)
                 self.processed_jobs += 1
                 self.last_duration_ms = (time.monotonic() - started) * 1000
+                self.total_duration_ms += self.last_duration_ms
 
 
 class LaneQueueManager:
@@ -108,6 +112,8 @@ class LaneQueueManager:
                 "active_jobs": metrics.active_jobs,
                 "processed_jobs": metrics.processed_jobs,
                 "last_duration_ms": metrics.last_duration_ms,
+                "avg_processing_ms": metrics.avg_processing_ms,
+                "queue_length": metrics.queued_jobs + metrics.active_jobs,
                 "last_error": metrics.last_error,
             }
             for worker in self._lanes.values()

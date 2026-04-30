@@ -42,10 +42,15 @@ class OllamaProvider(BaseProvider):
     daily_token_limit:   int = 0   # unlimited
     daily_request_limit: int = 0   # unlimited
 
-    def __init__(self, api_key: str | None = None) -> None:
+    def __init__(
+        self,
+        api_key: str | None = None,
+        config: dict[str, str] | None = None,
+        allow_host_fallback: bool = True,
+    ) -> None:
         self._discovered_models: list[ModelSpec] = []
         self._discovery_done = False
-        super().__init__(api_key)
+        super().__init__(api_key=api_key, config=config, allow_host_fallback=allow_host_fallback)
 
     @property
     def models(self) -> list[ModelSpec]:
@@ -197,3 +202,63 @@ class OllamaProvider(BaseProvider):
             output_tokens = data.get("eval_count", 0),
             finish_reason = "stop" if data.get("done") else "length",
         )
+
+    async def stream(
+        self,
+        model: ModelSpec,
+        messages: list[Message],
+        max_tokens: int = 2048,
+        temperature: float = 0.7,
+    ):
+        payload = {
+            "model": model.id,
+            "messages": [m.model_dump(exclude_none=True) for m in messages],
+            "stream": True,
+            "options": {
+                "num_predict": max_tokens,
+                "temperature": temperature,
+            },
+        }
+
+        started = time.monotonic()
+        accumulated = ""
+        prompt_eval_count = 0
+        eval_count = 0
+        finish_reason = "stop"
+
+        try:
+            async with httpx.AsyncClient(timeout=120) as client:
+                async with client.stream("POST", _API_URL, json=payload) as resp:
+                    if resp.status_code != 200:
+                        raise RuntimeError(f"Ollama error {resp.status_code}: {(await resp.aread()).decode('utf-8', errors='replace')[:200]}")
+                    async for raw_line in resp.aiter_lines():
+                        line = raw_line.strip()
+                        if not line:
+                            continue
+                        data = httpx.Response(200, content=line.encode("utf-8")).json()
+                        delta = ((data.get("message") or {}).get("content") or "")
+                        if delta:
+                            accumulated += delta
+                            yield {"type": "delta", "delta": delta}
+                        if data.get("done"):
+                            prompt_eval_count = int(data.get("prompt_eval_count") or 0)
+                            eval_count = int(data.get("eval_count") or 0)
+                            finish_reason = "stop" if data.get("done") else "length"
+        except httpx.ConnectError:
+            raise RuntimeError(
+                "Ollama not running. Start it with: ollama serve\n"
+                "Install: https://ollama.com"
+            )
+
+        yield {
+            "type": "response",
+            "response": ForgeResponse(
+                content=accumulated,
+                model_id=model.id,
+                provider="ollama",
+                latency_ms=(time.monotonic() - started) * 1000,
+                input_tokens=prompt_eval_count,
+                output_tokens=eval_count,
+                finish_reason=finish_reason,
+            ),
+        }

@@ -12,10 +12,26 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _resolve_binary_path() -> Path:
+    override = os.environ.get("FORGE_DESKTOP_BINARY_PATH")
+    if override:
+        path = Path(override).resolve()
+        if not path.exists():
+            raise FileNotFoundError(f"Desktop binary is missing: {path}")
+        return path
+
+    candidates = sorted(
+        (ROOT / "dist").glob("FORGE-Desktop*.exe"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    if not candidates:
+        raise FileNotFoundError(f"Desktop binary is missing in {ROOT / 'dist'}")
+    return candidates[0].resolve()
+
+
 def main() -> int:
-    exe_path = Path(os.environ.get("FORGE_DESKTOP_BINARY_PATH", str(ROOT / "dist" / "FORGE-Desktop.exe"))).resolve()
-    if not exe_path.exists():
-        raise FileNotFoundError(f"Desktop binary is missing: {exe_path}")
+    exe_path = _resolve_binary_path()
 
     command = [
         str(exe_path),
