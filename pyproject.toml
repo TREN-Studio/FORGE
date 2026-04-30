@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "forge-agent"
@@ -45,6 +45,13 @@ forge = "forge.cli.main:cli"
 Homepage   = "https://www.trenstudio.com/FORGE"
 Repository = "https://github.com/TREN-Studio/FORGE"
 Issues     = "https://github.com/TREN-Studio/FORGE/issues"
+
+[tool.setuptools.packages.find]
+include = ["forge*", "site_backend*"]
+exclude = ["assets*", "installer*", "output*", "site*", "site_external*", "tests*", "tools*"]
+
+[tool.setuptools.package-data]
+forge = ["skills_catalog/**/*"]
 
 [tool.ruff]
 line-length = 100
