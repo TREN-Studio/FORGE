@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import fnmatch
+import hashlib
+import json
+import os
 import shutil
 import tomllib
 import zipfile
@@ -9,8 +12,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 RELEASE_ASSETS = ROOT / "release-assets"
-SITE_DOWNLOADS = ROOT / "site" / "downloads"
 DIST_EXE = ROOT / "dist" / "FORGE-Desktop.exe"
+GITHUB_REPOSITORY = "TREN-Studio/FORGE"
 
 INCLUDE_DIRS = [
     ".github",
@@ -159,53 +162,143 @@ def package_source(version: str) -> Path:
     return destination
 
 
-def sync_site_downloads(version: str, portable_zip: Path, source_zip: Path) -> dict[str, Path]:
-    SITE_DOWNLOADS.mkdir(parents=True, exist_ok=True)
+def release_outputs(version: str, portable_zip: Path, source_zip: Path) -> dict[str, Path]:
     installer = RELEASE_ASSETS / "installer-output" / f"FORGE-Setup-{version}.exe"
     if not installer.exists():
         raise FileNotFoundError(f"Installer is missing: {installer}")
 
-    outputs = {
-        "FORGE-Desktop.exe": DIST_EXE,
-        f"FORGE-Setup-{version}.exe": SITE_DOWNLOADS / f"FORGE-Setup-{version}.exe",
-        f"FORGE-Windows-Portable-{version}.zip": SITE_DOWNLOADS / f"FORGE-Windows-Portable-{version}.zip",
-        "FORGE-Windows-Desktop.zip": SITE_DOWNLOADS / "FORGE-Windows-Desktop.zip",
-        f"FORGE-Source-v{version}.zip": SITE_DOWNLOADS / f"FORGE-Source-v{version}.zip",
-    }
+    desktop_asset = RELEASE_ASSETS / "FORGE-Desktop.exe"
+    installer_asset = RELEASE_ASSETS / f"FORGE-Setup-{version}.exe"
+    shutil.copy2(DIST_EXE, desktop_asset)
+    shutil.copy2(installer, installer_asset)
 
-    shutil.copy2(installer, outputs[f"FORGE-Setup-{version}.exe"])
-    shutil.copy2(portable_zip, outputs[f"FORGE-Windows-Portable-{version}.zip"])
-    shutil.copy2(portable_zip, outputs["FORGE-Windows-Desktop.zip"])
-    shutil.copy2(source_zip, outputs[f"FORGE-Source-v{version}.zip"])
-    return outputs
+    return {
+        "FORGE-Desktop.exe": desktop_asset,
+        f"FORGE-Setup-{version}.exe": installer_asset,
+        f"FORGE-Windows-Portable-{version}.zip": portable_zip,
+        f"FORGE-Source-v{version}.zip": source_zip,
+    }
 
 
 def write_sha256(version: str, outputs: dict[str, Path]) -> Path:
-    import hashlib
-
     lines: list[str] = []
     for name, path in outputs.items():
         if not path.exists():
             continue
-        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        digest = _sha256(path)
         lines.append(f"{digest}  {name}")
 
     checksum = RELEASE_ASSETS / f"SHA256SUMS-{version}.txt"
     checksum.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    shutil.copy2(checksum, SITE_DOWNLOADS / checksum.name)
     return checksum
+
+
+def write_release_manifest(version: str, outputs: dict[str, Path], checksum: Path) -> Path:
+    tag = f"v{version}"
+    all_outputs = dict(outputs)
+    all_outputs[checksum.name] = checksum
+    mirror_base_url = os.getenv("FORGE_RELEASE_MIRROR_BASE_URL", "").strip().rstrip("/")
+    assets = [
+        _manifest_asset(
+            version=version,
+            tag=tag,
+            name=name,
+            path=path,
+            mirror_base_url=mirror_base_url,
+        )
+        for name, path in all_outputs.items()
+    ]
+    manifest = {
+        "schema_version": 1,
+        "version": version,
+        "release_tag": tag,
+        "release_url": f"https://github.com/{GITHUB_REPOSITORY}/releases/tag/{tag}",
+        "canonical_host": "github_release",
+        "canonical_note": "GitHub Release is the canonical release record. Hostinger may mirror the same release assets byte-for-byte when mirror_url is present.",
+        "mirrors": {
+            "hostinger": {
+                "status": "enabled" if mirror_base_url else "disabled",
+                "base_url": mirror_base_url or None,
+                "identity_policy": "mirror_url assets must match canonical_url by version, file size, and SHA256.",
+            }
+        },
+        "assets": assets,
+    }
+    destination = RELEASE_ASSETS / "release-manifest.json"
+    destination.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return destination
+
+
+def _manifest_asset(*, version: str, tag: str, name: str, path: Path, mirror_base_url: str) -> dict[str, object]:
+    if not path.exists():
+        raise FileNotFoundError(f"Release asset is missing: {path}")
+    return {
+        "name": name,
+        "label": _asset_label(version, name),
+        "kind": _asset_kind(name),
+        "platform": _asset_platform(name),
+        "sha256": _sha256(path),
+        "size": path.stat().st_size,
+        "canonical_url": f"https://github.com/{GITHUB_REPOSITORY}/releases/download/{tag}/{name}",
+        "mirror_url": f"{mirror_base_url}/{name}" if mirror_base_url else None,
+    }
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _asset_label(version: str, name: str) -> str:
+    labels = {
+        "FORGE-Desktop.exe": "Windows Desktop Executable",
+        f"FORGE-Setup-{version}.exe": "Windows Installer",
+        f"FORGE-Windows-Portable-{version}.zip": "Windows Portable ZIP",
+        f"FORGE-Source-v{version}.zip": "Source Archive",
+        f"SHA256SUMS-{version}.txt": "SHA256 Checksums",
+    }
+    return labels.get(name, name)
+
+
+def _asset_kind(name: str) -> str:
+    lowered = name.lower()
+    if "setup" in lowered:
+        return "installer"
+    if "portable" in lowered:
+        return "portable"
+    if "source" in lowered:
+        return "source"
+    if "sha256" in lowered:
+        return "checksums"
+    if lowered.endswith(".exe"):
+        return "executable"
+    return "asset"
+
+
+def _asset_platform(name: str) -> str:
+    lowered = name.lower()
+    if "windows" in lowered or lowered.endswith(".exe"):
+        return "windows"
+    if "source" in lowered or "sha256" in lowered:
+        return "all"
+    return "unknown"
 
 
 def main() -> None:
     version = _version()
     portable_zip = package_portable(version)
     source_zip = package_source(version)
-    outputs = sync_site_downloads(version, portable_zip, source_zip)
+    outputs = release_outputs(version, portable_zip, source_zip)
     checksum = write_sha256(version, outputs)
+    manifest = write_release_manifest(version, outputs, checksum)
 
     print(f"Packaged {portable_zip}")
     print(f"Packaged {source_zip}")
     print(f"Wrote {checksum}")
+    print(f"Wrote {manifest}")
 
 
 if __name__ == "__main__":

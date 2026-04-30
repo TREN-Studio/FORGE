@@ -26,6 +26,7 @@ build/
 output/
 *.egg-info/
 release-assets/
+site/downloads/
 node_modules/
 playwright-report/
 test-results/

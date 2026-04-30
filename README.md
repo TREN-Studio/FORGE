@@ -113,11 +113,15 @@ Current foundation includes:
 ## Windows Releases
 
 - Current public release line: `1.1.4`.
-- The repository now includes a Windows release workflow in `.github/workflows/release_forge_windows.yml`.
-- It builds `FORGE-Desktop.exe` and `FORGE-Setup-<version>.exe` on GitHub Actions.
+- The canonical public download source is the GitHub Release for the matching tag: https://github.com/TREN-Studio/FORGE/releases/tag/v1.1.4
+- The release workflow in `.github/workflows/release_forge_windows.yml` builds `FORGE-Desktop.exe`, `FORGE-Setup-<version>.exe`, the portable ZIP, the source ZIP, `SHA256SUMS-<version>.txt`, and `release-manifest.json` from one pipeline.
+- That same pipeline publishes the assets to GitHub Release and mirrors the exact same bytes to `https://www.trenstudio.com/FORGE/downloads/` when Hostinger secrets are configured.
 - The supported desktop build entrypoint is `python tools/build_windows_desktop.py`; that script is the source of truth for orchestration and invokes the portable `FORGE-Desktop.spec`.
-- Release packaging runs through `python tools/package_release_assets.py`, which publishes the portable ZIP, source ZIP, and SHA256 manifest from the same build output.
-- Legacy spec files such as `FORGE-Desktop-App.spec`, `FORGE-Desktop-App-Debug.spec`, `FORGE-Desktop-Debug.spec`, and `FORGE-Desktop-Dir.spec` are intentionally unsupported and must not be used for releases.
+- Release packaging runs through `python tools/package_release_assets.py`, which writes release assets under `release-assets/` only. It does not publish or sync files into `site/downloads/`.
+- The public website reads `release-manifest.json`, generated from the canonical GitHub Release or from the release pipeline, and prefers verified official-site mirror URLs while preserving GitHub URLs as the canonical reference.
+- `python tools/verify_release_public_assets.py --manifest release-assets/release-manifest.json --require-mirror` verifies version, size, SHA256, GitHub Release presence, and byte identity for the Hostinger mirror.
+- `tools/deploy_hostinger_site.py` deploys the landing page and portal only; the release workflow owns `release-manifest.json` and `downloads/` on Hostinger.
+- Legacy desktop spec variants were removed. `FORGE-Desktop.spec` is the only supported PyInstaller spec.
 - If `WINDOWS_PFX_BASE64` and `WINDOWS_PFX_PASSWORD` are configured in GitHub Secrets, the workflow signs both artifacts before publishing the GitHub Release.
 - Until code signing is configured, Windows SmartScreen and local execution reputation checks can still block downloaded installers.
 
@@ -149,16 +153,25 @@ MIT
 
 ## Production Deployment
 
-FORGE keeps the public website bundle inside [`site/`](site). The production page at `https://www.trenstudio.com/FORGE/` must be deployed from this directory, and published download links must point only at files that exist either under `site/downloads/` on the server or on the matching GitHub Release.
+FORGE keeps the public website bundle inside [`site/`](site). The production page at `https://www.trenstudio.com/FORGE/` is the official download interface and must be deployed from this directory.
+
+GitHub Release is the canonical release record. Hostinger may serve an official mirror under `https://www.trenstudio.com/FORGE/downloads/`, but only when the files are copied from the same CI-built release assets and pass SHA256, file size, version, and byte-identity verification.
 
 The current public download set is:
 
-- `downloads/FORGE-Setup-1.1.4.exe`
-- `downloads/FORGE-Windows-Portable-1.1.4.zip`
-- `downloads/FORGE-Source-v1.1.4.zip`
-- `downloads/SHA256SUMS-1.1.4.txt`
-- `downloads/FORGE-macOS-Starter.zip`
-- `downloads/FORGE-Linux-Starter.zip`
+- `https://github.com/TREN-Studio/FORGE/releases/download/v1.1.4/FORGE-Desktop.exe`
+- `https://github.com/TREN-Studio/FORGE/releases/download/v1.1.4/FORGE-Setup-1.1.4.exe`
+- `https://github.com/TREN-Studio/FORGE/releases/download/v1.1.4/FORGE-Windows-Portable-1.1.4.zip`
+- `https://github.com/TREN-Studio/FORGE/releases/download/v1.1.4/FORGE-Source-v1.1.4.zip`
+- `https://github.com/TREN-Studio/FORGE/releases/download/v1.1.4/SHA256SUMS-1.1.4.txt`
+
+The matching official-site mirror paths, when present, are:
+
+- `https://www.trenstudio.com/FORGE/downloads/FORGE-Desktop.exe`
+- `https://www.trenstudio.com/FORGE/downloads/FORGE-Setup-1.1.4.exe`
+- `https://www.trenstudio.com/FORGE/downloads/FORGE-Windows-Portable-1.1.4.zip`
+- `https://www.trenstudio.com/FORGE/downloads/FORGE-Source-v1.1.4.zip`
+- `https://www.trenstudio.com/FORGE/downloads/SHA256SUMS-1.1.4.txt`
 
 ### Auto-Deploy Pipeline
 

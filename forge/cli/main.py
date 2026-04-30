@@ -7,6 +7,7 @@ Terminal commands for FORGE.
 from __future__ import annotations
 
 import time
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -19,6 +20,14 @@ from rich.rule import Rule
 from rich.spinner import Spinner
 from rich.table import Table
 
+def _configure_stdio() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(encoding="utf-8", errors="replace")
+
+
+_configure_stdio()
 console = Console()
 cli = typer.Typer(
     name="forge",
@@ -111,7 +120,7 @@ def start(
     """Start an interactive FORGE session."""
     _print_banner()
 
-    with Live(Spinner("dots", text="[dim]Booting FORGE...[/dim]"), refresh_per_second=10, transient=True):
+    with Live(Spinner("line", text="[dim]Booting FORGE...[/dim]"), refresh_per_second=10, transient=True):
         session = _get_session()
 
     task_type = task or "general"
@@ -178,7 +187,7 @@ def start(
 
         started = time.monotonic()
         try:
-            with Live(Spinner("dots2", text="[dim]Thinking...[/dim]"), refresh_per_second=12, transient=True):
+            with Live(Spinner("line", text="[dim]Thinking...[/dim]"), refresh_per_second=12, transient=True):
                 reply = session.ask(
                     user_input,
                     task_type=task_type,
@@ -205,9 +214,13 @@ def ask(
     if not raw:
         console.print(f"[dim]FORGE ->[/dim] [dim]{prompt[:72]}[/dim]")
 
-    with Live(Spinner("dots", text=""), refresh_per_second=10, transient=not raw):
+    if raw:
         session = _get_session()
         reply = session.ask(prompt, task_type=task)
+    else:
+        with Live(Spinner("line", text=""), refresh_per_second=10, transient=True):
+            session = _get_session()
+            reply = session.ask(prompt, task_type=task)
 
     if raw:
         print(reply)
@@ -228,7 +241,7 @@ def operate(
     if not raw:
         console.print(f"[dim]FORGE operator ->[/dim] [dim]{prompt[:72]}[/dim]")
 
-    with Live(Spinner("dots", text="[dim]Planning and executing...[/dim]"), refresh_per_second=10, transient=not raw):
+    if raw:
         operator = _get_operator(no_memory=no_memory)
         reply = operator.handle_as_text(
             prompt,
@@ -236,6 +249,15 @@ def operate(
             dry_run=dry_run,
             resume_mission_id=resume_mission,
         )
+    else:
+        with Live(Spinner("line", text="[dim]Planning and executing...[/dim]"), refresh_per_second=10, transient=True):
+            operator = _get_operator(no_memory=no_memory)
+            reply = operator.handle_as_text(
+                prompt,
+                confirmed=confirm,
+                dry_run=dry_run,
+                resume_mission_id=resume_mission,
+            )
 
     if raw:
         print(reply)
@@ -291,7 +313,7 @@ def status():
     """Show system health, model leaderboard, and quota usage."""
     _print_banner()
 
-    with Live(Spinner("dots", text="[dim]Checking providers...[/dim]"), refresh_per_second=10, transient=True):
+    with Live(Spinner("line", text="[dim]Checking providers...[/dim]"), refresh_per_second=10, transient=True):
         session = _get_session()
 
     system_status = session._router.status()
@@ -334,7 +356,7 @@ def discover():
     """Discover new free models and attach them to live providers."""
     _print_banner()
 
-    with Live(Spinner("dots", text="[dim]Scanning free model sources...[/dim]"), refresh_per_second=10, transient=True):
+    with Live(Spinner("line", text="[dim]Scanning free model sources...[/dim]"), refresh_per_second=10, transient=True):
         session = _get_session()
         report = session.discover_models()
 

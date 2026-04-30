@@ -193,6 +193,7 @@ footer{border-top:1px solid var(--b);padding:40px;display:flex;align-items:cente
     <a href="#why">Why</a>
     <a href="#arch">Architecture</a>
     <a href="#install">Install</a>
+    <a href="https://github.com/TREN-Studio/FORGE/releases" target="_blank" rel="noopener">Releases</a>
     <a href="https://github.com/TREN-Studio/FORGE" class="nav-cta" target="_blank">GitHub</a>
   </div>
 </nav>
@@ -212,6 +213,7 @@ footer{border-top:1px solid var(--b);padding:40px;display:flex;align-items:cente
       <a href="#downloads" class="btn-primary">Download Bundles</a>
       <a href="portal/?from=download" class="btn-secondary">Complete Setup</a>
       <a href="https://github.com/TREN-Studio/FORGE" class="btn-secondary" target="_blank">Open Source</a>
+      <a href="https://github.com/TREN-Studio/FORGE/releases" class="btn-secondary" target="_blank" rel="noopener">View Releases</a>
     </div>
     <div class="install-cmd">
       <span class="prefix">$</span>
@@ -234,51 +236,52 @@ footer{border-top:1px solid var(--b);padding:40px;display:flex;align-items:cente
   <div class="download-shell">
     <div class="download-top">
       <div>
-        <div class="section-label">Downloads</div>
+        <div class="section-label">Downloads <span id="release-version">v1.1.4</span></div>
         <div class="section-title">Choose Your System</div>
-        <p class="section-desc">FORGE should present like a real desktop product. Windows now ships as a tested installer executable with real workspace selection, execution controls, and verified file-plus-shell development missions. macOS and Linux remain starter tracks until their native bundles reach the same validation bar.</p>
+        <p class="section-desc">FORGE downloads are served from the official site and verified against the canonical GitHub Release. Windows 1.1.4 ships as the validated desktop build; source, portable, and checksum assets come from one CI pipeline and one release manifest.</p>
       </div>
       <div class="download-side">
-        <div class="download-kpi"><strong>4</strong><span>Download Tracks</span></div>
-        <div class="download-kpi"><strong>3</strong><span>Desktop Systems</span></div>
+        <div class="download-kpi"><strong>5</strong><span>Release Assets</span></div>
+        <div class="download-kpi"><strong>1</strong><span>Validated OS</span></div>
         <div class="download-kpi"><strong>$0</strong><span>License Cost</span></div>
         <div class="download-kpi"><strong>MIT</strong><span>Open Source Core</span></div>
       </div>
     </div>
     <div class="download-grid">
-      <a class="platform-card" href="downloads/FORGE-Setup-1.1.4.exe">
+      <a class="platform-card" href="https://github.com/TREN-Studio/FORGE/releases/download/v1.1.4/FORGE-Setup-1.1.4.exe" data-release-asset="FORGE-Setup-1.1.4.exe" target="_blank" rel="noopener">
         <div class="platform-build">Native Installer</div>
         <div class="platform-os">Windows</div>
         <div class="platform-desc">Tested Windows installer for the operator-only FORGE Desktop build. The public app now selects a real workspace, allows confirmed file changes, runs guarded commands, and returns verified mission traces instead of chat-style roleplay.</div>
-        <div class="platform-meta"><span>Installer EXE</span><span>Win 64-bit app</span></div>
+        <div class="platform-meta"><span>Installer EXE</span><span data-release-size-for="FORGE-Setup-1.1.4.exe">GitHub asset</span></div>
         <div class="platform-link">Download Windows <span>-></span></div>
       </a>
-      <a class="platform-card" href="downloads/FORGE-macOS-Starter.zip">
-        <div class="platform-build">Desktop Starter</div>
-        <div class="platform-os">macOS</div>
-        <div class="platform-desc">Starter bundle for Apple Silicon and Intel Macs. Includes install and launch scripts tuned for a local Python runtime.</div>
-        <div class="platform-meta"><span>ZIP bundle</span><span>Intel + Apple</span></div>
-        <div class="platform-link">Download macOS <span>-></span></div>
+      <a class="platform-card" href="https://github.com/TREN-Studio/FORGE/releases/download/v1.1.4/FORGE-Windows-Portable-1.1.4.zip" data-release-asset="FORGE-Windows-Portable-1.1.4.zip" target="_blank" rel="noopener">
+        <div class="platform-build">Portable Build</div>
+        <div class="platform-os">Windows ZIP</div>
+        <div class="platform-desc">Portable package from the same GitHub Release artifact set. Use it when you want to inspect or run the desktop binary without installer integration.</div>
+        <div class="platform-meta"><span>ZIP archive</span><span data-release-size-for="FORGE-Windows-Portable-1.1.4.zip">GitHub asset</span></div>
+        <div class="platform-link">Download Portable <span>-></span></div>
       </a>
-      <a class="platform-card" href="downloads/FORGE-Linux-Starter.zip">
-        <div class="platform-build">Desktop Starter</div>
-        <div class="platform-os">Linux</div>
-        <div class="platform-desc">Starter bundle for Ubuntu, Debian, Fedora, and similar distributions. Includes shell launchers for local execution.</div>
-        <div class="platform-meta"><span>ZIP bundle</span><span>Ubuntu/Fedora</span></div>
-        <div class="platform-link">Download Linux <span>-></span></div>
-      </a>
-      <a class="platform-card" href="downloads/FORGE-Source-v1.1.4.zip">
+      <a class="platform-card" href="https://github.com/TREN-Studio/FORGE/releases/download/v1.1.4/FORGE-Source-v1.1.4.zip" data-release-asset="FORGE-Source-v1.1.4.zip" target="_blank" rel="noopener">
         <div class="platform-build">Source Package</div>
         <div class="platform-os">Source</div>
         <div class="platform-desc">Clean source archive for developers, contributors, and teams that want to review, modify, or package FORGE themselves.</div>
-        <div class="platform-meta"><span>ZIP archive</span><span>Developer ready</span></div>
+        <div class="platform-meta"><span>ZIP archive</span><span data-release-size-for="FORGE-Source-v1.1.4.zip">GitHub asset</span></div>
         <div class="platform-link">Download Source <span>-></span></div>
+      </a>
+      <a class="platform-card" href="https://github.com/TREN-Studio/FORGE/releases/download/v1.1.4/SHA256SUMS-1.1.4.txt" data-release-asset="SHA256SUMS-1.1.4.txt" target="_blank" rel="noopener">
+        <div class="platform-build">Verification</div>
+        <div class="platform-os">Hashes</div>
+        <div class="platform-desc">SHA256 checksum file generated from the canonical release artifacts. Use it to verify the installer, portable ZIP, source archive, and desktop executable.</div>
+        <div class="platform-meta"><span>SHA256</span><span data-release-size-for="SHA256SUMS-1.1.4.txt">GitHub asset</span></div>
+        <div class="platform-link">Verify Release <span>-></span></div>
       </a>
     </div>
     <div class="download-note">
-      <p><strong>Windows 1.1.4:</strong> the primary download is a tested installer executable with uninstall support and Start Menu integration. A <a href="downloads/FORGE-Windows-Portable-1.1.4.zip">portable ZIP</a> and <a href="downloads/SHA256SUMS-1.1.4.txt">SHA256 sums</a> are also published for verification.</p>
+      <p><strong>Canonical release:</strong> GitHub Release remains the version authority: <a id="release-url" href="https://github.com/TREN-Studio/FORGE/releases/tag/v1.1.4" target="_blank" rel="noopener">GitHub Release v1.1.4</a>. The official site may mirror those exact assets byte-for-byte from the same CI pipeline.</p>
+      <p><strong>Windows 1.1.4:</strong> the primary download is a tested installer executable with uninstall support and Start Menu integration. A <a href="https://github.com/TREN-Studio/FORGE/releases/download/v1.1.4/FORGE-Windows-Portable-1.1.4.zip" data-release-asset="FORGE-Windows-Portable-1.1.4.zip" target="_blank" rel="noopener">portable ZIP</a> and <a href="https://github.com/TREN-Studio/FORGE/releases/download/v1.1.4/SHA256SUMS-1.1.4.txt" data-release-asset="SHA256SUMS-1.1.4.txt" target="_blank" rel="noopener">SHA256 sums</a> are published for verification.</p>
       <p><strong>Setup Flow:</strong> install FORGE Desktop first, then complete account registration and provider setup from the private portal or inside Desktop.</p>
-      <p><strong>macOS / Linux:</strong> these tracks remain starter bundles and still expect a local Python runtime.</p>
+      <p><strong>macOS / Linux:</strong> native public packages are not part of the 1.1.4 release set yet. Use the source archive while those tracks are validated. <a href="https://github.com/TREN-Studio/FORGE/releases" target="_blank" rel="noopener">View all releases</a>.</p>
     </div>
   </div>
 </section>
@@ -543,6 +546,56 @@ function loop() {
 
 window.addEventListener('resize', () => { resize(); });
 init(); loop();
+
+// RELEASE MANIFEST
+function formatBytes(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return 'GitHub asset';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let size = bytes;
+  let unit = 0;
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024;
+    unit += 1;
+  }
+  return `${size >= 10 || unit === 0 ? size.toFixed(0) : size.toFixed(1)} ${units[unit]}`;
+}
+
+function applyReleaseManifest(manifest) {
+  const assets = new Map((manifest.assets || []).map(asset => [asset.name, asset]));
+  const releaseVersion = document.getElementById('release-version');
+  if (releaseVersion && manifest.release_tag) releaseVersion.textContent = manifest.release_tag;
+
+  const releaseUrl = document.getElementById('release-url');
+  if (releaseUrl && manifest.release_url) {
+    releaseUrl.href = manifest.release_url;
+    releaseUrl.textContent = `GitHub Release ${manifest.release_tag || manifest.version || ''}`.trim();
+  }
+
+  document.querySelectorAll('[data-release-asset]').forEach(element => {
+    const name = element.getAttribute('data-release-asset');
+    const asset = assets.get(name);
+    if (!asset || !asset.canonical_url) return;
+    const downloadUrl = asset.mirror_url || asset.canonical_url;
+    element.setAttribute('href', downloadUrl);
+    element.setAttribute('data-canonical-url', asset.canonical_url);
+    element.setAttribute('target', '_blank');
+    element.setAttribute('rel', 'noopener');
+    if (asset.sha256) {
+      const source = asset.mirror_url ? 'Official mirror verified against GitHub Release' : 'GitHub Release asset';
+      element.setAttribute('title', `${source} · SHA256 ${asset.sha256}`);
+    }
+  });
+
+  document.querySelectorAll('[data-release-size-for]').forEach(element => {
+    const asset = assets.get(element.getAttribute('data-release-size-for'));
+    if (asset) element.textContent = formatBytes(Number(asset.size));
+  });
+}
+
+fetch('release-manifest.json', { cache: 'no-store' })
+  .then(response => response.ok ? response.json() : Promise.reject(new Error(`manifest ${response.status}`)))
+  .then(applyReleaseManifest)
+  .catch(error => console.warn('FORGE release manifest unavailable; using built-in GitHub links.', error));
 
 // COPY CMD
 function copyCmd() {
