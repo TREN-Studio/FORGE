@@ -345,26 +345,97 @@ class ForgeOperator:
 
     @staticmethod
     def _clarification_text(request: str) -> str:
-        if any("\u0600" <= char <= "\u06ff" for char in request):
-            return (
-                "FORGE ليس chatbot عاماً. هذا الطلب لا يحتوي على مهمة قابلة للتنفيذ بعد.\n\n"
-                "أعطني أمراً واحداً واضحاً مثل:\n"
-                "- افحص هذا الحاسوب واذكر النظام والرام والمعالج\n"
-                "- حلل هذا المشروع واحفظ تقريراً في ملف\n"
-                "- افتح هذا الرابط واستخرج النقاط الرئيسية\n"
-                "- عدل هذا الملف ثم شغّل الاختبار\n"
-                "- انشر هذا التقرير إلى GitHub أو WordPress بعد التأكيد\n\n"
-                "عندها سينفذ FORGE المهمة كـ agent بخطة وخطوات وتحقيق ونتيجة قابلة للتحقق."
-            )
+        text = request.strip().lower()
+        if ForgeOperator._asks_identity(text):
+            return ForgeOperator._identity_text()
+        if ForgeOperator._is_conversational_prompt(text):
+            return ForgeOperator._friendly_intro_text()
+        return ForgeOperator._agent_guidance_text()
+
+    @staticmethod
+    def _asks_identity(text: str) -> bool:
+        identity_phrases = (
+            "who made you",
+            "who built you",
+            "who developed you",
+            "who created you",
+            "who is your creator",
+            "who founded",
+            "who owns you",
+            "\u0645\u0646 \u0637\u0648\u0631\u0643",
+            "\u0645\u0646 \u0635\u0646\u0639\u0643",
+            "\u0645\u0646 \u0628\u0646\u0627\u0643",
+            "\u0645\u0646 \u0627\u0644\u0645\u0624\u0633\u0633",
+        )
+        return any(phrase in text for phrase in identity_phrases)
+
+    @staticmethod
+    def _is_conversational_prompt(text: str) -> bool:
+        cleaned = text.strip(" \t\r\n?!.,:;\"'")
+        friendly_exact = {
+            "hello",
+            "hi",
+            "hey",
+            "yo",
+            "can speak to me",
+            "can you speak to me",
+            "can you talk to me",
+            "talk to me",
+            "speak to me",
+            "what can you do",
+            "what are you",
+            "help",
+            "help me",
+            "\u0645\u0631\u062d\u0628\u0627",
+            "\u0627\u0647\u0644\u0627",
+            "\u0627\u0644\u0633\u0644\u0627\u0645 \u0639\u0644\u064a\u0643\u0645",
+        }
+        friendly_phrases = (
+            "can you speak",
+            "can you talk",
+            "what can forge do",
+            "what do you do",
+            "how can you help",
+            "\u0645\u0627\u0630\u0627 \u062a\u0633\u062a\u0637\u064a\u0639",
+            "\u0645\u0627\u0630\u0627 \u062a\u0641\u0639\u0644",
+        )
+        return cleaned in friendly_exact or any(phrase in text for phrase in friendly_phrases)
+
+    @staticmethod
+    def _identity_text() -> str:
         return (
-            "FORGE is not a general chatbot. This request does not define an executable mission yet.\n\n"
-            "Give one concrete instruction such as:\n"
+            "I am FORGE, developed by TREN Studio.\n"
+            "TREN Studio was founded by Larbi Aboudi.\n\n"
+            "I can chat with you, and I am most useful when you give me a concrete task. "
+            "For example, I can inspect files, create reports, edit code, run checks, "
+            "and produce verified outputs."
+        )
+
+    @staticmethod
+    def _friendly_intro_text() -> str:
+        return (
+            "Yes. I can chat with you.\n\n"
+            "I am FORGE: friendly to talk to, but strongest as an agent when you give me "
+            "a concrete task with an output I can verify.\n\n"
+            "Try one of these:\n"
+            "- Create notes.txt with content hello forge, then verify it exists\n"
+            "- Read a file and save action_items.md with the key next steps\n"
+            "- Inspect this workspace and write a short report\n\n"
+            "When a task needs action, I will plan it, choose tools, execute steps, and report evidence."
+        )
+
+    @staticmethod
+    def _agent_guidance_text() -> str:
+        return (
+            "I can help with that. To turn it into a real FORGE mission, give me one concrete "
+            "task and the output you want.\n\n"
+            "Useful examples:\n"
             "- Inspect this computer and report the OS, RAM, and CPU\n"
             "- Analyze this project and save a report file\n"
-            "- Open this URL and extract the key findings\n"
-            "- Edit this file and run the test command\n"
-            "- Publish this verified report to GitHub or WordPress after confirmation\n\n"
-            "Then FORGE will execute it as an agent with a plan, steps, evidence, and validation."
+            "- Create notes.txt with content hello forge, then verify it exists\n"
+            "- Edit a file and run the matching test command\n"
+            "- Read a document and save action_items.md\n\n"
+            "Then I will handle it as an agent with a plan, steps, evidence, and validation."
         )
 
     @staticmethod
