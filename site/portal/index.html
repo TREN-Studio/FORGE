@@ -373,6 +373,45 @@
       color: var(--accent-soft);
     }
 
+    .path-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 22px;
+    }
+
+    .path-card {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-height: 136px;
+      padding: 16px;
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 18px;
+      background: rgba(255,255,255,0.035);
+      color: var(--text);
+      text-decoration: none;
+      transition: border-color 0.16s ease, transform 0.16s ease, background 0.16s ease;
+    }
+
+    .path-card:hover {
+      border-color: rgba(255,125,45,0.42);
+      background: rgba(255,125,45,0.06);
+      transform: translateY(-1px);
+    }
+
+    .path-card strong {
+      color: var(--text);
+      font-size: 15px;
+      line-height: 1.25;
+    }
+
+    .path-card span {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
     @media (max-width: 1080px) {
       .hero,
       .grid {
@@ -380,6 +419,10 @@
       }
 
       .field-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .path-grid {
         grid-template-columns: 1fr;
       }
     }
@@ -390,17 +433,31 @@
     <section class="hero">
       <div>
         <div class="badge">FORGE Account Portal</div>
-        <h1 id="hero-title">Complete Setup After Download</h1>
+        <h1 id="hero-title">Start FORGE Your Way</h1>
         <p id="hero-copy">
-          Download FORGE Desktop first, then sign in with your own account and finish setup.
-          Provider keys, admin data, and private controls stay hidden until authentication succeeds.
+          You can download FORGE Desktop and try it locally without an account.
+          Login is only for sync, saved cloud keys, private workspace controls, admin, and publishing.
         </p>
         <div class="hero-actions">
-          <a id="download-desktop-link" href="../#downloads" class="role-pill" style="text-decoration:none">Download FORGE Desktop</a>
-          <span class="role-pill">Private Until Login</span>
+          <a id="download-desktop-link" href="/FORGE/downloads/#downloads" class="role-pill" style="text-decoration:none">Download FORGE Desktop</a>
+          <span class="role-pill">Guest Friendly</span>
         </div>
         <div id="hero-note" class="hero-note">
-          Step 1: install the app. Step 2: create or sign in to your account. Step 3: complete provider setup inside Desktop or here after login.
+          Pick the lightest path first. The account path stays available when you want sync or private cloud features.
+        </div>
+        <div class="path-grid" aria-label="FORGE setup paths">
+          <a id="guest-path-link" data-testid="guest-path-link" class="path-card" href="/FORGE/downloads/#install">
+            <strong>Continue as Guest</strong>
+            <span>Use FORGE Desktop locally first. No account is required for the first run or local exploration.</span>
+          </a>
+          <a id="download-path-link" data-testid="download-path-link" class="path-card" href="/FORGE/downloads/#downloads">
+            <strong>Download FORGE Desktop</strong>
+            <span>Get the stable desktop build and start with the public release assets.</span>
+          </a>
+          <a id="login-path-link" data-testid="login-path-link" class="path-card" href="#account-panel">
+            <strong>Login / Register for Sync &amp; Private Features</strong>
+            <span>Save cloud keys, sync account data, use private portal controls, or access admin workflows.</span>
+          </a>
         </div>
       </div>
       <div id="hero-private-metrics" class="hero-grid hidden surface-private">
@@ -412,17 +469,17 @@
     </section>
 
     <section class="grid">
-      <article class="panel">
+      <article id="account-panel" class="panel">
         <div class="topline">
           <div>
             <h2>Account</h2>
-            <h3 id="account-panel-title">Register or Login</h3>
+            <h3 id="account-panel-title">Login / Register for Sync &amp; Private Features</h3>
           </div>
           <span id="account-role-pill" class="role-pill">Guest</span>
         </div>
 
         <div id="logged-out">
-          <div class="copy">This public page is now an access gate only. The private workspace appears after login.</div>
+          <div class="copy">Optional account access. Continue as guest for first-run exploration; sign in only when you want sync, saved provider keys, private workspace controls, admin, or publishing.</div>
           <div class="field-grid">
             <div>
               <label for="display-name">Display Name</label>
@@ -838,16 +895,16 @@
       adminLocked.classList.toggle("hidden", isAdmin);
       syncGoogleSurface();
       accountRolePill.textContent = currentUser ? (isAdmin ? "Manager" : "User") : "Guest";
-      accountPanelTitle.textContent = currentUser ? "Account Control" : "Register or Login";
+      accountPanelTitle.textContent = currentUser ? "Account Control" : "Login / Register for Sync & Private Features";
       viewerEmail.textContent = currentUser ? currentUser.email : "-";
       managerGate.textContent = isAdmin ? "Open" : "Closed";
       emailVerificationState.textContent = currentUser ? (currentUser.email_verified ? "Verified" : "Pending") : "-";
       verifiedAt.textContent = currentUser && currentUser.verified_at ? currentUser.verified_at : "-";
       if (!currentUser) {
-        heroTitle.textContent = "Complete Setup After Download";
-        heroCopy.textContent = "Download FORGE Desktop first, then sign in with your own account and finish setup. Provider keys, admin data, and private controls stay hidden until authentication succeeds.";
-        heroNote.textContent = "Step 1: install the app. Step 2: create or sign in to your account. Step 3: complete provider setup inside Desktop or here after login.";
-        setStatus(accountStatus, "Login required before provider keys or admin controls can be used.");
+        heroTitle.textContent = "Start FORGE Your Way";
+        heroCopy.textContent = "You can download FORGE Desktop and try it locally without an account. Login is only for sync, saved cloud keys, private workspace controls, admin, and publishing.";
+        heroNote.textContent = "Pick the lightest path first. The account path stays available when you want sync or private cloud features.";
+        setStatus(accountStatus, "Account is optional for first-run. Login only for sync, saved keys, private workspace controls, admin, or publishing.");
         setStatus(providerStatus, "Login required before keys can be managed.");
         adminUsersList.innerHTML = "";
         adminKeyHealthList.innerHTML = "";
@@ -1187,12 +1244,12 @@
             await completeDesktopLink();
           }
         } else if (params.get("from") === "download") {
-          setStatus(accountStatus, "Desktop downloaded. Create your account or sign in to finish setup.", "ok");
+          setStatus(accountStatus, "Desktop download path opened. You can continue as guest, download the app, or sign in later for sync and private features.", "ok");
           if (pendingDeviceCode) {
-            setStatus(accountStatus, "Desktop is waiting for sign-in completion. Authenticate here to unlock the installed app.", "ok");
+            setStatus(accountStatus, "Desktop sign-in is optional for account sync. Continue as guest locally, or authenticate here to connect this install to your account.", "ok");
           }
         } else if (params.get("from") === "desktop") {
-          setStatus(accountStatus, "Desktop setup is waiting. Sign in here to unlock the installed app.", "ok");
+          setStatus(accountStatus, "Desktop account sync is waiting. Sign in only if you want to connect this install to private account features.", "ok");
         } else if (params.get("oauth_error")) {
           setStatus(accountStatus, "Google sign-in failed: " + params.get("oauth_error"), "error");
         } else if (params.get("verify_token")) {

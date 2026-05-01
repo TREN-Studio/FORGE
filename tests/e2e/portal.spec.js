@@ -9,10 +9,28 @@ function extractDebugToken(text) {
 }
 
 test.describe.serial('FORGE public portal', () => {
+  test('offers guest, download, and private sync paths without forcing login', async ({ page }) => {
+    await page.goto('/?from=download');
+
+    await expect(page.locator('#hero-title')).toContainText('Start FORGE Your Way');
+    await expect(page.locator('#hero-copy')).toContainText('without an account');
+    await expect(page.getByTestId('guest-path-link')).toContainText('Continue as Guest');
+    await expect(page.getByTestId('download-path-link')).toContainText('Download FORGE Desktop');
+    await expect(page.getByTestId('login-path-link')).toContainText('Login / Register for Sync & Private Features');
+    await expect(page.getByTestId('guest-path-link')).toHaveAttribute('href', '/FORGE/downloads/#install');
+    await expect(page.getByTestId('download-path-link')).toHaveAttribute('href', '/FORGE/downloads/#downloads');
+    await expect(page.getByTestId('login-path-link')).toHaveAttribute('href', '#account-panel');
+    await expect(page.locator('#account-status')).toContainText('continue as guest');
+    await expect(page.locator('#logged-out')).toContainText('Optional account access');
+    await expect(page.locator('body')).not.toContainText('access gate only');
+    await expect(page.locator('#provider-panel')).toBeHidden();
+    await expect(page.locator('#admin-surface')).toBeHidden();
+  });
+
   test('registers a user, stores a provider key, and verifies the email', async ({ page }) => {
     await page.goto('/');
 
-    await expect(page.locator('#hero-title')).toContainText('Complete Setup After Download');
+    await expect(page.locator('#hero-title')).toContainText('Start FORGE Your Way');
     await expect(page.locator('#provider-panel')).toBeHidden();
     await expect(page.locator('#admin-surface')).toBeHidden();
 
