@@ -71,4 +71,6 @@ jobs:
         run: python tools/deploy_hostinger_site.py
 
       - name: Verify FORGE public routes
-        run: python tools/verify_forge_public_routes.py
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python tools/verify_forge_public_routes.py --expected-manifest site/release-manifest.json --verify-github-latest

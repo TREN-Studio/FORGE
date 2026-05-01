@@ -7,8 +7,8 @@
       "mirror_url": "https://www.trenstudio.com/FORGE/downloads/FORGE-Desktop.exe",
       "name": "FORGE-Desktop.exe",
       "platform": "windows",
-      "sha256": "4b343236f7b215daeba5de9e2b23be204d258da70a43120514c23a8253c49611",
-      "size": 34120217
+      "sha256": "6b65d4349efa622f4e722a91e2263aa254e74cf2d7ef61fe3619d94469b2bee2",
+      "size": 34120761
     },
     {
       "canonical_url": "https://github.com/TREN-Studio/FORGE/releases/download/v1.1.4/FORGE-Setup-1.1.4.exe",
@@ -17,18 +17,8 @@
       "mirror_url": "https://www.trenstudio.com/FORGE/downloads/FORGE-Setup-1.1.4.exe",
       "name": "FORGE-Setup-1.1.4.exe",
       "platform": "windows",
-      "sha256": "dfd2ff9480665c29e75c051a977de2b419f3559b07905861b02be990746e43a1",
-      "size": 35646983
-    },
-    {
-      "canonical_url": "https://github.com/TREN-Studio/FORGE/releases/download/v1.1.4/FORGE-Source-v1.1.4.zip",
-      "kind": "source",
-      "label": "Source Archive",
-      "mirror_url": "https://www.trenstudio.com/FORGE/downloads/FORGE-Source-v1.1.4.zip",
-      "name": "FORGE-Source-v1.1.4.zip",
-      "platform": "all",
-      "sha256": "2c2823223235002ee72dd2765e3c5c76bd58b86afa9a696295908b93544dba75",
-      "size": 408997
+      "sha256": "67f36b234fba201faf642b135edbd2faa7347e2bc890cf72dbbe4c8882cdbc70",
+      "size": 35649023
     },
     {
       "canonical_url": "https://github.com/TREN-Studio/FORGE/releases/download/v1.1.4/FORGE-Windows-Portable-1.1.4.zip",
@@ -37,8 +27,18 @@
       "mirror_url": "https://www.trenstudio.com/FORGE/downloads/FORGE-Windows-Portable-1.1.4.zip",
       "name": "FORGE-Windows-Portable-1.1.4.zip",
       "platform": "windows",
-      "sha256": "8d5081ef48261daf651a93e242e67547b63594fdd410186fb348e2c7b3735443",
-      "size": 33777501
+      "sha256": "8f2f376a6eca2e234cc39fa036a729c14e51351552be308d38b923cb9dd65451",
+      "size": 33778734
+    },
+    {
+      "canonical_url": "https://github.com/TREN-Studio/FORGE/releases/download/v1.1.4/FORGE-Source-v1.1.4.zip",
+      "kind": "source",
+      "label": "Source Archive",
+      "mirror_url": "https://www.trenstudio.com/FORGE/downloads/FORGE-Source-v1.1.4.zip",
+      "name": "FORGE-Source-v1.1.4.zip",
+      "platform": "all",
+      "sha256": "c59d26c66f5afe1da0a7d6ba444ef2959b65c3ffeee2901e18bcec1c79d8269f",
+      "size": 417981
     },
     {
       "canonical_url": "https://github.com/TREN-Studio/FORGE/releases/download/v1.1.4/SHA256SUMS-1.1.4.txt",
@@ -47,8 +47,8 @@
       "mirror_url": "https://www.trenstudio.com/FORGE/downloads/SHA256SUMS-1.1.4.txt",
       "name": "SHA256SUMS-1.1.4.txt",
       "platform": "all",
-      "sha256": "8e547d767828832f3e5928edd5187b00ee934558ef72dfd78cfd2dea86ab087e",
-      "size": 458
+      "sha256": "d69a44f11d87fe0719f56f44e2019366383f1f9c4553e90ae981e4faea3f109d",
+      "size": 365
     }
   ],
   "canonical_host": "github_release",

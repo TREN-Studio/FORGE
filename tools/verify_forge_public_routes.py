@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -9,6 +10,7 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
+GITHUB_API = "https://api.github.com/repos/TREN-Studio/FORGE"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -21,6 +23,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="",
         help="Optional local manifest path to compare exactly with the public manifest.",
     )
+    parser.add_argument("--verify-github-latest", action="store_true")
     return parser
 
 
@@ -39,8 +42,19 @@ def fetch_text(url: str) -> tuple[str, dict[str, str]]:
 
 
 def fetch_json(url: str) -> dict[str, Any]:
-    text, _headers = fetch_text(url)
-    return json.loads(text)
+    headers = {
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+        "User-Agent": "FORGE-route-verifier",
+    }
+    github_token = os.getenv("GITHUB_TOKEN", "").strip()
+    if github_token and url.startswith("https://api.github.com/"):
+        headers["Authorization"] = f"Bearer {github_token}"
+        headers["Accept"] = "application/vnd.github+json"
+        headers["X-GitHub-Api-Version"] = "2022-11-28"
+    request = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return json.loads(response.read().decode("utf-8"))
 
 
 def load_expected_manifest(path: Path) -> dict[str, Any] | None:
@@ -108,6 +122,15 @@ def verify_manifest(actual: dict[str, Any], expected: dict[str, Any] | None) -> 
                     raise ValueError(f"{name}: public manifest {key} does not match expected manifest.")
 
 
+def verify_github_latest(manifest: dict[str, Any]) -> None:
+    latest = fetch_json(f"{GITHUB_API}/releases/latest")
+    if latest.get("prerelease"):
+        raise ValueError(f"GitHub latest release is a prerelease: {latest.get('tag_name')}")
+    latest_tag = latest.get("tag_name")
+    if latest_tag != manifest.get("release_tag"):
+        raise ValueError(f"GitHub latest stable release {latest_tag!r} != manifest tag {manifest.get('release_tag')!r}")
+
+
 def main() -> None:
     args = build_parser().parse_args()
     project_html, project_headers = fetch_text(args.project_url)
@@ -118,6 +141,8 @@ def main() -> None:
     verify_project_root(project_html)
     verify_downloads_page(downloads_html)
     verify_manifest(manifest, expected)
+    if args.verify_github_latest:
+        verify_github_latest(manifest)
 
     print(f"Verified project route: {args.project_url} ({len(project_html)} bytes)")
     print(f"Verified downloads route: {args.downloads_url} ({len(downloads_html)} bytes)")
@@ -125,6 +150,8 @@ def main() -> None:
         "Verified public manifest: "
         f"version={manifest['version']} tag={manifest['release_tag']} assets={len(manifest['assets'])}"
     )
+    if args.verify_github_latest:
+        print(f"Verified GitHub latest stable release: {manifest['release_tag']}")
     print(f"Project cache-control: {project_headers.get('Cache-Control', '<unset>')}")
     print(f"Downloads cache-control: {downloads_headers.get('Cache-Control', '<unset>')}")
 

@@ -113,6 +113,7 @@ Current foundation includes:
 ## Windows Releases
 
 - Current public release line: `1.1.4`.
+- GitHub's latest stable release must also resolve to `v1.1.4`; prerelease engineering snapshots such as `v1.1.5-AgentReality` are not canonical install releases.
 - The canonical public download source is the GitHub Release for the matching tag: https://github.com/TREN-Studio/FORGE/releases/tag/v1.1.4
 - The release workflow in `.github/workflows/release_forge_windows.yml` builds `FORGE-Desktop.exe`, `FORGE-Setup-<version>.exe`, the portable ZIP, the source ZIP, `SHA256SUMS-<version>.txt`, and `release-manifest.json` from one pipeline.
 - That same pipeline publishes the assets to GitHub Release and mirrors the exact same bytes to `https://www.trenstudio.com/FORGE/downloads/` when Hostinger secrets are configured.
