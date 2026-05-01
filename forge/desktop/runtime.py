@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+import http.client
 import json
 import os
 from pathlib import Path
@@ -26,6 +27,7 @@ class DesktopBootStatus:
     summary: str
     workspace_root: str
     artifact_root: str
+    provider_setup: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -35,6 +37,9 @@ class DesktopWorkspaceState:
 
 
 _STATE_LOCK = threading.Lock()
+_OLLAMA_TAGS_URL = "http://localhost:11434/api/tags"
+_OLLAMA_HOST = "127.0.0.1"
+_OLLAMA_PORT = 11434
 
 
 def _default_state_directory() -> Path:
@@ -149,16 +154,20 @@ def boot_status() -> DesktopBootStatus:
     providers = status.get("providers", 0)
     models_online = status.get("models_online", 0)
     workspace = get_workspace_status()
+    provider_setup = _provider_setup_snapshot({})
     summary = (
         f"FORGE v{__version__} booted with {providers} provider(s) "
         f"and {models_online} live model(s). Active workspace: {workspace['workspace_root']}."
     )
+    if provider_setup["needs_provider_setup"]:
+        summary += " Provider setup is needed: no saved cloud provider and Ollama is not running."
     return DesktopBootStatus(
         providers=providers,
         models_online=models_online,
         summary=summary,
         workspace_root=workspace["workspace_root"],
         artifact_root=workspace["artifact_root"],
+        provider_setup=provider_setup,
     )
 
 
@@ -764,6 +773,7 @@ def _artifact_paths(result: dict[str, Any]) -> list[str]:
 
 
 def boot_status_for_user(provider_secrets: dict[str, dict[str, str]] | None = None) -> DesktopBootStatus:
+    provider_setup = _provider_setup_snapshot(provider_secrets or {})
     session = ForgeSession(
         memory=False,
         provider_secrets=provider_secrets,
@@ -777,13 +787,84 @@ def boot_status_for_user(provider_secrets: dict[str, dict[str, str]] | None = No
         f"FORGE v{__version__} booted with {providers} provider(s) "
         f"and {models_online} live model(s). Active workspace: {workspace['workspace_root']}."
     )
+    if provider_setup["needs_provider_setup"]:
+        summary += " Provider setup is needed: no saved cloud provider and Ollama is not running."
     return DesktopBootStatus(
         providers=providers,
         models_online=models_online,
         summary=summary,
         workspace_root=workspace["workspace_root"],
         artifact_root=workspace["artifact_root"],
+        provider_setup=provider_setup,
     )
+
+
+def _provider_setup_snapshot(provider_secrets: dict[str, dict[str, str]]) -> dict[str, Any]:
+    saved_provider_count = sum(1 for payload in provider_secrets.values() if payload)
+    ollama = _probe_ollama()
+    needs_provider_setup = saved_provider_count == 0 and not ollama["running"]
+    return {
+        "needs_provider_setup": needs_provider_setup,
+        "saved_provider_count": saved_provider_count,
+        "cloud_provider_ready": saved_provider_count > 0,
+        "ollama": ollama,
+        "recommended": "groq" if needs_provider_setup else "",
+        "options": [
+            {
+                "id": "groq",
+                "label": "Groq",
+                "kind": "cloud_key",
+                "summary": "Fast free-tier cloud path. Requires a Groq API key.",
+            },
+            {
+                "id": "ollama",
+                "label": "Ollama",
+                "kind": "local",
+                "summary": "Private local path. No key, but Ollama must be running with a pulled model.",
+            },
+            {
+                "id": "byok",
+                "label": "BYOK",
+                "kind": "cloud_key",
+                "summary": "Use an existing OpenAI, Anthropic, NVIDIA, Gemini, or other key.",
+            },
+        ],
+    }
+
+
+def _probe_ollama(timeout_seconds: float = 0.15) -> dict[str, Any]:
+    connection: http.client.HTTPConnection | None = None
+    try:
+        connection = http.client.HTTPConnection(_OLLAMA_HOST, _OLLAMA_PORT, timeout=timeout_seconds)
+        connection.request("GET", "/api/tags")
+        response = connection.getresponse()
+        raw_body = response.read().decode("utf-8", errors="replace")
+        if response.status != 200:
+            raise RuntimeError(f"Ollama returned HTTP {response.status}")
+        payload = json.loads(raw_body or "{}")
+        models = [
+            str(model.get("name") or "").strip()
+            for model in payload.get("models", [])
+            if isinstance(model, dict) and str(model.get("name") or "").strip()
+        ]
+        return {
+            "running": True,
+            "url": _OLLAMA_TAGS_URL,
+            "models": models,
+            "model_count": len(models),
+            "error": "",
+        }
+    except Exception as exc:
+        return {
+            "running": False,
+            "url": _OLLAMA_TAGS_URL,
+            "models": [],
+            "model_count": 0,
+            "error": str(exc),
+        }
+    finally:
+        if connection is not None:
+            connection.close()
 
 
 def _serialize_operator_result(

@@ -26,7 +26,16 @@ test.describe.serial('FORGE desktop onboarding', () => {
     await expect(page.locator('#provider-select')).toBeVisible();
     await expect(page.locator('#workspace-path')).toBeVisible();
     await expect(page.locator('#auth-status')).toContainText('Desktop session is active.');
-    await expect(page.locator('#workspace-subtitle')).toContainText('real assistant');
+    await page.locator('#sidebar-scrim').click({ force: true });
+    await expect(page.locator('#provider-setup')).toBeVisible({ timeout: 20000 });
+    await expect(page.locator('#provider-setup')).toContainText('Choose how FORGE should think');
+    await expect(page.locator('#provider-setup')).toContainText('Ollama is not running');
+    await expect(page.locator('#provider-setup-groq')).toBeVisible();
+    await expect(page.locator('#provider-setup-ollama')).toBeVisible();
+    await expect(page.locator('#provider-setup-byok')).toBeVisible();
+    await page.locator('#provider-setup-groq').click();
+    await expect(page.locator('#provider-select')).toHaveValue('groq');
+    await expect(page.locator('#provider-status')).toContainText('Groq selected');
     await expect(page.locator('#sidebar-toggle')).toHaveText('Settings');
     await expect(page.locator('#send')).toBeEnabled();
     await popup.waitForLoadState('domcontentloaded');

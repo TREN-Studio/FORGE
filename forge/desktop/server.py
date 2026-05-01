@@ -426,6 +426,40 @@ DESKTOP_HTML = """<!doctype html>
       font-size: 14px;
     }
 
+    .provider-setup-options {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .provider-setup-option {
+      min-height: 92px;
+      padding: 14px;
+      text-align: left;
+    }
+
+    .provider-setup-option strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 14px;
+    }
+
+    .provider-setup-option span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .provider-setup-status {
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+    }
+
     .chat-shell {
       width: min(980px, 100%);
       min-height: calc(100vh - 128px);
@@ -838,6 +872,9 @@ DESKTOP_HTML = """<!doctype html>
       .workspace-header {
         width: 100%;
       }
+      .provider-setup-options {
+        grid-template-columns: 1fr;
+      }
       .sidebar {
         top: 12px;
         left: 12px;
@@ -1063,6 +1100,29 @@ DESKTOP_HTML = """<!doctype html>
         </div>
       </section>
 
+      <section id="provider-setup" class="auth-gate hidden">
+        <div class="auth-gate-kicker">First-run provider setup</div>
+        <h3>Choose how FORGE should think.</h3>
+        <p>
+          No working model provider is ready yet. Pick one path now; FORGE will keep the rest of the desktop flow unchanged.
+        </p>
+        <div class="provider-setup-options">
+          <button id="provider-setup-groq" type="button" class="button-ghost provider-setup-option">
+            <strong>Groq</strong>
+            <span>Fast free-tier cloud path. Add a Groq API key.</span>
+          </button>
+          <button id="provider-setup-ollama" type="button" class="button-ghost provider-setup-option">
+            <strong>Ollama</strong>
+            <span>Private local path. Start Ollama and pull a model.</span>
+          </button>
+          <button id="provider-setup-byok" type="button" class="button-ghost provider-setup-option">
+            <strong>BYOK</strong>
+            <span>Use OpenAI, Anthropic, NVIDIA, Gemini, or another key.</span>
+          </button>
+        </div>
+        <div id="provider-setup-status" class="provider-setup-status">Checking provider readiness...</div>
+      </section>
+
       <section class="operator-deck">
         <article class="operator-card">
           <h3>Objective</h3>
@@ -1161,6 +1221,11 @@ DESKTOP_HTML = """<!doctype html>
     const authGate = document.getElementById("auth-gate");
     const authGateGoogleButton = document.getElementById("auth-gate-google");
     const authGateAccountButton = document.getElementById("auth-gate-account");
+    const providerSetup = document.getElementById("provider-setup");
+    const providerSetupGroq = document.getElementById("provider-setup-groq");
+    const providerSetupOllama = document.getElementById("provider-setup-ollama");
+    const providerSetupByok = document.getElementById("provider-setup-byok");
+    const providerSetupStatus = document.getElementById("provider-setup-status");
     const chatShell = document.getElementById("chat-shell");
     const chatEmpty = document.getElementById("chat-empty");
     const accountSummary = document.getElementById("account-summary");
@@ -1319,6 +1384,56 @@ DESKTOP_HTML = """<!doctype html>
       return false;
     }
 
+    function renderProviderSetup(setup) {
+      const needsSetup = !!(currentUser && setup && setup.needs_provider_setup);
+      providerSetup.classList.toggle("hidden", !needsSetup);
+      if (!currentUser) {
+        providerSetupStatus.textContent = "Sign in first.";
+        return;
+      }
+      if (!setup) {
+        providerSetupStatus.textContent = "Checking provider readiness...";
+        return;
+      }
+
+      const ollama = setup.ollama || {};
+      if (needsSetup) {
+        const ollamaLine = ollama.running
+          ? "Ollama is running with " + String(ollama.model_count || 0) + " local model(s)."
+          : "Ollama is not running at " + (ollama.url || "http://localhost:11434/api/tags") + ".";
+        providerSetupStatus.textContent =
+          ollamaLine +
+          "\\nSaved cloud provider keys: " + String(setup.saved_provider_count || 0) +
+          "\\nRecommended: Groq for fastest first success, or Ollama if you want local-only.";
+        workspaceSubtitle.textContent = "First run needs one model path. Choose Groq, start Ollama, or bring your own key.";
+        resultPanel.textContent = "Provider setup required before general model reasoning. Local file/workspace skills remain protected by workspace rules.";
+      } else {
+        providerSetupStatus.textContent = setup.cloud_provider_ready
+          ? "Cloud provider key is saved."
+          : "Ollama is running locally.";
+      }
+    }
+
+    function chooseProviderSetup(kind) {
+      if (kind === "groq") {
+        providerSelect.value = "groq";
+        providerStatus.textContent = "Groq selected. Paste a Groq API key, then Save Key.";
+        providerApiKey.placeholder = "Groq API key, for example gsk_...";
+        openSidebar();
+        providerApiKey.focus();
+        return;
+      }
+      if (kind === "ollama") {
+        providerStatus.textContent = "Ollama local path selected. Start Ollama, run `ollama pull llama3.3`, then press Reload.";
+        appendNote("Ollama check failed at http://localhost:11434/api/tags. Start Ollama locally and reload provider status.");
+        openSidebar();
+        return;
+      }
+      providerStatus.textContent = "Bring your own key: choose a provider, paste the key, then Save Key.";
+      openSidebar();
+      providerSelect.focus();
+    }
+
     function renderProviderSecrets(items) {
       if (!items || !items.length) {
         setListPlaceholder(providerSecretList, currentUser ? "No provider keys saved yet." : "Login to manage your provider keys.");
@@ -1372,6 +1487,7 @@ DESKTOP_HTML = """<!doctype html>
       authLoggedOut.classList.toggle("hidden", authenticated);
       authLoggedIn.classList.toggle("hidden", !authenticated);
       authGate.classList.toggle("hidden", authenticated);
+      providerSetup.classList.add("hidden");
       adminPanel.classList.toggle("hidden", !(authenticated && data.user.is_admin));
       sendButton.disabled = !authenticated;
       promptBox.disabled = !authenticated;
@@ -1732,6 +1848,7 @@ DESKTOP_HTML = """<!doctype html>
         document.getElementById("providers").textContent = "-";
         document.getElementById("models").textContent = "-";
         document.getElementById("version").textContent = "FORGE";
+        renderProviderSetup(null);
         return;
       }
       try {
@@ -1740,11 +1857,12 @@ DESKTOP_HTML = """<!doctype html>
         if (!response.ok) {
           throw new Error(data.error || "Boot failed.");
         }
-        document.getElementById("runtime-state").textContent = data.models_online > 0 ? "Ready" : "Limited";
+        document.getElementById("runtime-state").textContent = data.provider_setup && data.provider_setup.needs_provider_setup ? "Setup" : (data.models_online > 0 ? "Ready" : "Limited");
         document.getElementById("providers").textContent = String(data.providers);
         document.getElementById("models").textContent = String(data.models_online);
         document.getElementById("version").textContent = data.version;
         appendNote(data.summary);
+        renderProviderSetup(data.provider_setup);
         if (data.workspace_root) {
           workspacePath.value = data.workspace_root;
         }
@@ -2033,6 +2151,9 @@ DESKTOP_HTML = """<!doctype html>
     }
 
     sendButton.addEventListener("click", sendPrompt);
+    providerSetupGroq.addEventListener("click", () => chooseProviderSetup("groq"));
+    providerSetupOllama.addEventListener("click", () => chooseProviderSetup("ollama"));
+    providerSetupByok.addEventListener("click", () => chooseProviderSetup("byok"));
     authGateGoogleButton.addEventListener("click", async () => {
       await startDeviceLogin("google");
     });
@@ -2313,6 +2434,7 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
                 "version": f"FORGE v{__version__}",
                 "workspace_root": status.workspace_root,
                 "artifact_root": status.artifact_root,
+                "provider_setup": status.provider_setup,
             }
             self._send_json(payload)
             return
