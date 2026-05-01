@@ -15,6 +15,7 @@ from forge.brain.contracts import CompletionState, ExecutionPlan, IntentKind, Op
 from forge.brain.operator import ForgeOperator
 from forge.config.settings import OperatorSettings
 from forge.core.session import ForgeSession
+from forge.skills.runtime import SkillExecutionContext
 from forge.tools.workspace import WorkspaceTools
 
 
@@ -217,6 +218,12 @@ def stream_prompt(
     if not prompt:
         raise ValueError("Prompt is empty.")
 
+    yield {
+        "type": "intent_analyzing",
+        "stage": "intent",
+        "message": "Analyzing intent and workspace context...",
+    }
+
     normalized_workspace_root = _normalize_workspace_root(workspace_root)
     if workspace_root is not None:
         set_workspace_root(normalized_workspace_root)
@@ -230,6 +237,7 @@ def stream_prompt(
     )
     intent = operator.intent_resolver.resolve(prompt)
     routing = operator.skill_router.route(intent, operator.registry.list())
+    routing.selected_skills = operator._ordered_skill_names(routing.selected_skills)
 
     if intent.primary_intent == IntentKind.CONVERSATION and not routing.selected_skills:
         started = time.monotonic()
@@ -250,6 +258,13 @@ def stream_prompt(
                 if kind == "start":
                     provider = str(event.get("provider") or "").strip()
                     display_name = str(event.get("display_name") or event.get("model") or provider).strip()
+                    yield {
+                        "type": "provider_selected",
+                        "provider": provider,
+                        "model": str(event.get("model") or "").strip(),
+                        "display_name": display_name,
+                        "message": f"Using {display_name} on {provider}.",
+                    }
                     yield {
                         "type": "status",
                         "stage": "routing",
@@ -302,22 +317,54 @@ def stream_prompt(
             }
             return
 
-    events: Queue[tuple[str, Any]] = Queue()
     started = time.monotonic()
-    spinner_messages = [
-        "Selecting the strongest available model path...",
-        "Planning the response inside your workspace...",
-        "Running the best path FORGE found for this request...",
-    ]
+    skills = operator.registry.list()
+    skill_lookup = {skill.name: skill for skill in skills}
+    safety = operator.safety_guard.evaluate(
+        request=prompt,
+        intent=intent,
+        routing=routing,
+        skill_lookup=skill_lookup,
+        confirmed=confirmed,
+        dry_run_requested=dry_run,
+    )
+    plan = operator.planner.build(intent, routing, safety, request=prompt, max_steps=operator.settings.max_plan_steps)
+    mission_id, audit_log_path, resume_state = operator.audit_store.begin(prompt, plan)
+    plan_payload = plan.model_dump(mode="json")
+    yield {
+        "type": "plan_ready",
+        "stage": "planning",
+        "message": _plan_summary(plan),
+        "plan": plan_payload,
+        "steps": _plan_steps(plan),
+        "mission_id": mission_id,
+        "audit_log_path": audit_log_path,
+    }
+    yield {
+        "type": "provider_selected",
+        "provider": "local",
+        "model": "skills-runtime",
+        "display_name": "Local skills runtime",
+        "message": "Using the local skills runtime; model provider telemetry will appear if a step calls a model.",
+    }
+
+    events: Queue[tuple[str, Any]] = Queue()
 
     def worker() -> None:
         try:
-            result = operate_prompt(
-                prompt,
+            result = _execute_planned_operator(
+                operator=operator,
+                prompt=prompt,
+                intent=intent,
+                routing=routing,
+                safety=safety,
+                plan=plan,
+                mission_id=mission_id,
+                audit_log_path=audit_log_path,
+                resume_state=resume_state,
                 confirmed=confirmed,
-                dry_run=dry_run,
+                memory_context="",
                 workspace_root=normalized_workspace_root,
-                provider_secrets=provider_secrets,
             )
             events.put(("result", result))
         except Exception as exc:  # pragma: no cover - surfaced to SSE client
@@ -337,20 +384,29 @@ def stream_prompt(
     }
 
     threading.Thread(target=worker, daemon=True).start()
-    heartbeat_index = 0
     result_emitted = False
+    started_steps: set[str] = set()
+    finished_steps: set[str] = set()
+    last_audit_mtime = 0.0
+    _maybe_emit_next_step_started(plan, started_steps, finished_steps, events)
 
     while True:
         try:
-            kind, payload = events.get(timeout=0.45)
+            kind, payload = events.get(timeout=0.18)
         except Empty:
             if not result_emitted:
-                yield {
-                    "type": "status",
-                    "stage": "running",
-                    "message": spinner_messages[heartbeat_index % len(spinner_messages)],
-                }
-                heartbeat_index += 1
+                last_audit_mtime = _emit_audit_step_events(
+                    audit_log_path=Path(audit_log_path),
+                    plan=plan,
+                    started_steps=started_steps,
+                    finished_steps=finished_steps,
+                    queue=events,
+                    last_mtime=last_audit_mtime,
+                )
+            continue
+
+        if kind in {"step_started", "step_completed", "step_failed"}:
+            yield payload
             continue
 
         if kind == "error":
@@ -360,6 +416,34 @@ def stream_prompt(
 
         if kind == "result":
             result = payload
+            _emit_result_step_events(result, plan, started_steps, finished_steps, events)
+            deferred_events: list[tuple[str, Any]] = []
+            while True:
+                try:
+                    queued_kind, queued_payload = events.get_nowait()
+                except Empty:
+                    break
+                if queued_kind in {"step_started", "step_completed", "step_failed"}:
+                    yield queued_payload
+                    continue
+                deferred_events.append((queued_kind, queued_payload))
+            for deferred in deferred_events:
+                events.put(deferred)
+            telemetry = result.get("provider_telemetry") if isinstance(result.get("provider_telemetry"), dict) else {}
+            if telemetry:
+                yield from _provider_events_from_telemetry(telemetry)
+            total_latency_ms = (time.monotonic() - started) * 1000
+            yield {
+                "type": "mission_completed",
+                "stage": "complete",
+                "message": _mission_complete_message(result, total_latency_ms),
+                "validation_status": result.get("validation_status"),
+                "success": result.get("validation_status") == CompletionState.FINISHED.value,
+                "mission_id": result.get("mission_id"),
+                "total_latency_ms": round(total_latency_ms, 2),
+                "final_provider": telemetry.get("final_provider_used") if telemetry else "local/skills-runtime",
+                "artifact_paths": _artifact_paths(result),
+            }
             yield {
                 "type": "status",
                 "stage": "streaming",
@@ -381,6 +465,302 @@ def stream_prompt(
 
         if kind == "done":
             break
+
+
+def _execute_planned_operator(
+    *,
+    operator: ForgeOperator,
+    prompt: str,
+    intent,
+    routing,
+    safety,
+    plan: ExecutionPlan,
+    mission_id: str,
+    audit_log_path: str,
+    resume_state,
+    confirmed: bool,
+    memory_context: str,
+    workspace_root: Path,
+) -> dict[str, Any]:
+    if safety.blocked:
+        status = CompletionState.NEEDS_HUMAN_CONFIRMATION if safety.requires_confirmation else CompletionState.FAILED
+        operator.audit_store.save_progress(
+            mission_id,
+            audit_log_path,
+            request=prompt,
+            plan=plan,
+            status=status.value,
+            step_results=[],
+            artifacts={"mission_audit": {"mission_id": mission_id, "audit_log_path": audit_log_path}},
+            mission_trace=["Execution blocked in SafetyGuard before any skill ran."],
+            resumed_from_step=resume_state.resumed_from_step if resume_state else None,
+        )
+        result = OperatorResult(
+            objective=intent.objective,
+            approach_taken=[
+                "Resolved intent.",
+                "Selected skills.",
+                "Blocked execution in SafetyGuard.",
+            ],
+            result="Execution blocked before any skill ran.",
+            validation_status=status,
+            risks_or_limitations=safety.reasons or ["Execution blocked by policy."],
+            best_next_action=operator.composer.best_next_action(status),
+            intent=intent,
+            plan=plan,
+            step_results=[],
+            artifacts={},
+            mission_id=mission_id,
+            audit_log_path=audit_log_path,
+            resumed_from_step=resume_state.resumed_from_step if resume_state else None,
+            provider_telemetry=operator._provider_telemetry(),
+        )
+        return _serialize_operator_result(result, operator, workspace_root)
+
+    runtime_context = SkillExecutionContext(
+        settings=operator.settings,
+        session=operator.session,
+        memory=operator.memory,
+        dry_run=safety.use_dry_run,
+        sanitizer=operator.sanitizer,
+        state={"memory_context": memory_context, "confirmed": confirmed, "mission_id": mission_id},
+    )
+    mission = operator.orchestrator.execute(
+        request=prompt,
+        intent=intent,
+        plan=plan,
+        runtime_context=runtime_context,
+        mission_id=mission_id,
+        audit_log_path=audit_log_path,
+        resume_state=resume_state,
+        confirmed=confirmed,
+        memory_context=memory_context,
+        remember_execution=None,
+    )
+    final_status = operator.validator.evaluate_plan(plan, mission.step_results)
+    result_text = operator._summarize_artifacts(mission.artifacts, mission.step_results)
+    risks = list(dict.fromkeys(safety.reasons + operator._step_risks(mission.step_results)))
+    best_next_action = (
+        "Review the dry-run output, then rerun without dry-run when approved."
+        if safety.use_dry_run
+        else operator.composer.best_next_action(final_status)
+    )
+    result = OperatorResult(
+        objective=intent.objective,
+        approach_taken=operator._approach_lines(intent, routing, safety),
+        result=result_text,
+        validation_status=final_status,
+        risks_or_limitations=risks,
+        best_next_action=best_next_action,
+        intent=intent,
+        plan=plan,
+        step_results=mission.step_results,
+        artifacts=mission.artifacts,
+        mission_trace=mission.mission_trace,
+        mission_id=mission.mission_id,
+        audit_log_path=mission.audit_log_path,
+        resumed_from_step=mission.resumed_from_step,
+        agent_reviews=mission.agent_reviews,
+        provider_telemetry=operator._provider_telemetry(),
+    )
+    return _serialize_operator_result(result, operator, workspace_root)
+
+
+def _plan_steps(plan: ExecutionPlan) -> list[dict[str, Any]]:
+    return [
+        {
+            "id": step.id,
+            "action": step.action,
+            "skill": step.skill,
+            "tool": step.tool,
+            "expected_output": step.expected_output,
+            "validation": step.validation,
+        }
+        for step in plan.steps
+    ]
+
+
+def _plan_summary(plan: ExecutionPlan) -> str:
+    if not plan.steps:
+        return "Plan ready: direct response without execution steps."
+    labels = [step.skill or step.tool or "reasoning" for step in plan.steps]
+    return f"Plan ready: {' -> '.join(labels)}."
+
+
+def _maybe_emit_next_step_started(
+    plan: ExecutionPlan,
+    started_steps: set[str],
+    finished_steps: set[str],
+    queue: Queue[tuple[str, Any]],
+) -> None:
+    total = len(plan.steps)
+    for index, step in enumerate(plan.steps, start=1):
+        if step.id in started_steps or step.id in finished_steps:
+            continue
+        queue.put(("step_started", _step_started_event(step.id, step.skill or step.tool or "reasoning", step.action, index, total)))
+        started_steps.add(step.id)
+        return
+
+
+def _emit_audit_step_events(
+    *,
+    audit_log_path: Path,
+    plan: ExecutionPlan,
+    started_steps: set[str],
+    finished_steps: set[str],
+    queue: Queue[tuple[str, Any]],
+    last_mtime: float,
+) -> float:
+    if not audit_log_path.exists():
+        return last_mtime
+    try:
+        mtime = audit_log_path.stat().st_mtime
+        if mtime <= last_mtime:
+            return last_mtime
+        payload = json.loads(audit_log_path.read_text(encoding="utf-8"))
+    except Exception:
+        return last_mtime
+
+    for step in payload.get("step_results", []):
+        if not isinstance(step, dict):
+            continue
+        _queue_step_terminal_event(step, started_steps, finished_steps, queue, plan)
+    _maybe_emit_next_step_started(plan, started_steps, finished_steps, queue)
+    return mtime
+
+
+def _emit_result_step_events(
+    result: dict[str, Any],
+    plan: ExecutionPlan,
+    started_steps: set[str],
+    finished_steps: set[str],
+    queue: Queue[tuple[str, Any]],
+) -> None:
+    for step in result.get("step_results", []):
+        if isinstance(step, dict):
+            _queue_step_terminal_event(step, started_steps, finished_steps, queue, plan)
+
+
+def _queue_step_terminal_event(
+    step: dict[str, Any],
+    started_steps: set[str],
+    finished_steps: set[str],
+    queue: Queue[tuple[str, Any]],
+    plan: ExecutionPlan,
+) -> None:
+    step_id = str(step.get("step_id") or step.get("id") or "").strip()
+    if not step_id or step_id in finished_steps:
+        return
+
+    skill = str(step.get("skill") or step.get("tool") or "reasoning")
+    if step_id not in started_steps:
+        queue.put(("step_started", _step_started_event(step_id, skill, f"Execute `{skill}`.", 0, len(plan.steps))))
+        started_steps.add(step_id)
+
+    status = str(step.get("status") or "").strip().lower()
+    if status in {"finished", "partially_finished"}:
+        queue.put(("step_completed", _step_completed_event(step)))
+        finished_steps.add(step_id)
+    elif status in {"failed", "needs_retry", "needs_human_confirmation"}:
+        queue.put(("step_failed", _step_failed_event(step)))
+        finished_steps.add(step_id)
+
+
+def _step_started_event(step_id: str, skill: str, action: str, index: int, total: int) -> dict[str, Any]:
+    prefix = f"Step {index}/{total}" if index and total else "Step"
+    return {
+        "type": "step_started",
+        "stage": "execution",
+        "step_id": step_id,
+        "skill": skill,
+        "index": index,
+        "total": total,
+        "message": f"{prefix}: starting {skill}.",
+        "action": action,
+    }
+
+
+def _step_completed_event(step: dict[str, Any]) -> dict[str, Any]:
+    evidence = step.get("evidence") if isinstance(step.get("evidence"), list) else []
+    return {
+        "type": "step_completed",
+        "stage": "execution",
+        "step_id": step.get("step_id"),
+        "skill": step.get("skill") or step.get("tool") or "reasoning",
+        "status": step.get("status"),
+        "attempts": step.get("attempts"),
+        "evidence_count": len(evidence),
+        "message": f"{step.get('step_id')}: completed {step.get('skill') or step.get('tool') or 'reasoning'}.",
+        "evidence": evidence[:6],
+    }
+
+
+def _step_failed_event(step: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "type": "step_failed",
+        "stage": "execution",
+        "step_id": step.get("step_id"),
+        "skill": step.get("skill") or step.get("tool") or "reasoning",
+        "status": step.get("status"),
+        "attempts": step.get("attempts"),
+        "error": step.get("error") or "Step did not finish cleanly.",
+        "message": f"{step.get('step_id')}: {step.get('status')} in {step.get('skill') or step.get('tool') or 'reasoning'}.",
+    }
+
+
+def _provider_events_from_telemetry(telemetry: dict[str, Any]):
+    attempts = telemetry.get("attempts") if isinstance(telemetry.get("attempts"), list) else []
+    selected = str(telemetry.get("selected_provider") or "").strip()
+    if selected:
+        provider, _, model = selected.partition("/")
+        yield {
+            "type": "provider_selected",
+            "provider": provider,
+            "model": model,
+            "message": f"Provider selected: {selected}.",
+        }
+    for attempt in attempts:
+        if not isinstance(attempt, dict):
+            continue
+        status = str(attempt.get("status") or "").lower()
+        if status == "timeout":
+            yield {
+                "type": "provider_timeout",
+                "provider": attempt.get("provider"),
+                "model": attempt.get("model"),
+                "latency_ms": attempt.get("latency_ms"),
+                "error": attempt.get("error"),
+                "message": f"Provider timeout: {attempt.get('provider')}/{attempt.get('model')}.",
+            }
+    if int(telemetry.get("fallback_count") or 0):
+        yield {
+            "type": "provider_fallback",
+            "fallback_count": telemetry.get("fallback_count"),
+            "attempted_providers": telemetry.get("attempted_providers", []),
+            "final_provider_used": telemetry.get("final_provider_used"),
+            "message": f"Provider fallback -> {telemetry.get('final_provider_used')}.",
+        }
+
+
+def _mission_complete_message(result: dict[str, Any], total_latency_ms: float) -> str:
+    status = str(result.get("validation_status") or "unknown")
+    artifacts = int(result.get("artifacts_count") or 0)
+    return f"Mission {status} in {total_latency_ms / 1000:.1f}s with {artifacts} artifact(s)."
+
+
+def _artifact_paths(result: dict[str, Any]) -> list[str]:
+    paths: list[str] = []
+    for step in result.get("step_results", []):
+        output = step.get("output") if isinstance(step, dict) else None
+        if isinstance(output, dict):
+            for key in ("edited_path", "artifact_path", "audit_log_path"):
+                value = str(output.get(key) or "").strip()
+                if value:
+                    paths.append(value)
+    audit = str(result.get("audit_log_path") or "").strip()
+    if audit:
+        paths.append(audit)
+    return list(dict.fromkeys(paths))[:8]
 
 
 def boot_status_for_user(provider_secrets: dict[str, dict[str, str]] | None = None) -> DesktopBootStatus:

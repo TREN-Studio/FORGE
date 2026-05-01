@@ -1855,6 +1855,7 @@ DESKTOP_HTML = """<!doctype html>
       const assistantBubble = createBubble("assistant", "");
       let streamedText = "";
       let streamFinished = false;
+      const liveEvents = [];
 
       const params = new URLSearchParams({
         prompt,
@@ -1874,6 +1875,26 @@ DESKTOP_HTML = """<!doctype html>
         promptBox.focus();
       }
 
+      function pushLiveEvent(message) {
+        const clean = String(message || "").trim();
+        if (!clean) return;
+        liveEvents.push(clean);
+        if (!streamedText) {
+          setBubbleText(assistantBubble, liveEvents.slice(-8).join("\\n"), true);
+        }
+      }
+
+      function stepLabel(data) {
+        const prefix = data.index && data.total ? "Step " + data.index + "/" + data.total : (data.step_id || "Step");
+        const tool = data.skill || data.tool || "reasoning";
+        return prefix + " - " + tool;
+      }
+
+      function compactArtifacts(paths) {
+        if (!paths || !paths.length) return "";
+        return " | Artifacts: " + paths.slice(0, 3).join(", ");
+      }
+
       stream.onmessage = (event) => {
         const data = JSON.parse(event.data || "{}");
 
@@ -1886,11 +1907,84 @@ DESKTOP_HTML = """<!doctype html>
           return;
         }
 
+        if (data.type === "intent_analyzing") {
+          setMissionStatus("running");
+          workspaceSubtitle.textContent = data.message || "FORGE is analyzing the mission...";
+          pushLiveEvent(data.message || "Analyzing intent and workspace context...");
+          return;
+        }
+
+        if (data.type === "plan_ready") {
+          setMissionStatus("running");
+          workspaceSubtitle.textContent = data.message || "Plan ready.";
+          resultPanel.textContent = data.message || "Plan ready.";
+          renderPlan(data.plan || { steps: data.steps || [] });
+          pushLiveEvent(data.message || "Plan ready.");
+          return;
+        }
+
+        if (data.type === "step_started") {
+          setMissionStatus("running");
+          const line = "Starting " + stepLabel(data) + (data.action ? ": " + data.action : "");
+          workspaceSubtitle.textContent = line;
+          pushLiveEvent(line);
+          return;
+        }
+
+        if (data.type === "step_completed") {
+          const line = "Completed " + stepLabel(data) + " | evidence=" + String(data.evidence_count || 0);
+          workspaceSubtitle.textContent = line;
+          pushLiveEvent(line);
+          return;
+        }
+
+        if (data.type === "step_failed") {
+          const line = "Failed " + stepLabel(data) + ": " + (data.error || data.status || "unknown failure");
+          workspaceSubtitle.textContent = line;
+          pushLiveEvent(line);
+          setMissionStatus("failed");
+          return;
+        }
+
+        if (data.type === "provider_selected") {
+          const label = data.display_name || data.final_provider_used || data.model || data.provider || "FORGE provider";
+          workspaceSubtitle.textContent = "Provider selected: " + label + ".";
+          setBubbleFooter(assistantBubble, "Provider: " + label);
+          pushLiveEvent(data.message || ("Provider selected: " + label));
+          return;
+        }
+
+        if (data.type === "provider_timeout") {
+          const label = (data.provider || "provider") + (data.model ? "/" + data.model : "");
+          pushLiveEvent(data.message || ("Provider timeout: " + label));
+          appendNote("Provider timeout: " + label);
+          return;
+        }
+
+        if (data.type === "provider_fallback") {
+          const label = data.final_provider_used || "fallback provider";
+          pushLiveEvent(data.message || ("Provider fallback -> " + label));
+          setBubbleFooter(assistantBubble, "Provider: " + label + " | Fallbacks: " + String(data.fallback_count || 0));
+          appendNote("Provider fallback -> " + label);
+          return;
+        }
+
+        if (data.type === "mission_completed") {
+          setMissionStatus(data.success ? "finished" : "failed");
+          const latency = data.total_latency_ms ? (Number(data.total_latency_ms) / 1000).toFixed(1) + "s" : "unknown latency";
+          const footer = "Final provider: " + (data.final_provider || "local execution") + " | Total: " + latency;
+          workspaceSubtitle.textContent = data.message || "Mission completed.";
+          resultPanel.textContent = (data.message || "Mission completed.") + compactArtifacts(data.artifact_paths || []);
+          setBubbleFooter(assistantBubble, footer);
+          pushLiveEvent((data.message || "Mission completed.") + compactArtifacts(data.artifact_paths || []));
+          return;
+        }
+
         if (data.type === "status") {
           setMissionStatus("running");
           workspaceSubtitle.textContent = data.message || "FORGE is working...";
           if (!streamedText) {
-            setBubbleText(assistantBubble, data.message || "FORGE is working...", true);
+            pushLiveEvent(data.message || "FORGE is working...");
           }
           return;
         }
