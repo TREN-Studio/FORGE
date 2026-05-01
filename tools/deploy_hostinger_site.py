@@ -157,10 +157,13 @@ def deploy(config: DeployConfig) -> list[tuple[str, int]]:
     sftp = client.open_sftp()
     try:
         ensure_remote_dir(sftp, config.remote_root)
-        if config.backup_index:
+        deploys_root_index = (config.local_root / "index.html").exists()
+        if config.backup_index and deploys_root_index:
             backup_path = maybe_backup_index(sftp, config.remote_root)
             if backup_path:
                 print(f"Backed up existing index.html -> {backup_path}")
+        elif config.backup_index:
+            print("Preserving remote index.html; this bundle does not own the /FORGE/ root page.")
 
         for local_path in iter_site_files(config.local_root):
             relative = local_path.relative_to(config.local_root).as_posix()

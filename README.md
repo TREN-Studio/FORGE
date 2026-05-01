@@ -117,10 +117,10 @@ Current foundation includes:
 - The release workflow in `.github/workflows/release_forge_windows.yml` builds `FORGE-Desktop.exe`, `FORGE-Setup-<version>.exe`, the portable ZIP, the source ZIP, `SHA256SUMS-<version>.txt`, and `release-manifest.json` from one pipeline.
 - That same pipeline publishes the assets to GitHub Release and mirrors the exact same bytes to `https://www.trenstudio.com/FORGE/downloads/` when Hostinger secrets are configured.
 - The supported desktop build entrypoint is `python tools/build_windows_desktop.py`; that script is the source of truth for orchestration and invokes the portable `FORGE-Desktop.spec`.
-- Release packaging runs through `python tools/package_release_assets.py`, which writes release assets under `release-assets/` only. It does not publish or sync files into `site/downloads/`.
-- The public website reads `release-manifest.json`, generated from the canonical GitHub Release or from the release pipeline, and prefers verified official-site mirror URLs while preserving GitHub URLs as the canonical reference.
+- Release packaging runs through `python tools/package_release_assets.py`, which writes release assets under `release-assets/` only. It does not publish or sync binary files into `site/downloads/`.
+- The public downloads page at `site/downloads/index.html` reads `release-manifest.json`, generated from the canonical GitHub Release or from the release pipeline, and prefers verified official-site mirror URLs while preserving GitHub URLs as the canonical reference.
 - `python tools/verify_release_public_assets.py --manifest release-assets/release-manifest.json --require-mirror` verifies version, size, SHA256, GitHub Release presence, and byte identity for the Hostinger mirror.
-- `tools/deploy_hostinger_site.py` deploys the landing page and portal only; the release workflow owns `release-manifest.json` and `downloads/` on Hostinger.
+- `tools/deploy_hostinger_site.py` deploys the downloads page and portal only; the TREN Studio root page owns `https://www.trenstudio.com/FORGE/`, and the release workflow owns `release-manifest.json` plus mirrored binary files on Hostinger.
 - Legacy desktop spec variants were removed. `FORGE-Desktop.spec` is the only supported PyInstaller spec.
 - If `WINDOWS_PFX_BASE64` and `WINDOWS_PFX_PASSWORD` are configured in GitHub Secrets, the workflow signs both artifacts before publishing the GitHub Release.
 - Until code signing is configured, Windows SmartScreen and local execution reputation checks can still block downloaded installers.
@@ -148,12 +148,13 @@ MIT
 ## Links
 
 - Website: https://www.trenstudio.com/FORGE
+- Downloads: https://www.trenstudio.com/FORGE/downloads/
 - Organization: https://github.com/TREN-Studio
 - Repository: https://github.com/TREN-Studio/FORGE
 
 ## Production Deployment
 
-FORGE keeps the public website bundle inside [`site/`](site). The production page at `https://www.trenstudio.com/FORGE/` is the official download interface and must be deployed from this directory.
+FORGE keeps its public downloads page and portal bundle inside [`site/`](site). The production page at `https://www.trenstudio.com/FORGE/` remains the TREN Studio project page; the FORGE download interface lives at `https://www.trenstudio.com/FORGE/downloads/` and is deployed from `site/downloads/index.html`.
 
 GitHub Release is the canonical release record. Hostinger may serve an official mirror under `https://www.trenstudio.com/FORGE/downloads/`, but only when the files are copied from the same CI-built release assets and pass SHA256, file size, version, and byte-identity verification.
 
@@ -177,7 +178,7 @@ The matching official-site mirror paths, when present, are:
 
 GitHub Actions workflow: [`.github/workflows/deploy_forge_site.yml`](.github/workflows/deploy_forge_site.yml)
 
-Deployment script: [`tools/deploy_hostinger_site.py`](tools/deploy_hostinger_site.py)
+Deployment script: [`tools/deploy_hostinger_site.py`](tools/deploy_hostinger_site.py). It preserves the remote `/FORGE/index.html` root page unless this repository explicitly adds a root `site/index.html`.
 
 Required GitHub repository secrets:
 

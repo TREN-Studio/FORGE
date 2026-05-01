@@ -592,7 +592,7 @@ function applyReleaseManifest(manifest) {
   });
 }
 
-fetch('release-manifest.json', { cache: 'no-store' })
+fetch('../release-manifest.json', { cache: 'no-store' })
   .then(response => response.ok ? response.json() : Promise.reject(new Error(`manifest ${response.status}`)))
   .then(applyReleaseManifest)
   .catch(error => console.warn('FORGE release manifest unavailable; using built-in GitHub links.', error));
