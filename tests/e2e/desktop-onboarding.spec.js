@@ -41,6 +41,42 @@ test.describe.serial('FORGE desktop onboarding', () => {
     await popup.waitForLoadState('domcontentloaded');
   });
 
+  test('runs the one-click local demo and creates action_items.md', async ({ page }) => {
+    await page.goto('/');
+
+    const popupPromise = page.waitForEvent('popup');
+    await page.locator('#auth-gate-google').click();
+    const popup = await popupPromise;
+
+    await expect(page.locator('#sidebar-toggle')).toHaveText('Settings', { timeout: 20000 });
+    await page.locator('#sidebar-toggle').click();
+    await expect(page.locator('#auth-logged-in')).toBeVisible({ timeout: 20000 });
+    await popup.waitForLoadState('domcontentloaded');
+    await page.locator('#sidebar-scrim').click({ force: true });
+
+    await expect(page.locator('#demo-task')).toBeVisible({ timeout: 20000 });
+    await expect(page.locator('#demo-task')).toContainText('Try a local agent demo');
+    await page.locator('#run-demo-task').click();
+
+    await expect(page.locator('.bubble.user .body').last()).toContainText('Run local demo');
+    await expect
+      .poll(async () => ((await page.locator('.bubble.assistant .body').last().textContent()) || '').trim(), { timeout: 15000 })
+      .toMatch(/Plan ready|Starting|Completed|action_items|finished/i);
+
+    await expect
+      .poll(async () => page.locator('#workspace-path').inputValue(), { timeout: 15000 })
+      .not.toBe('');
+    const workspacePath = await page.locator('#workspace-path').inputValue();
+    const outputPath = path.join(workspacePath, 'action_items.md');
+
+    await expect.poll(() => fs.existsSync(outputPath), { timeout: 30000 }).toBeTruthy();
+    const output = fs.readFileSync(outputPath, 'utf8');
+    expect(output).toContain('# Action Items');
+    expect(output).toContain('Tighten checkout copy before release');
+    expect(output).toContain('Source: demo_input.md');
+    await expect(page.locator('#demo-task-status')).toContainText('Demo complete', { timeout: 30000 });
+  });
+
   test('replies naturally in chat and completes a real development mission', async ({ page }) => {
     test.skip(!process.env.FORGE_TEST_NVIDIA_KEY, 'FORGE_TEST_NVIDIA_KEY is required for live provider verification.');
 

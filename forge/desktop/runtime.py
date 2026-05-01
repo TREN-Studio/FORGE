@@ -40,6 +40,23 @@ _STATE_LOCK = threading.Lock()
 _OLLAMA_TAGS_URL = "http://localhost:11434/api/tags"
 _OLLAMA_HOST = "127.0.0.1"
 _OLLAMA_PORT = 11434
+_DEMO_INPUT = """# Launch Notes
+
+- Tighten checkout copy before release.
+- Add a quick verification for the download link.
+- Confirm the reports folder exists.
+"""
+_DEMO_OUTPUT = """# Action Items
+
+- [ ] Tighten checkout copy before release.
+- [ ] Add a quick verification for the download link.
+- [ ] Confirm the reports folder exists.
+
+Source: demo_input.md
+"""
+_DEMO_PROMPT = f"""Read demo_input.md first, then create action_items.md with this content:
+```markdown
+{_DEMO_OUTPUT}```"""
 
 
 def _default_state_directory() -> Path:
@@ -146,6 +163,26 @@ def choose_workspace_root() -> dict[str, Any]:
         payload["cancelled"] = True
         return payload
     return set_workspace_root(selected)
+
+
+def prepare_demo_workspace() -> dict[str, Any]:
+    workspace_root = (_default_state_directory() / "demo-workspace").resolve()
+    workspace_root.mkdir(parents=True, exist_ok=True)
+    (workspace_root / "demo_input.md").write_text(_DEMO_INPUT, encoding="utf-8")
+    output_path = workspace_root / "action_items.md"
+    if output_path.exists():
+        output_path.unlink()
+
+    payload = set_workspace_root(workspace_root)
+    payload["demo"] = {
+        "title": "Launch notes to action items",
+        "prompt": _DEMO_PROMPT,
+        "input_path": "demo_input.md",
+        "output_path": "action_items.md",
+        "input_preview": _DEMO_INPUT,
+        "expected_output": _DEMO_OUTPUT,
+    }
+    return payload
 
 
 def boot_status() -> DesktopBootStatus:

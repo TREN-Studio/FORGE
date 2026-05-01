@@ -24,6 +24,7 @@ from forge.desktop.runtime import (
     choose_workspace_root,
     get_workspace_status,
     operate_prompt,
+    prepare_demo_workspace,
     run_prompt,
     set_workspace_root,
     stream_prompt,
@@ -458,6 +459,44 @@ DESKTOP_HTML = """<!doctype html>
       font-size: 12px;
       line-height: 1.55;
       white-space: pre-wrap;
+    }
+
+    .demo-task {
+      margin: 20px auto 0;
+      max-width: 620px;
+      padding: 16px;
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 18px;
+      background: rgba(255,255,255,0.04);
+      text-align: left;
+    }
+
+    .demo-task-title {
+      margin-bottom: 6px;
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .demo-task-copy,
+    .demo-task-status {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .demo-task-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .demo-task-actions button {
+      min-height: 40px;
+      padding: 0 14px;
+      border-radius: 12px;
+      font-size: 13px;
     }
 
     .chat-shell {
@@ -1170,6 +1209,15 @@ DESKTOP_HTML = """<!doctype html>
           </p>
         </section>
 
+        <section id="demo-task" class="demo-task hidden">
+          <div class="demo-task-title">Try a local agent demo</div>
+          <div class="demo-task-copy">FORGE will read demo_input.md, create action_items.md, and stream each execution step.</div>
+          <div class="demo-task-actions">
+            <button id="run-demo-task" type="button" class="button-ghost">Run Demo</button>
+            <span id="demo-task-status" class="demo-task-status">No provider required.</span>
+          </div>
+        </section>
+
         <section id="chat" class="chat"></section>
         <div id="result-panel"></div>
 
@@ -1228,6 +1276,9 @@ DESKTOP_HTML = """<!doctype html>
     const providerSetupStatus = document.getElementById("provider-setup-status");
     const chatShell = document.getElementById("chat-shell");
     const chatEmpty = document.getElementById("chat-empty");
+    const demoTask = document.getElementById("demo-task");
+    const runDemoTaskButton = document.getElementById("run-demo-task");
+    const demoTaskStatus = document.getElementById("demo-task-status");
     const accountSummary = document.getElementById("account-summary");
     const authLoggedOut = document.getElementById("auth-logged-out");
     const authLoggedIn = document.getElementById("auth-logged-in");
@@ -1267,6 +1318,8 @@ DESKTOP_HTML = """<!doctype html>
     let pendingDeviceLogin = null;
     let pendingDevicePoll = null;
     let activeStream = null;
+    let pendingUserDisplayText = "";
+    let demoStreamActive = false;
 
     function openSidebar() {
       document.body.classList.add("sidebar-open");
@@ -1488,6 +1541,7 @@ DESKTOP_HTML = """<!doctype html>
       authLoggedIn.classList.toggle("hidden", !authenticated);
       authGate.classList.toggle("hidden", authenticated);
       providerSetup.classList.add("hidden");
+      demoTask.classList.toggle("hidden", !authenticated);
       adminPanel.classList.toggle("hidden", !(authenticated && data.user.is_admin));
       sendButton.disabled = !authenticated;
       promptBox.disabled = !authenticated;
@@ -1938,6 +1992,40 @@ DESKTOP_HTML = """<!doctype html>
       }
     }
 
+    async function runDemoTask() {
+      if (!requireAuthenticated()) return;
+      runDemoTaskButton.disabled = true;
+      runDemoTaskButton.textContent = "Preparing...";
+      demoTaskStatus.textContent = "Creating safe demo workspace...";
+      try {
+        const response = await fetch("/api/demo/prepare", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({})
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || "Demo setup failed.");
+        }
+        renderWorkspace(data);
+        workspacePath.value = data.workspace_root || workspacePath.value;
+        confirmMode.checked = true;
+        dryRunMode.checked = false;
+        pendingUserDisplayText = "Run local demo: demo_input.md -> action_items.md";
+        demoStreamActive = true;
+        promptBox.value = data.demo && data.demo.prompt ? data.demo.prompt : "";
+        demoTaskStatus.textContent = "Streaming demo execution...";
+        appendNote("Demo workspace prepared: " + (data.workspace_root || ""));
+        await sendPrompt();
+      } catch (error) {
+        demoTaskStatus.textContent = error.message || "Demo setup failed.";
+        addBubble("error", "Demo setup failed: " + (error.message || "Unknown error"));
+        runDemoTaskButton.disabled = false;
+        runDemoTaskButton.textContent = "Run Demo";
+        demoStreamActive = false;
+      }
+    }
+
     async function loadWorkerTelemetry() {
       if (!currentUser) {
         setListPlaceholder(workerServices, "Login to view worker telemetry.");
@@ -1961,7 +2049,9 @@ DESKTOP_HTML = """<!doctype html>
       if (!requireAuthenticated()) return;
 
       closeActiveStream();
-      addBubble("user", prompt);
+      const displayPrompt = pendingUserDisplayText || prompt;
+      pendingUserDisplayText = "";
+      addBubble("user", displayPrompt);
       appendNote("Routing request inside workspace: " + (workspacePath.value.trim() || "<unset>"));
       promptBox.value = "";
       sendButton.disabled = true;
@@ -1990,6 +2080,12 @@ DESKTOP_HTML = """<!doctype html>
         closeActiveStream();
         sendButton.disabled = false;
         sendButton.textContent = "Send";
+        runDemoTaskButton.disabled = false;
+        runDemoTaskButton.textContent = "Run Demo";
+        if (demoStreamActive) {
+          demoTaskStatus.textContent = "Demo complete. Open action_items.md in the selected workspace.";
+          demoStreamActive = false;
+        }
         promptBox.focus();
       }
 
@@ -2154,6 +2250,7 @@ DESKTOP_HTML = """<!doctype html>
     providerSetupGroq.addEventListener("click", () => chooseProviderSetup("groq"));
     providerSetupOllama.addEventListener("click", () => chooseProviderSetup("ollama"));
     providerSetupByok.addEventListener("click", () => chooseProviderSetup("byok"));
+    runDemoTaskButton.addEventListener("click", runDemoTask);
     authGateGoogleButton.addEventListener("click", async () => {
       await startDeviceLogin("google");
     });
@@ -2635,6 +2732,14 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
             return
         if route == "/api/ping":
             self._send_json({"ok": True})
+            return
+        if route == "/api/demo/prepare":
+            if self._require_user() is None:
+                return
+            try:
+                self._send_json(prepare_demo_workspace())
+            except Exception as exc:
+                self._send_json({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
             return
         if route == "/api/user/keys":
             if self._require_user() is None:
