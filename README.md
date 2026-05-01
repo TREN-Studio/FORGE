@@ -180,6 +180,10 @@ GitHub Actions workflow: [`.github/workflows/deploy_forge_site.yml`](.github/wor
 
 Deployment script: [`tools/deploy_hostinger_site.py`](tools/deploy_hostinger_site.py). It preserves the remote `/FORGE/index.html` root page unless this repository explicitly adds a root `site/index.html`.
 
+Deploy guard: the script refuses to deploy `site/index.html` to `/FORGE/index.html` unless `--allow-root-index-deploy` or `FORGE_ALLOW_ROOT_INDEX_DEPLOY=1` is provided. Normal downloads/portal deploys also compare the remote `/FORGE/index.html` hash before and after upload and fail if it changes.
+
+Route verification: [`tools/verify_forge_public_routes.py`](tools/verify_forge_public_routes.py) checks that `/FORGE/` is still the original project page, `/FORGE/downloads/` is still the downloads page, and the public `release-manifest.json` matches the expected release manifest.
+
 Required GitHub repository secrets:
 
 - `HOSTINGER_HOST`

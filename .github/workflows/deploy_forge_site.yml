@@ -8,6 +8,7 @@ on:
       - "site/**"
       - "site_backend/**"
       - "tools/deploy_hostinger_site.py"
+      - "tools/verify_forge_public_routes.py"
       - ".github/workflows/deploy_forge_site.yml"
   workflow_dispatch:
 
@@ -68,3 +69,6 @@ jobs:
           HOSTINGER_PASSWORD: ${{ secrets.HOSTINGER_PASSWORD }}
           HOSTINGER_REMOTE_ROOT: ${{ secrets.HOSTINGER_REMOTE_ROOT }}
         run: python tools/deploy_hostinger_site.py
+
+      - name: Verify FORGE public routes
+        run: python tools/verify_forge_public_routes.py

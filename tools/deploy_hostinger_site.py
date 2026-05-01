@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import posixpath
 from dataclasses import dataclass
@@ -21,6 +22,7 @@ class DeployConfig:
     portal_backend_local_root: Path | None = None
     portal_backend_remote_root: str | None = None
     backup_index: bool = True
+    allow_root_index_deploy: bool = False
     dry_run: bool = False
 
 
@@ -41,6 +43,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--username", default=os.getenv("HOSTINGER_USERNAME"))
     parser.add_argument("--password", default=os.getenv("HOSTINGER_PASSWORD"))
     parser.add_argument("--no-backup-index", action="store_true")
+    parser.add_argument(
+        "--allow-root-index-deploy",
+        action="store_true",
+        default=os.getenv("FORGE_ALLOW_ROOT_INDEX_DEPLOY", "").strip().lower() in {"1", "true", "yes"},
+        help="Explicitly allow this deployment to own /FORGE/index.html.",
+    )
     parser.add_argument("--dry-run", action="store_true")
     return parser
 
@@ -75,6 +83,7 @@ def load_config(args: argparse.Namespace) -> DeployConfig:
             portal_backend_local_root=backend_local_root,
             portal_backend_remote_root=backend_remote_root,
             backup_index=not args.no_backup_index,
+            allow_root_index_deploy=bool(args.allow_root_index_deploy),
             dry_run=True,
         )
     return DeployConfig(
@@ -87,6 +96,7 @@ def load_config(args: argparse.Namespace) -> DeployConfig:
         portal_backend_local_root=backend_local_root,
         portal_backend_remote_root=backend_remote_root,
         backup_index=not args.no_backup_index,
+        allow_root_index_deploy=bool(args.allow_root_index_deploy),
         dry_run=bool(args.dry_run),
     )
 
@@ -133,8 +143,34 @@ def maybe_backup_index(sftp: paramiko.SFTPClient, remote_root: str) -> str | Non
     return backup_path
 
 
+def sha256_remote(sftp: paramiko.SFTPClient, remote_path: str) -> str | None:
+    digest = hashlib.sha256()
+    try:
+        handle = sftp.open(remote_path, "rb")
+    except FileNotFoundError:
+        return None
+    with handle:
+        while True:
+            chunk = handle.read(1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def validate_root_index_policy(config: DeployConfig) -> None:
+    if (config.local_root / "index.html").exists() and not config.allow_root_index_deploy:
+        raise ValueError(
+            "Refusing to deploy site/index.html to /FORGE/index.html. "
+            "The /FORGE/ root page is owned by the TREN Studio project page. "
+            "Move release/download work under site/downloads/ or pass "
+            "--allow-root-index-deploy for an explicit root-page deployment."
+        )
+
+
 def deploy(config: DeployConfig) -> list[tuple[str, int]]:
     uploaded: list[tuple[str, int]] = []
+    validate_root_index_policy(config)
     if config.dry_run:
         for local_path in iter_site_files(config.local_root):
             relative = local_path.relative_to(config.local_root).as_posix()
@@ -158,6 +194,8 @@ def deploy(config: DeployConfig) -> list[tuple[str, int]]:
     try:
         ensure_remote_dir(sftp, config.remote_root)
         deploys_root_index = (config.local_root / "index.html").exists()
+        remote_index = posixpath.join(config.remote_root, "index.html")
+        root_index_before = sha256_remote(sftp, remote_index) if not config.allow_root_index_deploy else None
         if config.backup_index and deploys_root_index:
             backup_path = maybe_backup_index(sftp, config.remote_root)
             if backup_path:
@@ -184,6 +222,14 @@ def deploy(config: DeployConfig) -> list[tuple[str, int]]:
                 size = sftp.stat(remote_path).st_size
                 uploaded.append((remote_path, size))
                 print(f"Uploaded backend {relative} -> {remote_path} ({size} bytes)")
+        if root_index_before is not None:
+            root_index_after = sha256_remote(sftp, remote_index)
+            if root_index_after != root_index_before:
+                raise RuntimeError(
+                    "/FORGE/index.html changed during a downloads/portal deploy. "
+                    "Root page deployments require --allow-root-index-deploy."
+                )
+            print("Verified /FORGE/index.html unchanged.")
     finally:
         sftp.close()
         client.close()
