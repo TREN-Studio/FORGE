@@ -17,6 +17,8 @@ test.describe.serial('FORGE desktop onboarding', () => {
     const popupPromise = page.waitForEvent('popup');
     await page.locator('#auth-gate-google').click();
     const popup = await popupPromise;
+    await expect.poll(() => popup.url(), { timeout: 10000 }).not.toBe('about:blank');
+    expect(popup.url()).toContain('device_code=');
 
     await expect(page.locator('#sidebar-toggle')).toHaveText('Settings', { timeout: 20000 });
     await page.locator('#sidebar-toggle').click();
@@ -47,6 +49,8 @@ test.describe.serial('FORGE desktop onboarding', () => {
     const popupPromise = page.waitForEvent('popup');
     await page.locator('#auth-gate-google').click();
     const popup = await popupPromise;
+    await expect.poll(() => popup.url(), { timeout: 10000 }).not.toBe('about:blank');
+    expect(popup.url()).toContain('device_code=');
 
     await expect(page.locator('#sidebar-toggle')).toHaveText('Settings', { timeout: 20000 });
     await page.locator('#sidebar-toggle').click();
@@ -88,6 +92,8 @@ test.describe.serial('FORGE desktop onboarding', () => {
     const popupPromise = page.waitForEvent('popup');
     await page.locator('#auth-gate-google').click();
     const popup = await popupPromise;
+    await expect.poll(() => popup.url(), { timeout: 10000 }).not.toBe('about:blank');
+    expect(popup.url()).toContain('device_code=');
     await page.locator('#sidebar-toggle').waitFor({ state: 'visible', timeout: 20000 });
     await page.locator('#sidebar-toggle').click();
     await page.locator('#auth-logged-in').waitFor({ timeout: 20000 });

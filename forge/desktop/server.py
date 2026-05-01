@@ -1403,7 +1403,7 @@ DESKTOP_HTML = """<!doctype html>
 
     async function startDeviceLogin(mode) {
       stopDevicePolling();
-      const setupWindow = window.open("about:blank", "_blank", "noopener");
+      const setupWindow = window.open("about:blank", "_blank");
       try {
         const response = await fetch("/api/auth/device/start", {
           method: "POST",
@@ -1416,7 +1416,7 @@ DESKTOP_HTML = """<!doctype html>
         }
         pendingDeviceLogin = data;
         if (setupWindow) {
-          setupWindow.location.href = data.verification_url;
+          setupWindow.location.replace(data.verification_url);
         } else {
           window.open(data.verification_url, "_blank", "noopener");
         }
