@@ -73,7 +73,7 @@ def verify_project_root(html: str) -> None:
         if marker not in html:
             raise ValueError(f"/FORGE/ is missing original project marker: {marker}")
     forbidden_markers = [
-        "OPEN SOURCE · MULTIPLATFORM DESKTOP OPERATOR",
+        "MULTIPLATFORM DESKTOP OPERATOR",
         "Download Bundles",
     ]
     for marker in forbidden_markers:
@@ -83,8 +83,10 @@ def verify_project_root(html: str) -> None:
 
 def verify_downloads_page(html: str) -> None:
     required_markers = [
-        "OPEN SOURCE · MULTIPLATFORM DESKTOP OPERATOR",
+        "MULTIPLATFORM DESKTOP OPERATOR",
         "Download Bundles",
+        "pip install forge-agent==1.1.5",
+        "GitHub Release v1.1.5",
         "../release-manifest.json",
     ]
     for marker in required_markers:
@@ -92,6 +94,18 @@ def verify_downloads_page(html: str) -> None:
             raise ValueError(f"/FORGE/downloads/ is missing downloads marker: {marker}")
     if 'href="portal/?from=download"' in html:
         raise ValueError("Downloads page still contains a relative portal link.")
+    forbidden_markers = [
+        "v1.1.4",
+        "1.1.4",
+        "forge start",
+        "forge add-key",
+        "FORGE-Setup",
+        "FORGE-Windows-Portable",
+        "SHA256SUMS",
+    ]
+    for marker in forbidden_markers:
+        if marker in html:
+            raise ValueError(f"/FORGE/downloads/ contains stale or invalid public marker: {marker}")
 
 
 def verify_manifest(actual: dict[str, Any], expected: dict[str, Any] | None) -> None:

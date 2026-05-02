@@ -1,67 +1,38 @@
 {
   "assets": [
     {
-      "canonical_url": "https://github.com/TREN-Studio/FORGE/releases/download/v1.1.4/FORGE-Desktop.exe",
-      "kind": "executable",
-      "label": "Windows Desktop Executable",
-      "mirror_url": "https://www.trenstudio.com/FORGE/downloads/FORGE-Desktop.exe",
-      "name": "FORGE-Desktop.exe",
-      "platform": "windows",
-      "sha256": "6b65d4349efa622f4e722a91e2263aa254e74cf2d7ef61fe3619d94469b2bee2",
-      "size": 34120761
+      "canonical_url": "https://github.com/TREN-Studio/FORGE/releases/download/v1.1.5/forge_agent-1.1.5-py3-none-any.whl",
+      "kind": "wheel",
+      "label": "Python Wheel",
+      "mirror_url": null,
+      "name": "forge_agent-1.1.5-py3-none-any.whl",
+      "platform": "python",
+      "sha256": "c2f2f29c539853d543e42ed6a412bd27af66463eb19ce98a271aeb188c1d477e",
+      "size": 249173
     },
     {
-      "canonical_url": "https://github.com/TREN-Studio/FORGE/releases/download/v1.1.4/FORGE-Setup-1.1.4.exe",
-      "kind": "installer",
-      "label": "Windows Installer",
-      "mirror_url": "https://www.trenstudio.com/FORGE/downloads/FORGE-Setup-1.1.4.exe",
-      "name": "FORGE-Setup-1.1.4.exe",
-      "platform": "windows",
-      "sha256": "67f36b234fba201faf642b135edbd2faa7347e2bc890cf72dbbe4c8882cdbc70",
-      "size": 35649023
-    },
-    {
-      "canonical_url": "https://github.com/TREN-Studio/FORGE/releases/download/v1.1.4/FORGE-Windows-Portable-1.1.4.zip",
-      "kind": "portable",
-      "label": "Windows Portable ZIP",
-      "mirror_url": "https://www.trenstudio.com/FORGE/downloads/FORGE-Windows-Portable-1.1.4.zip",
-      "name": "FORGE-Windows-Portable-1.1.4.zip",
-      "platform": "windows",
-      "sha256": "8f2f376a6eca2e234cc39fa036a729c14e51351552be308d38b923cb9dd65451",
-      "size": 33778734
-    },
-    {
-      "canonical_url": "https://github.com/TREN-Studio/FORGE/releases/download/v1.1.4/FORGE-Source-v1.1.4.zip",
-      "kind": "source",
-      "label": "Source Archive",
-      "mirror_url": "https://www.trenstudio.com/FORGE/downloads/FORGE-Source-v1.1.4.zip",
-      "name": "FORGE-Source-v1.1.4.zip",
-      "platform": "all",
-      "sha256": "c59d26c66f5afe1da0a7d6ba444ef2959b65c3ffeee2901e18bcec1c79d8269f",
-      "size": 417981
-    },
-    {
-      "canonical_url": "https://github.com/TREN-Studio/FORGE/releases/download/v1.1.4/SHA256SUMS-1.1.4.txt",
-      "kind": "checksums",
-      "label": "SHA256 Checksums",
-      "mirror_url": "https://www.trenstudio.com/FORGE/downloads/SHA256SUMS-1.1.4.txt",
-      "name": "SHA256SUMS-1.1.4.txt",
-      "platform": "all",
-      "sha256": "d69a44f11d87fe0719f56f44e2019366383f1f9c4553e90ae981e4faea3f109d",
-      "size": 365
+      "canonical_url": "https://github.com/TREN-Studio/FORGE/releases/download/v1.1.5/forge_agent-1.1.5.tar.gz",
+      "kind": "sdist",
+      "label": "Source Distribution",
+      "mirror_url": null,
+      "name": "forge_agent-1.1.5.tar.gz",
+      "platform": "python",
+      "sha256": "3c46d5ac814b6d503bedf02d33659588bd0e5db1b7a0e88c9b254decc9d6423c",
+      "size": 200044
     }
   ],
   "canonical_host": "github_release",
-  "canonical_note": "GitHub Release is the canonical release record. Hostinger may mirror the same release assets byte-for-byte when mirror_url is present.",
+  "canonical_note": "GitHub Release is the canonical release record. PyPI is the recommended install path for the Python package.",
   "mirrors": {
     "hostinger": {
       "base_url": "https://www.trenstudio.com/FORGE/downloads",
-      "identity_policy": "mirror_url assets must match canonical_url by version, file size, and SHA256.",
-      "status": "enabled"
+      "identity_policy": "No mirrored binary assets are published for v1.1.5; official downloads resolve to PyPI or GitHub Release assets.",
+      "status": "disabled"
     }
   },
-  "release_tag": "v1.1.4",
-  "release_url": "https://github.com/TREN-Studio/FORGE/releases/tag/v1.1.4",
+  "pypi_url": "https://pypi.org/project/forge-agent/1.1.5/",
+  "release_tag": "v1.1.5",
+  "release_url": "https://github.com/TREN-Studio/FORGE/releases/tag/v1.1.5",
   "schema_version": 1,
-  "version": "1.1.4"
+  "version": "1.1.5"
 }

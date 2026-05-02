@@ -217,7 +217,7 @@ footer{border-top:1px solid var(--b);padding:40px;display:flex;align-items:cente
     </div>
     <div class="install-cmd">
       <span class="prefix">$</span>
-      <span id="cmd-text">pip install forge-agent</span>
+      <span id="cmd-text">pip install forge-agent==1.1.5</span>
       <button class="copy-btn" onclick="copyCmd()" title="Copy">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
       </button>
@@ -236,52 +236,52 @@ footer{border-top:1px solid var(--b);padding:40px;display:flex;align-items:cente
   <div class="download-shell">
     <div class="download-top">
       <div>
-        <div class="section-label">Downloads <span id="release-version">v1.1.4</span></div>
-        <div class="section-title">Choose Your System</div>
-        <p class="section-desc">FORGE downloads are served from the official site and verified against the canonical GitHub Release. Windows 1.1.4 ships as the validated desktop build; source, portable, and checksum assets come from one CI pipeline and one release manifest.</p>
+        <div class="section-label">Downloads <span id="release-version">v1.1.5</span></div>
+        <div class="section-title">Install FORGE</div>
+        <p class="section-desc">FORGE v1.1.5 is live as the canonical Python package on PyPI, with matching source artifacts attached to the GitHub Release. Desktop installer assets are intentionally not shown until a v1.1.5 desktop build is published from the same release pipeline.</p>
       </div>
       <div class="download-side">
-        <div class="download-kpi"><strong>5</strong><span>Release Assets</span></div>
-        <div class="download-kpi"><strong>1</strong><span>Validated OS</span></div>
+        <div class="download-kpi"><strong>2</strong><span>Release Assets</span></div>
+        <div class="download-kpi"><strong>PyPI</strong><span>Canonical Install</span></div>
         <div class="download-kpi"><strong>$0</strong><span>License Cost</span></div>
         <div class="download-kpi"><strong>MIT</strong><span>Open Source Core</span></div>
       </div>
     </div>
     <div class="download-grid">
-      <a class="platform-card" href="https://github.com/TREN-Studio/FORGE/releases/download/v1.1.4/FORGE-Setup-1.1.4.exe" data-release-asset="FORGE-Setup-1.1.4.exe" target="_blank" rel="noopener">
-        <div class="platform-build">Native Installer</div>
-        <div class="platform-os">Windows</div>
-        <div class="platform-desc">Tested Windows installer for the operator-only FORGE Desktop build. The public app now selects a real workspace, allows confirmed file changes, runs guarded commands, and returns verified mission traces instead of chat-style roleplay.</div>
-        <div class="platform-meta"><span>Installer EXE</span><span data-release-size-for="FORGE-Setup-1.1.4.exe">GitHub asset</span></div>
-        <div class="platform-link">Download Windows <span>-></span></div>
+      <a class="platform-card" href="https://pypi.org/project/forge-agent/1.1.5/" target="_blank" rel="noopener">
+        <div class="platform-build">Recommended</div>
+        <div class="platform-os">PyPI</div>
+        <div class="platform-desc">Install the latest public FORGE package directly from PyPI. This path includes the agent brain, streaming runtime, skill governance, and the verified command-line entrypoint.</div>
+        <div class="platform-meta"><span>Package</span><span>1.1.5</span></div>
+        <div class="platform-link">Open PyPI <span>-></span></div>
       </a>
-      <a class="platform-card" href="https://github.com/TREN-Studio/FORGE/releases/download/v1.1.4/FORGE-Windows-Portable-1.1.4.zip" data-release-asset="FORGE-Windows-Portable-1.1.4.zip" target="_blank" rel="noopener">
-        <div class="platform-build">Portable Build</div>
-        <div class="platform-os">Windows ZIP</div>
-        <div class="platform-desc">Portable package from the same GitHub Release artifact set. Use it when you want to inspect or run the desktop binary without installer integration.</div>
-        <div class="platform-meta"><span>ZIP archive</span><span data-release-size-for="FORGE-Windows-Portable-1.1.4.zip">GitHub asset</span></div>
-        <div class="platform-link">Download Portable <span>-></span></div>
+      <a class="platform-card" href="https://github.com/TREN-Studio/FORGE/releases/download/v1.1.5/forge_agent-1.1.5-py3-none-any.whl" data-release-asset="forge_agent-1.1.5-py3-none-any.whl" target="_blank" rel="noopener">
+        <div class="platform-build">Python Wheel</div>
+        <div class="platform-os">Wheel</div>
+        <div class="platform-desc">Prebuilt Python wheel attached to the GitHub Release. Use this when you need the exact release artifact that PyPI serves.</div>
+        <div class="platform-meta"><span>WHL</span><span data-release-size-for="forge_agent-1.1.5-py3-none-any.whl">GitHub asset</span></div>
+        <div class="platform-link">Download Wheel <span>-></span></div>
       </a>
-      <a class="platform-card" href="https://github.com/TREN-Studio/FORGE/releases/download/v1.1.4/FORGE-Source-v1.1.4.zip" data-release-asset="FORGE-Source-v1.1.4.zip" target="_blank" rel="noopener">
-        <div class="platform-build">Source Package</div>
+      <a class="platform-card" href="https://github.com/TREN-Studio/FORGE/releases/download/v1.1.5/forge_agent-1.1.5.tar.gz" data-release-asset="forge_agent-1.1.5.tar.gz" target="_blank" rel="noopener">
+        <div class="platform-build">Source Distribution</div>
         <div class="platform-os">Source</div>
-        <div class="platform-desc">Clean source archive for developers, contributors, and teams that want to review, modify, or package FORGE themselves.</div>
-        <div class="platform-meta"><span>ZIP archive</span><span data-release-size-for="FORGE-Source-v1.1.4.zip">GitHub asset</span></div>
+        <div class="platform-desc">Source distribution for contributors, packagers, and reviewers who want to inspect or rebuild the Python package from the release source.</div>
+        <div class="platform-meta"><span>TAR.GZ</span><span data-release-size-for="forge_agent-1.1.5.tar.gz">GitHub asset</span></div>
         <div class="platform-link">Download Source <span>-></span></div>
       </a>
-      <a class="platform-card" href="https://github.com/TREN-Studio/FORGE/releases/download/v1.1.4/SHA256SUMS-1.1.4.txt" data-release-asset="SHA256SUMS-1.1.4.txt" target="_blank" rel="noopener">
-        <div class="platform-build">Verification</div>
-        <div class="platform-os">Hashes</div>
-        <div class="platform-desc">SHA256 checksum file generated from the canonical release artifacts. Use it to verify the installer, portable ZIP, source archive, and desktop executable.</div>
-        <div class="platform-meta"><span>SHA256</span><span data-release-size-for="SHA256SUMS-1.1.4.txt">GitHub asset</span></div>
-        <div class="platform-link">Verify Release <span>-></span></div>
+      <a class="platform-card" href="https://github.com/TREN-Studio/FORGE/releases/tag/v1.1.5" target="_blank" rel="noopener">
+        <div class="platform-build">Release Record</div>
+        <div class="platform-os">GitHub</div>
+        <div class="platform-desc">View the canonical GitHub Release, generated notes, source snapshots, and attached Python package artifacts for FORGE v1.1.5.</div>
+        <div class="platform-meta"><span>Release</span><span>v1.1.5</span></div>
+        <div class="platform-link">View Release <span>-></span></div>
       </a>
     </div>
     <div class="download-note">
-      <p><strong>Canonical release:</strong> GitHub Release remains the version authority: <a id="release-url" href="https://github.com/TREN-Studio/FORGE/releases/tag/v1.1.4" target="_blank" rel="noopener">GitHub Release v1.1.4</a>. The official site may mirror those exact assets byte-for-byte from the same CI pipeline.</p>
-      <p><strong>Windows 1.1.4:</strong> the primary download is a tested installer executable with uninstall support and Start Menu integration. A <a href="https://github.com/TREN-Studio/FORGE/releases/download/v1.1.4/FORGE-Windows-Portable-1.1.4.zip" data-release-asset="FORGE-Windows-Portable-1.1.4.zip" target="_blank" rel="noopener">portable ZIP</a> and <a href="https://github.com/TREN-Studio/FORGE/releases/download/v1.1.4/SHA256SUMS-1.1.4.txt" data-release-asset="SHA256SUMS-1.1.4.txt" target="_blank" rel="noopener">SHA256 sums</a> are published for verification.</p>
-      <p><strong>Setup Flow:</strong> install FORGE Desktop first, then complete account registration and provider setup from the private portal or inside Desktop.</p>
-      <p><strong>macOS / Linux:</strong> native public packages are not part of the 1.1.4 release set yet. Use the source archive while those tracks are validated. <a href="https://github.com/TREN-Studio/FORGE/releases" target="_blank" rel="noopener">View all releases</a>.</p>
+      <p><strong>Canonical release:</strong> GitHub Release remains the version authority: <a id="release-url" href="https://github.com/TREN-Studio/FORGE/releases/tag/v1.1.5" target="_blank" rel="noopener">GitHub Release v1.1.5</a>. PyPI is the recommended install path for this public release.</p>
+      <p><strong>Desktop installers:</strong> native desktop binaries are only shown when they are built and published from the same release pipeline. The current public path is the Python package.</p>
+      <p><strong>First run:</strong> install the package, confirm the version, then use <code style="color:var(--ember);font-size:12px">forge status</code> and <code style="color:var(--ember);font-size:12px">forge operate "your task here"</code>.</p>
+      <p><strong>All releases:</strong> review historical tags, source snapshots, and future desktop packages from <a href="https://github.com/TREN-Studio/FORGE/releases" target="_blank" rel="noopener">GitHub Releases</a>.</p>
     </div>
   </div>
 </section>
@@ -451,23 +451,25 @@ footer{border-top:1px solid var(--b);padding:40px;display:flex;align-items:cente
   <div class="section-label">Get Started</div>
   <div class="section-title">Install in 30 Seconds</div>
   <div class="install-block">
-    <div class="comment"># Install FORGE</div>
-    <div class="cmd"><span class="p">$ </span><span class="kw">pip install</span> forge-agent</div>
-    <div class="comment" style="margin-top:16px"># Launch</div>
-    <div class="cmd"><span class="p">$ </span><span class="kw">forge</span> start</div>
-    <div class="comment" style="margin-top:16px"># Add your first free API key (optional — works with zero keys via Ollama)</div>
-    <div class="cmd"><span class="p">$ </span><span class="kw">forge</span> add-key <span class="str">groq</span> <span class="str">your_free_key</span></div>
+    <div class="comment"># Install FORGE 1.1.5</div>
+    <div class="cmd"><span class="p">$ </span><span class="kw">pip install</span> forge-agent==1.1.5</div>
+    <div class="comment" style="margin-top:16px"># Confirm the installed version</div>
+    <div class="cmd"><span class="p">$ </span><span class="kw">forge</span> --version</div>
+    <div class="comment" style="margin-top:16px"># Inspect providers and run a real task</div>
+    <div class="cmd"><span class="p">$ </span><span class="kw">forge</span> status</div>
+    <div class="cmd"><span class="p">$ </span><span class="kw">forge</span> discover</div>
+    <div class="cmd"><span class="p">$ </span><span class="kw">forge</span> operate <span class="str">"your task here"</span></div>
     <div class="install-step">
       <div class="step-num">01</div>
       <div class="step-body"><h4>Install Python 3.10+</h4><p>That's the only requirement. No Docker. No Node. No cloud account.</p></div>
     </div>
     <div class="install-step">
       <div class="step-num">02</div>
-      <div class="step-body"><h4>Run <code style="color:var(--ember);font-size:12px">pip install forge-agent</code></h4><p>All dependencies install automatically. Takes ~15 seconds.</p></div>
+      <div class="step-body"><h4>Run <code style="color:var(--ember);font-size:12px">pip install forge-agent==1.1.5</code></h4><p>All Python package dependencies install automatically from PyPI.</p></div>
     </div>
     <div class="install-step">
       <div class="step-num">03</div>
-      <div class="step-body"><h4>Launch and start forging</h4><p>FORGE auto-detects available models and starts routing immediately. No config needed.</p></div>
+      <div class="step-body"><h4>Check status, then operate</h4><p>Use <code style="color:var(--ember);font-size:12px">forge status</code>, <code style="color:var(--ember);font-size:12px">forge discover</code>, and <code style="color:var(--ember);font-size:12px">forge operate "..."</code> with a concrete task.</p></div>
     </div>
   </div>
 </section>
@@ -599,7 +601,7 @@ fetch('../release-manifest.json', { cache: 'no-store' })
 
 // COPY CMD
 function copyCmd() {
-  navigator.clipboard.writeText('pip install forge-agent');
+  navigator.clipboard.writeText('pip install forge-agent==1.1.5');
   const btn = document.querySelector('.copy-btn');
   btn.style.color = '#4ade80';
   setTimeout(() => btn.style.color = '', 1500);

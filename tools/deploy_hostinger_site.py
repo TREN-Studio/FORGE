@@ -108,7 +108,6 @@ def iter_site_files(local_root: Path) -> list[Path]:
         if path.is_file()
         and "__pycache__" not in path.parts
         and path.suffix not in {".pyc", ".pyo"}
-        and path.name != "release-manifest.json"
     )
 
 

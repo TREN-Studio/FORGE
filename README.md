@@ -116,18 +116,19 @@ Current foundation includes:
 - safety, validation, and recovery layers
 - grounded workspace analysis and file reading skills
 
-## Windows Releases
+## Public Releases
 
-- Current public release line: `1.1.4`.
-- GitHub's latest stable release must also resolve to `v1.1.4`; prerelease engineering snapshots such as `v1.1.5-AgentReality` are not canonical install releases.
-- The canonical public download source is the GitHub Release for the matching tag: https://github.com/TREN-Studio/FORGE/releases/tag/v1.1.4
-- The release workflow in `.github/workflows/release_forge_windows.yml` builds `FORGE-Desktop.exe`, `FORGE-Setup-<version>.exe`, the portable ZIP, the source ZIP, `SHA256SUMS-<version>.txt`, and `release-manifest.json` from one pipeline.
-- That same pipeline publishes the assets to GitHub Release and mirrors the exact same bytes to `https://www.trenstudio.com/FORGE/downloads/` when Hostinger secrets are configured.
+- Current public release line: `1.1.5`.
+- The canonical public install path is PyPI: https://pypi.org/project/forge-agent/1.1.5/
+- GitHub's latest stable release must also resolve to `v1.1.5`.
+- The canonical public release record is the GitHub Release for the matching tag: https://github.com/TREN-Studio/FORGE/releases/tag/v1.1.5
+- The PyPI publishing workflow in `.github/workflows/publish-pypi.yml` builds the wheel and source distribution, publishes to PyPI through Trusted Publisher, and attaches `dist/*` to the GitHub Release.
+- The Windows release workflow in `.github/workflows/release_forge_windows.yml` is retained for future desktop installer releases. Desktop installer links are not shown on the public downloads page unless those artifacts exist for the current release.
 - The supported desktop build entrypoint is `python tools/build_windows_desktop.py`; that script is the source of truth for orchestration and invokes the portable `FORGE-Desktop.spec`.
 - Release packaging runs through `python tools/package_release_assets.py`, which writes release assets under `release-assets/` only. It does not publish or sync binary files into `site/downloads/`.
-- The public downloads page at `site/downloads/index.html` reads `release-manifest.json`, generated from the canonical GitHub Release or from the release pipeline, and prefers verified official-site mirror URLs while preserving GitHub URLs as the canonical reference.
+- The public downloads page at `site/downloads/index.html` reads `release-manifest.json` and points users to PyPI plus existing GitHub Release assets only.
 - `python tools/verify_release_public_assets.py --manifest release-assets/release-manifest.json --require-mirror` verifies version, size, SHA256, GitHub Release presence, and byte identity for the Hostinger mirror.
-- `tools/deploy_hostinger_site.py` deploys the downloads page and portal only; the TREN Studio root page owns `https://www.trenstudio.com/FORGE/`, and the release workflow owns `release-manifest.json` plus mirrored binary files on Hostinger.
+- `tools/deploy_hostinger_site.py` deploys the downloads page, portal, and release manifest only; the TREN Studio root page owns `https://www.trenstudio.com/FORGE/`.
 - Legacy desktop spec variants were removed. `FORGE-Desktop.spec` is the only supported PyInstaller spec.
 - If `WINDOWS_PFX_BASE64` and `WINDOWS_PFX_PASSWORD` are configured in GitHub Secrets, the workflow signs both artifacts before publishing the GitHub Release.
 - Until code signing is configured, Windows SmartScreen and local execution reputation checks can still block downloaded installers.
@@ -163,23 +164,15 @@ MIT
 
 FORGE keeps its public downloads page and portal bundle inside [`site/`](site). The production page at `https://www.trenstudio.com/FORGE/` remains the TREN Studio project page; the FORGE download interface lives at `https://www.trenstudio.com/FORGE/downloads/` and is deployed from `site/downloads/index.html`.
 
-GitHub Release is the canonical release record. Hostinger may serve an official mirror under `https://www.trenstudio.com/FORGE/downloads/`, but only when the files are copied from the same CI-built release assets and pass SHA256, file size, version, and byte-identity verification.
+GitHub Release is the canonical release record. PyPI is the recommended install path for the current public Python package. Hostinger may serve an official mirror under `https://www.trenstudio.com/FORGE/downloads/`, but only when the files are copied from the same CI-built release assets and pass SHA256, file size, version, and byte-identity verification.
 
 The current public download set is:
 
-- `https://github.com/TREN-Studio/FORGE/releases/download/v1.1.4/FORGE-Desktop.exe`
-- `https://github.com/TREN-Studio/FORGE/releases/download/v1.1.4/FORGE-Setup-1.1.4.exe`
-- `https://github.com/TREN-Studio/FORGE/releases/download/v1.1.4/FORGE-Windows-Portable-1.1.4.zip`
-- `https://github.com/TREN-Studio/FORGE/releases/download/v1.1.4/FORGE-Source-v1.1.4.zip`
-- `https://github.com/TREN-Studio/FORGE/releases/download/v1.1.4/SHA256SUMS-1.1.4.txt`
+- `https://pypi.org/project/forge-agent/1.1.5/`
+- `https://github.com/TREN-Studio/FORGE/releases/download/v1.1.5/forge_agent-1.1.5-py3-none-any.whl`
+- `https://github.com/TREN-Studio/FORGE/releases/download/v1.1.5/forge_agent-1.1.5.tar.gz`
 
-The matching official-site mirror paths, when present, are:
-
-- `https://www.trenstudio.com/FORGE/downloads/FORGE-Desktop.exe`
-- `https://www.trenstudio.com/FORGE/downloads/FORGE-Setup-1.1.4.exe`
-- `https://www.trenstudio.com/FORGE/downloads/FORGE-Windows-Portable-1.1.4.zip`
-- `https://www.trenstudio.com/FORGE/downloads/FORGE-Source-v1.1.4.zip`
-- `https://www.trenstudio.com/FORGE/downloads/SHA256SUMS-1.1.4.txt`
+No official-site binary mirror is published for the current release.
 
 ### Auto-Deploy Pipeline
 
