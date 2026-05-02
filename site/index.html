@@ -128,6 +128,8 @@ section{padding:100px 40px;max-width:1100px;margin:0 auto}
 .download-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-top:28px}
 .platform-card{display:flex;flex-direction:column;gap:16px;min-height:220px;padding:22px;border-radius:14px;border:1px solid var(--b);background:rgba(255,255,255,.02);text-decoration:none;color:var(--txt);transition:transform .2s,border-color .2s,background .2s}
 .platform-card:hover{transform:translateY(-3px);border-color:rgba(255,107,26,.55);background:rgba(255,255,255,.035)}
+.platform-card.disabled{cursor:default}
+.platform-card.disabled:hover{transform:none;border-color:var(--b);background:rgba(255,255,255,.02)}
 .platform-build{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--forge)}
 .platform-os{font-family:'Bebas Neue',sans-serif;font-size:34px;letter-spacing:2px;line-height:1;color:var(--txt)}
 .platform-desc{font-size:13px;color:var(--muted);line-height:1.7;flex:1}
@@ -137,8 +139,6 @@ section{padding:100px 40px;max-width:1100px;margin:0 auto}
 .download-note{margin-top:20px;padding-top:18px;border-top:1px solid rgba(255,255,255,.06);display:flex;justify-content:space-between;gap:18px;flex-wrap:wrap}
 .download-note p{font-size:12px;color:var(--muted);max-width:520px}
 .download-note strong{color:var(--txt)}
-.download-note a{color:var(--forge);text-decoration:none;font-weight:700}
-.download-note a:hover{text-decoration:underline}
 
 /* ── INSTALL ── */
 .install-block{background:var(--s1);border:1px solid var(--b);border-radius:12px;padding:40px;margin-top:56px;font-family:'JetBrains Mono',monospace}
@@ -166,7 +166,12 @@ footer{border-top:1px solid var(--b);padding:40px;display:flex;align-items:cente
 /* ── RESPONSIVE ── */
 @media(max-width:640px){
   nav{padding:0 20px}
+  .nav-links a:not(.nav-cta){display:none}
+  .nav-links{gap:0}
   section{padding:72px 20px}
+  h1{font-size:clamp(72px,24vw,108px);letter-spacing:4px}
+  .install-cmd{max-width:100%;font-size:11px;padding:10px 12px;gap:8px}
+  #cmd-text{overflow-wrap:anywhere}
   .hero-stats{gap:28px}
   .stat-n{font-size:32px}
   .download-grid{grid-template-columns:1fr}
@@ -193,11 +198,9 @@ footer{border-top:1px solid var(--b);padding:40px;display:flex;align-items:cente
   <a href="#" class="nav-logo">F<span>ORGE</span></a>
   <div class="nav-links">
     <a href="#downloads">Downloads</a>
-      <a href="/FORGE/portal/?from=download">Complete Setup</a>
     <a href="#why">Why</a>
     <a href="#arch">Architecture</a>
     <a href="#install">Install</a>
-    <a href="https://github.com/TREN-Studio/FORGE/releases" target="_blank" rel="noopener">Releases</a>
     <a href="https://github.com/TREN-Studio/FORGE" class="nav-cta" target="_blank">GitHub</a>
   </div>
 </nav>
@@ -209,15 +212,13 @@ footer{border-top:1px solid var(--b);padding:40px;display:flex;align-items:cente
     <div class="hero-badge"><span></span>OPEN SOURCE · MULTIPLATFORM DESKTOP OPERATOR</div>
     <h1>F<em>O</em>RGE</h1>
     <p class="hero-sub">
-      Open-source desktop AI operator for <strong>Windows, macOS, and Linux</strong>.<br>
+      Open-source desktop AI operator for <strong>Windows, macOS, and Linux</strong> through the Python package.<br>
       Connects to <strong>free models across the world</strong>, chooses the strongest path, and runs locally.<br>
       <strong>English-first. Multilingual by design.</strong>
     </p>
     <div class="hero-actions">
       <a href="#downloads" class="btn-primary">Download Bundles</a>
-      <a href="/FORGE/portal/?from=download" class="btn-secondary">Complete Setup</a>
       <a href="https://github.com/TREN-Studio/FORGE" class="btn-secondary" target="_blank">Open Source</a>
-      <a href="https://github.com/TREN-Studio/FORGE/releases" class="btn-secondary" target="_blank" rel="noopener">View Releases</a>
     </div>
     <div class="install-cmd">
       <span class="prefix">$</span>
@@ -240,9 +241,9 @@ footer{border-top:1px solid var(--b);padding:40px;display:flex;align-items:cente
   <div class="download-shell">
     <div class="download-top">
       <div>
-        <div class="section-label">Downloads <span id="release-version">v1.1.5</span></div>
+        <div class="section-label">Downloads v1.1.5</div>
         <div class="section-title">Install FORGE</div>
-        <p class="section-desc">FORGE v1.1.5 is live as the canonical Python package on PyPI, with matching source artifacts attached to the GitHub Release. Desktop installer assets are intentionally not shown until a v1.1.5 desktop build is published from the same release pipeline.</p>
+        <p class="section-desc">FORGE v1.1.5 is live through PyPI and the canonical GitHub Release. Desktop installers are not shown until their v1.1.5 binaries are built and published from the same release pipeline.</p>
       </div>
       <div class="download-side">
         <div class="download-kpi"><strong>2</strong><span>Release Assets</span></div>
@@ -255,37 +256,35 @@ footer{border-top:1px solid var(--b);padding:40px;display:flex;align-items:cente
       <a class="platform-card" href="https://pypi.org/project/forge-agent/1.1.5/" target="_blank" rel="noopener">
         <div class="platform-build">Recommended</div>
         <div class="platform-os">PyPI</div>
-        <div class="platform-desc">Install the latest public FORGE package directly from PyPI. This path includes the agent brain, streaming runtime, skill governance, and the verified command-line entrypoint.</div>
+        <div class="platform-desc">Install the current public package directly from PyPI. This is the verified v1.1.5 path for the agent runtime and CLI.</div>
         <div class="platform-meta"><span>Package</span><span>1.1.5</span></div>
         <div class="platform-link">Open PyPI <span>-></span></div>
       </a>
-      <a class="platform-card" href="https://github.com/TREN-Studio/FORGE/releases/download/v1.1.5/forge_agent-1.1.5-py3-none-any.whl" data-release-asset="forge_agent-1.1.5-py3-none-any.whl" target="_blank" rel="noopener">
-        <div class="platform-build">Python Wheel</div>
-        <div class="platform-os">Wheel</div>
-        <div class="platform-desc">Prebuilt Python wheel attached to the GitHub Release. Use this when you need the exact release artifact that PyPI serves.</div>
-        <div class="platform-meta"><span>WHL</span><span data-release-size-for="forge_agent-1.1.5-py3-none-any.whl">GitHub asset</span></div>
-        <div class="platform-link">Download Wheel <span>-></span></div>
+      <a class="platform-card disabled" href="https://github.com/TREN-Studio/FORGE" target="_blank" rel="noopener">
+        <div class="platform-build">Coming Soon</div>
+        <div class="platform-os">macOS</div>
+        <div class="platform-desc">Native macOS packages are not part of the current release set yet. Use the Python package or inspect the source while this track is validated.</div>
+        <div class="platform-meta"><span>No binary yet</span><span>Use source</span></div>
+        <div class="platform-link">View on GitHub <span>-></span></div>
       </a>
-      <a class="platform-card" href="https://github.com/TREN-Studio/FORGE/releases/download/v1.1.5/forge_agent-1.1.5.tar.gz" data-release-asset="forge_agent-1.1.5.tar.gz" target="_blank" rel="noopener">
+      <a class="platform-card disabled" href="https://github.com/TREN-Studio/FORGE" target="_blank" rel="noopener">
+        <div class="platform-build">Coming Soon</div>
+        <div class="platform-os">Linux</div>
+        <div class="platform-desc">Native Linux packages are not part of the current release set yet. Use the Python package or source distribution for now.</div>
+        <div class="platform-meta"><span>No binary yet</span><span>Use source</span></div>
+        <div class="platform-link">View on GitHub <span>-></span></div>
+      </a>
+      <a class="platform-card" href="https://github.com/TREN-Studio/FORGE/releases/download/v1.1.5/forge_agent-1.1.5.tar.gz" target="_blank" rel="noopener">
         <div class="platform-build">Source Distribution</div>
         <div class="platform-os">Source</div>
-        <div class="platform-desc">Source distribution for contributors, packagers, and reviewers who want to inspect or rebuild the Python package from the release source.</div>
-        <div class="platform-meta"><span>TAR.GZ</span><span data-release-size-for="forge_agent-1.1.5.tar.gz">GitHub asset</span></div>
+        <div class="platform-desc">Release source distribution for contributors, packagers, and reviewers who want to inspect or rebuild the Python package.</div>
+        <div class="platform-meta"><span>TAR.GZ</span><span>v1.1.5</span></div>
         <div class="platform-link">Download Source <span>-></span></div>
-      </a>
-      <a class="platform-card" href="https://github.com/TREN-Studio/FORGE/releases/tag/v1.1.5" target="_blank" rel="noopener">
-        <div class="platform-build">Release Record</div>
-        <div class="platform-os">GitHub</div>
-        <div class="platform-desc">View the canonical GitHub Release, generated notes, source snapshots, and attached Python package artifacts for FORGE v1.1.5.</div>
-        <div class="platform-meta"><span>Release</span><span>v1.1.5</span></div>
-        <div class="platform-link">View Release <span>-></span></div>
       </a>
     </div>
     <div class="download-note">
-      <p><strong>Canonical release:</strong> GitHub Release remains the version authority: <a id="release-url" href="https://github.com/TREN-Studio/FORGE/releases/tag/v1.1.5" target="_blank" rel="noopener">GitHub Release v1.1.5</a>. PyPI is the recommended install path for this public release.</p>
-      <p><strong>Desktop installers:</strong> native desktop binaries are only shown when they are built and published from the same release pipeline. The current public path is the Python package.</p>
-      <p><strong>First run:</strong> install the package, confirm the version, then use <code style="color:var(--ember);font-size:12px">forge status</code> and <code style="color:var(--ember);font-size:12px">forge operate "your task here"</code>.</p>
-      <p><strong>All releases:</strong> review historical tags, source snapshots, and future desktop packages from <a href="https://github.com/TREN-Studio/FORGE/releases" target="_blank" rel="noopener">GitHub Releases</a>.</p>
+      <p><strong>Canonical release:</strong> <a href="https://github.com/TREN-Studio/FORGE/releases/tag/v1.1.5" target="_blank" rel="noopener" style="color:var(--ember)">GitHub Release v1.1.5</a> remains the release record; PyPI is the recommended install path.</p>
+      <p><strong>Desktop installers:</strong> Windows, macOS, and Linux binaries will appear only after matching release assets exist.</p>
     </div>
   </div>
 </section>
@@ -552,56 +551,6 @@ function loop() {
 
 window.addEventListener('resize', () => { resize(); });
 init(); loop();
-
-// RELEASE MANIFEST
-function formatBytes(bytes) {
-  if (!Number.isFinite(bytes) || bytes <= 0) return 'GitHub asset';
-  const units = ['B', 'KB', 'MB', 'GB'];
-  let size = bytes;
-  let unit = 0;
-  while (size >= 1024 && unit < units.length - 1) {
-    size /= 1024;
-    unit += 1;
-  }
-  return `${size >= 10 || unit === 0 ? size.toFixed(0) : size.toFixed(1)} ${units[unit]}`;
-}
-
-function applyReleaseManifest(manifest) {
-  const assets = new Map((manifest.assets || []).map(asset => [asset.name, asset]));
-  const releaseVersion = document.getElementById('release-version');
-  if (releaseVersion && manifest.release_tag) releaseVersion.textContent = manifest.release_tag;
-
-  const releaseUrl = document.getElementById('release-url');
-  if (releaseUrl && manifest.release_url) {
-    releaseUrl.href = manifest.release_url;
-    releaseUrl.textContent = `GitHub Release ${manifest.release_tag || manifest.version || ''}`.trim();
-  }
-
-  document.querySelectorAll('[data-release-asset]').forEach(element => {
-    const name = element.getAttribute('data-release-asset');
-    const asset = assets.get(name);
-    if (!asset || !asset.canonical_url) return;
-    const downloadUrl = asset.mirror_url || asset.canonical_url;
-    element.setAttribute('href', downloadUrl);
-    element.setAttribute('data-canonical-url', asset.canonical_url);
-    element.setAttribute('target', '_blank');
-    element.setAttribute('rel', 'noopener');
-    if (asset.sha256) {
-      const source = asset.mirror_url ? 'Official mirror verified against GitHub Release' : 'GitHub Release asset';
-      element.setAttribute('title', `${source} · SHA256 ${asset.sha256}`);
-    }
-  });
-
-  document.querySelectorAll('[data-release-size-for]').forEach(element => {
-    const asset = assets.get(element.getAttribute('data-release-size-for'));
-    if (asset) element.textContent = formatBytes(Number(asset.size));
-  });
-}
-
-fetch('../release-manifest.json', { cache: 'no-store' })
-  .then(response => response.ok ? response.json() : Promise.reject(new Error(`manifest ${response.status}`)))
-  .then(applyReleaseManifest)
-  .catch(error => console.warn('FORGE release manifest unavailable; using built-in GitHub links.', error));
 
 // COPY CMD
 function copyCmd() {

@@ -68,7 +68,7 @@ jobs:
           HOSTINGER_USERNAME: ${{ secrets.HOSTINGER_USERNAME }}
           HOSTINGER_PASSWORD: ${{ secrets.HOSTINGER_PASSWORD }}
           HOSTINGER_REMOTE_ROOT: ${{ secrets.HOSTINGER_REMOTE_ROOT }}
-        run: python tools/deploy_hostinger_site.py
+        run: python tools/deploy_hostinger_site.py --allow-root-index-deploy
 
       - name: Verify FORGE public routes
         env:

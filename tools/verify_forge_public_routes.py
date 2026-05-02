@@ -7,10 +7,34 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
+from html.parser import HTMLParser
 
 
 ROOT = Path(__file__).resolve().parents[1]
 GITHUB_API = "https://api.github.com/repos/TREN-Studio/FORGE"
+
+
+class TitleParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.in_title = False
+        self.title_parts: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() == "title":
+            self.in_title = True
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() == "title":
+            self.in_title = False
+
+    def handle_data(self, data: str) -> None:
+        if self.in_title:
+            self.title_parts.append(data)
+
+    @property
+    def title(self) -> str:
+        return "".join(self.title_parts).strip()
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -63,49 +87,73 @@ def load_expected_manifest(path: Path) -> dict[str, Any] | None:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def verify_clean_title(html: str, expected: str, route: str) -> None:
+    parser = TitleParser()
+    parser.feed(html)
+    title = parser.title
+    if title != expected:
+        raise ValueError(f"{route} title {title!r} != {expected!r}")
+    encoded_markers = ("%20", "%2F", "%3A", "%D8", "%D9")
+    if any(marker in title for marker in encoded_markers):
+        raise ValueError(f"{route} title contains encoded text: {title!r}")
+
+
+def verify_no_stale_public_markers(html: str, route: str) -> None:
+    forbidden_markers = [
+        "v1.1.4",
+        "1.1.4",
+        "v1.1.3",
+        "1.1.3",
+        "v1.1.2",
+        "1.1.2",
+        "v1.1.0",
+        "1.1.0",
+        "forge start",
+        "forge add-key",
+        "FORGE-Setup",
+        "FORGE-Windows-Portable",
+        "FORGE-macOS-Starter",
+        "FORGE-Linux-Starter",
+        "FORGE-Source",
+        "SHA256SUMS",
+    ]
+    for marker in forbidden_markers:
+        if marker in html:
+            raise ValueError(f"{route} contains stale or invalid public marker: {marker}")
+
+
 def verify_project_root(html: str) -> None:
+    verify_clean_title(html, "FORGE - Free Open Reasoning & Generation Engine", "/FORGE/")
     required_markers = [
-        "Reference Project",
-        '<span class="hf">FORGE</span>',
-        '<span class="fade">Engine.</span>',
+        "OPEN SOURCE",
+        "MULTIPLATFORM DESKTOP OPERATOR",
+        "Downloads v1.1.5",
+        "pip install forge-agent==1.1.5",
+        "GitHub Release v1.1.5",
+        "/FORGE/favicon.svg",
     ]
     for marker in required_markers:
         if marker not in html:
             raise ValueError(f"/FORGE/ is missing original project marker: {marker}")
-    forbidden_markers = [
-        "MULTIPLATFORM DESKTOP OPERATOR",
-        "Download Bundles",
-    ]
-    for marker in forbidden_markers:
-        if marker in html:
-            raise ValueError(f"/FORGE/ appears to be serving the downloads page marker: {marker}")
+    verify_no_stale_public_markers(html, "/FORGE/")
 
 
 def verify_downloads_page(html: str) -> None:
+    verify_clean_title(html, "FORGE - Free Open Reasoning & Generation Engine", "/FORGE/downloads/")
     required_markers = [
         "MULTIPLATFORM DESKTOP OPERATOR",
         "Download Bundles",
         "pip install forge-agent==1.1.5",
         "GitHub Release v1.1.5",
         "../release-manifest.json",
+        "/FORGE/favicon.svg",
     ]
     for marker in required_markers:
         if marker not in html:
             raise ValueError(f"/FORGE/downloads/ is missing downloads marker: {marker}")
     if 'href="portal/?from=download"' in html:
         raise ValueError("Downloads page still contains a relative portal link.")
-    forbidden_markers = [
-        "v1.1.4",
-        "1.1.4",
-        "forge start",
-        "forge add-key",
-        "FORGE-Setup",
-        "FORGE-Windows-Portable",
-        "SHA256SUMS",
-    ]
-    for marker in forbidden_markers:
-        if marker in html:
-            raise ValueError(f"/FORGE/downloads/ contains stale or invalid public marker: {marker}")
+    verify_no_stale_public_markers(html, "/FORGE/downloads/")
 
 
 def verify_manifest(actual: dict[str, Any], expected: dict[str, Any] | None) -> None:
