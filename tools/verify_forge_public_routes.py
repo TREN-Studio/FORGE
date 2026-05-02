@@ -122,6 +122,25 @@ def verify_no_stale_public_markers(html: str, route: str) -> None:
             raise ValueError(f"{route} contains stale or invalid public marker: {marker}")
 
 
+def verify_index_install_markup(html: str, route: str) -> None:
+    if html.count('id="cmd-text"') != 1:
+        raise ValueError(f"{route} must contain exactly one #cmd-text element.")
+    if '<span id="cmd-text">pip install forge-agent==1.1.5</span>' not in html:
+        raise ValueError(f"{route} command chip must show pip install forge-agent==1.1.5.")
+    if "navigator.clipboard.writeText('pip install forge-agent==1.1.5')" not in html:
+        raise ValueError(f"{route} copy command must copy pip install forge-agent==1.1.5.")
+    old_install_snippets = [
+        '<span id="cmd-text">pip install forge-agent</span>',
+        "navigator.clipboard.writeText('pip install forge-agent')",
+        "<div class=\"comment\"># Install FORGE</div>",
+        "<h4>Launch and start forging</h4>",
+        "<h4>Run <code style=\"color:var(--ember);font-size:12px\">pip install forge-agent</code></h4>",
+    ]
+    for snippet in old_install_snippets:
+        if snippet in html:
+            raise ValueError(f"{route} contains duplicate or stale install markup: {snippet}")
+
+
 def verify_project_root(html: str) -> None:
     verify_clean_title(html, "FORGE - Free Open Reasoning & Generation Engine", "/FORGE/")
     required_markers = [
@@ -136,6 +155,7 @@ def verify_project_root(html: str) -> None:
         if marker not in html:
             raise ValueError(f"/FORGE/ is missing original project marker: {marker}")
     verify_no_stale_public_markers(html, "/FORGE/")
+    verify_index_install_markup(html, "/FORGE/")
 
 
 def verify_downloads_page(html: str) -> None:
