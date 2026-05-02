@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from forge.brain.contracts import CompletionState, OperatorResult
+from forge.brain.contracts import CompletionState, IntentKind, OperatorResult
 
 
 class ResponseComposer:
@@ -11,6 +11,13 @@ class ResponseComposer:
             return result.result.strip()
 
         if not result.step_results and result.validation_status == CompletionState.FINISHED:
+            return result.result.strip()
+
+        if (
+            result.validation_status == CompletionState.FINISHED
+            and result.intent.primary_intent in {IntentKind.RESEARCH, IntentKind.ANALYSIS}
+            and not result.risks_or_limitations
+        ):
             return result.result.strip()
 
         validation = result.validation_status.value

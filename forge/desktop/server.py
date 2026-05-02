@@ -834,6 +834,84 @@ DESKTOP_HTML = """<!doctype html>
       display: none;
     }
 
+    .diagnostics-toggle {
+      justify-self: flex-start;
+      min-height: 34px;
+      margin-top: 10px;
+      padding: 0 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.1);
+      background: rgba(255,255,255,0.045);
+      color: var(--muted);
+      font-size: 12px;
+      box-shadow: none;
+    }
+
+    .diagnostics-panel {
+      max-height: 260px;
+      overflow: auto;
+      margin: 10px 0 0;
+      padding: 12px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(0,0,0,0.34);
+      color: rgba(247,247,247,0.76);
+      font: 12px/1.5 "Consolas", "SFMono-Regular", monospace;
+      white-space: pre-wrap;
+    }
+
+    .live-progress {
+      min-height: 38px;
+      margin: 0 0 12px;
+      padding: 10px 12px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.028);
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .live-progress.active {
+      border-color: rgba(255,107,26,0.18);
+      background: rgba(255,107,26,0.045);
+    }
+
+    .live-status {
+      color: var(--text);
+      font-weight: 650;
+    }
+
+    .live-steps {
+      display: grid;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .live-step {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      color: var(--muted);
+    }
+
+    .live-step-label {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .live-step-state {
+      flex: 0 0 auto;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .live-step.running .live-step-state { color: var(--accent-soft); }
+    .live-step.done .live-step-state { color: var(--ok); }
+    .live-step.failed .live-step-state { color: var(--danger); }
+
     .footnote {
       margin-top: 12px;
       color: var(--muted);
@@ -1119,7 +1197,7 @@ DESKTOP_HTML = """<!doctype html>
           <div class="workspace-kicker">FORGE Desktop</div>
           <h2>Talk to FORGE</h2>
           <p id="workspace-subtitle">
-            Ask in Arabic or English. FORGE replies naturally, chooses the strongest available provider path, and only switches into execution mode when your request actually needs tools.
+            Ask in Arabic or English. FORGE replies naturally, chooses the best response path, and only switches into execution mode when your request actually needs tools.
           </p>
         </div>
         <div class="workspace-topbar-actions">
@@ -1131,7 +1209,7 @@ DESKTOP_HTML = """<!doctype html>
         <div class="auth-gate-kicker">Secure setup</div>
         <h3>Sign in once, then just chat.</h3>
         <p>
-          FORGE uses each user’s own encrypted provider keys. Finish account setup first, then talk to FORGE like a normal assistant. It will automatically choose the strongest available provider path when your request needs real intelligence or execution.
+          FORGE uses each user’s own encrypted provider keys. Finish account setup first, then talk to FORGE like a normal assistant. It will automatically choose the best available response path when your request needs real intelligence or execution.
         </p>
         <div class="auth-gate-actions">
           <button id="auth-gate-google" type="button">Continue with Google</button>
@@ -1220,8 +1298,14 @@ DESKTOP_HTML = """<!doctype html>
 
         <section id="chat" class="chat"></section>
         <div id="result-panel"></div>
+        <button id="diagnostics-toggle" class="diagnostics-toggle hidden" type="button">Show technical details</button>
+        <pre id="diagnostics-panel" class="diagnostics-panel hidden"></pre>
 
         <section class="composer">
+          <div id="live-progress" class="live-progress hidden">
+            <div id="live-status" class="live-status">Idle</div>
+            <div id="live-steps" class="live-steps"></div>
+          </div>
           <div class="composer-grid">
             <textarea id="prompt" placeholder="Message FORGE..."></textarea>
             <div class="actions">
@@ -1265,6 +1349,11 @@ DESKTOP_HTML = """<!doctype html>
     const planList = document.getElementById("plan-list");
     const stepList = document.getElementById("step-list");
     const resultPanel = document.getElementById("result-panel");
+    const diagnosticsToggle = document.getElementById("diagnostics-toggle");
+    const diagnosticsPanel = document.getElementById("diagnostics-panel");
+    const liveProgress = document.getElementById("live-progress");
+    const liveStatus = document.getElementById("live-status");
+    const liveSteps = document.getElementById("live-steps");
     const workspaceSubtitle = document.getElementById("workspace-subtitle");
     const authGate = document.getElementById("auth-gate");
     const authGateGoogleButton = document.getElementById("auth-gate-google");
@@ -1718,6 +1807,59 @@ DESKTOP_HTML = """<!doctype html>
       article._footer.classList.toggle("hidden", !text);
     }
 
+    function resetLiveProgress() {
+      liveProgress.classList.add("hidden");
+      liveProgress.classList.remove("active");
+      liveStatus.textContent = "Idle";
+      clearNode(liveSteps);
+    }
+
+    function setLiveStatus(text) {
+      const clean = String(text || "").trim();
+      if (!clean) return;
+      liveProgress.classList.remove("hidden");
+      liveProgress.classList.add("active");
+      liveStatus.textContent = clean;
+    }
+
+    function renderLivePlan(steps) {
+      clearNode(liveSteps);
+      const list = Array.isArray(steps) ? steps : [];
+      list.forEach((step, index) => {
+        const item = document.createElement("div");
+        item.className = "live-step pending";
+        item.dataset.step = String(index + 1);
+
+        const label = document.createElement("span");
+        label.className = "live-step-label";
+        label.textContent = typeof step === "string" ? step : (step.label || step.action || "Step " + String(index + 1));
+
+        const state = document.createElement("span");
+        state.className = "live-step-state";
+        state.textContent = "pending";
+
+        item.appendChild(label);
+        item.appendChild(state);
+        liveSteps.appendChild(item);
+      });
+    }
+
+    function updateLiveStep(step, state, label, ms) {
+      const index = Number(step);
+      let item = Number.isFinite(index) && index > 0 ? liveSteps.querySelector('[data-step="' + String(index) + '"]') : null;
+      if (!item && liveSteps.children.length === 1) item = liveSteps.children[0];
+      if (!item) return;
+      item.className = "live-step " + state;
+      const labelNode = item.querySelector(".live-step-label");
+      const stateNode = item.querySelector(".live-step-state");
+      if (labelNode && label) labelNode.textContent = label;
+      if (stateNode) {
+        if (state === "done") stateNode.textContent = ms ? "done " + String(Math.round(ms)) + "ms" : "done";
+        else if (state === "failed") stateNode.textContent = "needs recovery";
+        else stateNode.textContent = "running";
+      }
+    }
+
     function addBubble(role, text) {
       return createBubble(role, text);
     }
@@ -1875,6 +2017,38 @@ DESKTOP_HTML = """<!doctype html>
       });
     }
 
+    function compactDiagnostics(data) {
+      if (data.technical_details) {
+        return data.technical_details;
+      }
+      if (data.diagnostics) {
+        return data.diagnostics;
+      }
+      const diagnostics = {};
+      ["mission_id", "audit_log_path", "intent", "plan", "step_results", "mission_trace", "agent_reviews", "provider_telemetry"].forEach((key) => {
+        if (data[key]) diagnostics[key] = data[key];
+      });
+      if (data.artifacts && typeof data.artifacts === "object") {
+        diagnostics.artifact_keys = Object.keys(data.artifacts);
+      }
+      return Object.keys(diagnostics).length ? diagnostics : null;
+    }
+
+    function renderDiagnostics(data) {
+      const diagnostics = compactDiagnostics(data || {});
+      if (!diagnostics) {
+        diagnosticsToggle.classList.add("hidden");
+        diagnosticsPanel.classList.add("hidden");
+        diagnosticsPanel.textContent = "";
+        diagnosticsToggle.textContent = "Show technical details";
+        return;
+      }
+      diagnosticsPanel.textContent = JSON.stringify(diagnostics, null, 2);
+      diagnosticsPanel.classList.add("hidden");
+      diagnosticsToggle.classList.remove("hidden");
+      diagnosticsToggle.textContent = "Show technical details";
+    }
+
     function renderOperatorResult(data) {
       objective.textContent = data.objective || "No active objective.";
       objectiveNote.textContent = data.intent && data.intent.hidden_intent
@@ -1890,8 +2064,9 @@ DESKTOP_HTML = """<!doctype html>
       nextNote.textContent = data.approach_taken && data.approach_taken.length
         ? data.approach_taken.join(" | ")
         : "No approach notes.";
-      resultPanel.textContent = data.result || data.answer || "No result produced.";
+      resultPanel.textContent = data.user_response || data.answer || data.result || "No result produced.";
       workspaceSubtitle.textContent = data.best_next_action || "FORGE responded successfully.";
+      renderDiagnostics(data);
       renderPlan(data.plan);
       renderSteps(data.step_results);
     }
@@ -2058,7 +2233,10 @@ DESKTOP_HTML = """<!doctype html>
       sendButton.textContent = "Sending...";
       setMissionStatus("running");
       closeSidebar();
-      resultPanel.textContent = "FORGE is choosing the strongest path...";
+      resultPanel.textContent = "FORGE is preparing the response...";
+      renderDiagnostics({});
+      resetLiveProgress();
+      setLiveStatus("Analyzing your request...");
 
       const assistantBubble = createBubble("assistant", "");
       let streamedText = "";
@@ -2113,18 +2291,30 @@ DESKTOP_HTML = """<!doctype html>
         const data = JSON.parse(event.data || "{}");
 
         if (data.type === "start") {
-          const label = data.display_name || data.model || data.provider || "FORGE";
-          workspaceSubtitle.textContent = "Using " + label + (data.provider ? " via " + data.provider : "") + ".";
+          workspaceSubtitle.textContent = "Response path ready.";
           if (!streamedText) {
-            setBubbleText(assistantBubble, "Using " + label + "...", true);
+            setBubbleText(assistantBubble, "Preparing the response...", true);
           }
           return;
         }
 
         if (data.type === "intent_analyzing") {
           setMissionStatus("running");
-          workspaceSubtitle.textContent = data.message || "FORGE is analyzing the mission...";
-          pushLiveEvent(data.message || "Analyzing intent and workspace context...");
+          const text = data.text || data.message || "Analyzing your request...";
+          workspaceSubtitle.textContent = text;
+          setLiveStatus(text);
+          pushLiveEvent(text);
+          return;
+        }
+
+        if (data.type === "plan") {
+          setMissionStatus("running");
+          const text = data.message || "Plan ready.";
+          workspaceSubtitle.textContent = text;
+          resultPanel.textContent = text;
+          setLiveStatus(text);
+          renderLivePlan(data.structured_steps || data.steps || []);
+          pushLiveEvent(text);
           return;
         }
 
@@ -2133,7 +2323,29 @@ DESKTOP_HTML = """<!doctype html>
           workspaceSubtitle.textContent = data.message || "Plan ready.";
           resultPanel.textContent = data.message || "Plan ready.";
           renderPlan(data.plan || { steps: data.steps || [] });
-          pushLiveEvent(data.message || "Plan ready.");
+          renderLivePlan(data.steps || []);
+          if (data.visible !== false) {
+            pushLiveEvent(data.message || "Plan ready.");
+          }
+          return;
+        }
+
+        if (data.type === "step_start") {
+          setMissionStatus("running");
+          const text = data.text || data.message || "Starting step...";
+          setLiveStatus(text);
+          updateLiveStep(data.step, "running", data.label || text, 0);
+          workspaceSubtitle.textContent = text;
+          pushLiveEvent(text);
+          return;
+        }
+
+        if (data.type === "step_done") {
+          const text = data.text || data.message || "Step complete.";
+          setLiveStatus(text);
+          updateLiveStep(data.step, "done", data.label || text, data.ms || 0);
+          workspaceSubtitle.textContent = text;
+          pushLiveEvent(text + (data.ms ? " (" + String(Math.round(data.ms)) + "ms)" : ""));
           return;
         }
 
@@ -2141,6 +2353,8 @@ DESKTOP_HTML = """<!doctype html>
           setMissionStatus("running");
           const line = "Starting " + stepLabel(data) + (data.action ? ": " + data.action : "");
           workspaceSubtitle.textContent = line;
+          setLiveStatus(line);
+          updateLiveStep(data.index || data.step, "running", data.action || data.label || line, 0);
           pushLiveEvent(line);
           return;
         }
@@ -2148,47 +2362,47 @@ DESKTOP_HTML = """<!doctype html>
         if (data.type === "step_completed") {
           const line = "Completed " + stepLabel(data) + " | evidence=" + String(data.evidence_count || 0);
           workspaceSubtitle.textContent = line;
+          setLiveStatus(line);
+          updateLiveStep(data.index || data.step, "done", data.label || line, data.ms || 0);
           pushLiveEvent(line);
           return;
         }
 
         if (data.type === "step_failed") {
-          const line = "Failed " + stepLabel(data) + ": " + (data.error || data.status || "unknown failure");
+          const line = data.text || "Failed " + stepLabel(data) + ": " + (data.error || data.status || "unknown failure");
           workspaceSubtitle.textContent = line;
+          setLiveStatus(line);
+          updateLiveStep(data.index || data.step, "failed", data.label || line, data.ms || 0);
           pushLiveEvent(line);
           setMissionStatus("failed");
           return;
         }
 
         if (data.type === "provider_selected") {
-          const label = data.display_name || data.final_provider_used || data.model || data.provider || "FORGE provider";
-          workspaceSubtitle.textContent = "Provider selected: " + label + ".";
-          setBubbleFooter(assistantBubble, "Provider: " + label);
-          pushLiveEvent(data.message || ("Provider selected: " + label));
+          workspaceSubtitle.textContent = "Execution path ready.";
+          pushLiveEvent("Execution path ready.");
           return;
         }
 
         if (data.type === "provider_timeout") {
-          const label = (data.provider || "provider") + (data.model ? "/" + data.model : "");
-          pushLiveEvent(data.message || ("Provider timeout: " + label));
-          appendNote("Provider timeout: " + label);
+          pushLiveEvent("A response path was slow. Trying another route...");
+          appendNote("A response path was slow. FORGE is trying another route.");
           return;
         }
 
         if (data.type === "provider_fallback") {
-          const label = data.final_provider_used || "fallback provider";
-          pushLiveEvent(data.message || ("Provider fallback -> " + label));
-          setBubbleFooter(assistantBubble, "Provider: " + label + " | Fallbacks: " + String(data.fallback_count || 0));
-          appendNote("Provider fallback -> " + label);
+          pushLiveEvent("Retrying with another route...");
+          appendNote("FORGE is retrying with another route.");
           return;
         }
 
         if (data.type === "mission_completed") {
           setMissionStatus(data.success ? "finished" : "failed");
           const latency = data.total_latency_ms ? (Number(data.total_latency_ms) / 1000).toFixed(1) + "s" : "unknown latency";
-          const footer = "Final provider: " + (data.final_provider || "local execution") + " | Total: " + latency;
+          const footer = "FORGE | " + latency;
           workspaceSubtitle.textContent = data.message || "Mission completed.";
           resultPanel.textContent = (data.message || "Mission completed.") + compactArtifacts(data.artifact_paths || []);
+          setLiveStatus(data.success ? "Mission complete." : "Mission ended with a recoverable issue.");
           setBubbleFooter(assistantBubble, footer);
           pushLiveEvent((data.message || "Mission completed.") + compactArtifacts(data.artifact_paths || []));
           return;
@@ -2196,9 +2410,11 @@ DESKTOP_HTML = """<!doctype html>
 
         if (data.type === "status") {
           setMissionStatus("running");
-          workspaceSubtitle.textContent = data.message || "FORGE is working...";
+          const text = data.text || data.message || "FORGE is working...";
+          workspaceSubtitle.textContent = text;
+          setLiveStatus(text);
           if (!streamedText) {
-            pushLiveEvent(data.message || "FORGE is working...");
+            pushLiveEvent(text);
           }
           return;
         }
@@ -2209,15 +2425,33 @@ DESKTOP_HTML = """<!doctype html>
           return;
         }
 
+        if (data.type === "result" || data.type === "user_response") {
+          streamedText = data.content || "";
+          setBubbleText(assistantBubble, streamedText, false);
+          setLiveStatus("Response ready.");
+          resultPanel.textContent = streamedText || "Response ready.";
+          if (data.has_details) {
+            diagnosticsToggle.classList.remove("hidden");
+            diagnosticsToggle.textContent = "Show technical details";
+          }
+          return;
+        }
+
+        if (data.type === "technical_details") {
+          renderDiagnostics({ technical_details: data.content || {} });
+          return;
+        }
+
         if (data.type === "done") {
           const payload = data.payload || {};
           if (payload.workspace_root) {
             renderWorkspace(payload);
+            renderOperatorResult(payload);
           }
-          renderOperatorResult(payload);
-          const finalText = streamedText || payload.answer || payload.result || "No result produced.";
+          const finalText = streamedText || data.user_response || payload.user_response || payload.answer || payload.result || "No result produced.";
           setBubbleText(assistantBubble, finalText, false);
           setBubbleFooter(assistantBubble, data.footer || payload.stream_footer || "");
+          setLiveStatus("Done.");
           appendNote("Response completed successfully.");
           finishStream();
           return;
@@ -2396,10 +2630,17 @@ DESKTOP_HTML = """<!doctype html>
       nextAction.textContent = "Awaiting mission.";
       nextNote.textContent = "FORGE must say what should happen next when a task is partial or blocked.";
       resultPanel.textContent = "The verified result, evidence summary, and mission notes will appear here.";
+      renderDiagnostics({});
+      resetLiveProgress();
       workspaceSubtitle.textContent = "Ask in Arabic or English. FORGE replies naturally, and executes only when your request needs tools.";
       setListPlaceholder(planList, "No execution plan yet.");
       setListPlaceholder(stepList, "No steps executed yet.");
       promptBox.focus();
+    });
+
+    diagnosticsToggle.addEventListener("click", () => {
+      const isHidden = diagnosticsPanel.classList.toggle("hidden");
+      diagnosticsToggle.textContent = isHidden ? "Show technical details" : "Hide technical details";
     });
 
     promptBox.addEventListener("keydown", (event) => {

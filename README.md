@@ -71,17 +71,21 @@ This makes new skills pluggable without rewriting the core brain.
 ## Install
 
 ```bash
-pip install forge-agent
+pip install forge-agent==1.1.5
+forge --version  # FORGE 1.1.5
 ```
 
 ## Quick Start
 
 ```bash
+forge --version
 forge status
 forge discover
 forge operate "Analyze this repository and save a summary file"
 forge operate "Read forge/brain/operator.py and explain the execution flow"
 ```
+
+Current Python package release: `1.1.5` on PyPI.
 
 ## Python API
 
@@ -107,6 +111,8 @@ Current foundation includes:
 - model routing and provider registry
 - quota management and model discovery
 - skill registry and skill router
+- skill governance metadata, precondition checks, and gated Tier 4 routing
+- live desktop execution streaming with visible plan and step progress
 - safety, validation, and recovery layers
 - grounded workspace analysis and file reading skills
 

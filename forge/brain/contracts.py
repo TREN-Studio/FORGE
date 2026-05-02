@@ -111,6 +111,8 @@ class OperatorResult(BaseModel):
     objective: str
     approach_taken: list[str] = Field(default_factory=list)
     result: str
+    user_response: str = ""
+    technical_details: dict[str, Any] = Field(default_factory=dict)
     validation_status: CompletionState
     risks_or_limitations: list[str] = Field(default_factory=list)
     best_next_action: str

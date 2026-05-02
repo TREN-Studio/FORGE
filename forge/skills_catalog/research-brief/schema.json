@@ -1,23 +1,68 @@
 {
-  "input_schema": {
-    "type": "object",
-    "required": ["request", "objective"],
-    "properties": {
-      "request": { "type": "string" },
-      "objective": { "type": "string" },
-      "memory_context": { "type": "string" }
-    }
-  },
-  "output_schema": {
-    "type": "object",
-    "required": ["status", "brief_markdown", "key_questions"],
-    "properties": {
-      "status": { "type": "string", "enum": ["completed", "dry_run"] },
-      "brief_markdown": { "type": "string" },
-      "key_questions": {
-        "type": "array",
-        "items": { "type": "string" }
-      }
-    }
-  }
+    "input_schema":  {
+                         "type":  "object",
+                         "required":  [
+                                          "request",
+                                          "objective"
+                                      ],
+                         "properties":  {
+                                            "request":  {
+                                                            "type":  "string"
+                                                        },
+                                            "objective":  {
+                                                              "type":  "string"
+                                                          },
+                                            "memory_context":  {
+                                                                   "type":  "string"
+                                                               }
+                                        }
+                     },
+    "output_schema":  {
+                          "type":  "object",
+                          "required":  [
+                                           "status",
+                                           "brief_markdown",
+                                           "key_questions"
+                                       ],
+                          "properties":  {
+                                             "status":  {
+                                                            "type":  "string",
+                                                            "enum":  [
+                                                                         "completed",
+                                                                         "dry_run"
+                                                                     ]
+                                                        },
+                                             "brief_markdown":  {
+                                                                    "type":  "string"
+                                                                },
+                                             "key_questions":  {
+                                                                   "type":  "array",
+                                                                   "items":  {
+                                                                                 "type":  "string"
+                                                                             }
+                                                               }
+                                         }
+                      },
+    "id":  "research-brief",
+    "tier":  1,
+    "allowlist":  [
+                      "operator",
+                      "desktop",
+                      "worker"
+                  ],
+    "trigger_rules":  [
+                          "research",
+                          "brief",
+                          "investigate",
+                          "compare",
+                          "key questions",
+                          "market"
+                      ],
+    "risk_class":  "read",
+    "built_in":  true,
+    "preconditions":  [
+                          "request",
+                          "objective"
+                      ],
+    "visibility":  "always"
 }

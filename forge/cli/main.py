@@ -19,6 +19,7 @@ from rich.prompt import Prompt
 from rich.rule import Rule
 from rich.spinner import Spinner
 from rich.table import Table
+from forge import __version__
 
 def _configure_stdio() -> None:
     for stream in (sys.stdout, sys.stderr):
@@ -37,13 +38,33 @@ cli = typer.Typer(
 )
 
 FORGE_BANNER = """[bold #FF6B1A]FORGE[/bold #FF6B1A]
-[dim]Free Open Reasoning & Generation Engine  v1.1.4[/dim]
+[dim]Free Open Reasoning & Generation Engine  v{version}[/dim]
 [dim]https://www.trenstudio.com/FORGE[/dim]
 """
 
 
 def _print_banner() -> None:
-    console.print(FORGE_BANNER)
+    console.print(FORGE_BANNER.format(version=__version__))
+
+
+def _version_callback(value: bool) -> None:
+    if value:
+        console.print(f"FORGE [bold #FF6B1A]{__version__}[/bold #FF6B1A]")
+        raise typer.Exit()
+
+
+@cli.callback()
+def main(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        help="Show the installed FORGE version and exit.",
+        callback=_version_callback,
+        is_eager=True,
+    ),
+) -> None:
+    """FORGE command line entrypoint."""
+    return None
 
 
 def _get_session():
@@ -436,8 +457,6 @@ def memory(
 @cli.command()
 def version():
     """Show the installed FORGE version."""
-    from forge import __version__
-
     console.print(f"FORGE [bold #FF6B1A]{__version__}[/bold #FF6B1A]")
 
 

@@ -1,25 +1,83 @@
 {
-  "input_schema": {
-    "type": "object",
-    "required": ["request", "objective"],
-    "properties": {
-      "request": { "type": "string" },
-      "objective": { "type": "string" },
-      "memory_context": { "type": "string" }
-    }
-  },
-  "output_schema": {
-    "type": "object",
-    "required": ["status", "summary", "facts", "analysis_markdown", "evidence"],
-    "properties": {
-      "status": { "type": "string", "enum": ["completed", "partial", "dry_run"] },
-      "summary": { "type": "string" },
-      "facts": { "type": "object" },
-      "analysis_markdown": { "type": "string" },
-      "evidence": {
-        "type": "array",
-        "items": { "type": "string" }
-      }
-    }
-  }
+    "input_schema":  {
+                         "type":  "object",
+                         "required":  [
+                                          "request",
+                                          "objective"
+                                      ],
+                         "properties":  {
+                                            "request":  {
+                                                            "type":  "string"
+                                                        },
+                                            "objective":  {
+                                                              "type":  "string"
+                                                          },
+                                            "memory_context":  {
+                                                                   "type":  "string"
+                                                               }
+                                        }
+                     },
+    "output_schema":  {
+                          "type":  "object",
+                          "required":  [
+                                           "status",
+                                           "summary",
+                                           "facts",
+                                           "analysis_markdown",
+                                           "evidence"
+                                       ],
+                          "properties":  {
+                                             "status":  {
+                                                            "type":  "string",
+                                                            "enum":  [
+                                                                         "completed",
+                                                                         "partial",
+                                                                         "dry_run"
+                                                                     ]
+                                                        },
+                                             "summary":  {
+                                                             "type":  "string"
+                                                         },
+                                             "facts":  {
+                                                           "type":  "object"
+                                                       },
+                                             "analysis_markdown":  {
+                                                                       "type":  "string"
+                                                                   },
+                                             "evidence":  {
+                                                              "type":  "array",
+                                                              "items":  {
+                                                                            "type":  "string"
+                                                                        }
+                                                          }
+                                         }
+                      },
+    "id":  "system-inspector",
+    "tier":  1,
+    "allowlist":  [
+                      "operator",
+                      "desktop",
+                      "worker"
+                  ],
+    "trigger_rules":  [
+                          "system",
+                          "computer",
+                          "machine",
+                          "device",
+                          "os",
+                          "windows",
+                          "linux",
+                          "macos",
+                          "hardware",
+                          "cpu",
+                          "ram",
+                          "disk"
+                      ],
+    "risk_class":  "read",
+    "built_in":  true,
+    "preconditions":  [
+                          "request",
+                          "objective"
+                      ],
+    "visibility":  "on_request"
 }

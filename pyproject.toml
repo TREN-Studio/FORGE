@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "forge-agent"
-version = "1.1.4"
+version = "1.1.5"
 description = "The world's most powerful free AI agent. Self-evolving. Zero cost. Forever."
 readme = "README.md"
 license = {text = "MIT"}
@@ -32,6 +32,7 @@ dependencies = [
     "python-dotenv>=1.0",
     "tiktoken>=0.7",
     "colorama>=0.4",
+    "cryptography>=42",
 ]
 
 [project.optional-dependencies]
@@ -51,7 +52,18 @@ include = ["forge*", "site_backend*"]
 exclude = ["assets*", "installer*", "output*", "site*", "site_external*", "tests*", "tools*"]
 
 [tool.setuptools.package-data]
-forge = ["skills_catalog/**/*"]
+forge = [
+    "skills_catalog/*/schema.json",
+    "skills_catalog/*/SKILL.md",
+    "skills_catalog/*/executor.py",
+    "skills_catalog/_template/SKILL.md",
+]
+
+[tool.setuptools.exclude-package-data]
+forge = [
+    "skills_catalog/**/__pycache__/*",
+    "skills_catalog/**/*.pyc",
+]
 
 [tool.ruff]
 line-length = 100

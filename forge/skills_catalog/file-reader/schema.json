@@ -1,19 +1,61 @@
 {
-  "output_schema": {
-    "type": "object",
-    "required": ["status", "summary", "file_excerpt_markdown", "files_reviewed", "evidence"],
-    "properties": {
-      "status": { "type": "string", "enum": ["completed", "partial"] },
-      "summary": { "type": "string" },
-      "file_excerpt_markdown": { "type": "string" },
-      "files_reviewed": {
-        "type": "array",
-        "items": { "type": "string" }
-      },
-      "evidence": {
-        "type": "array",
-        "items": { "type": "string" }
-      }
-    }
-  }
+    "output_schema":  {
+                          "type":  "object",
+                          "required":  [
+                                           "status",
+                                           "summary",
+                                           "file_excerpt_markdown",
+                                           "files_reviewed",
+                                           "evidence"
+                                       ],
+                          "properties":  {
+                                             "status":  {
+                                                            "type":  "string",
+                                                            "enum":  [
+                                                                         "completed",
+                                                                         "partial"
+                                                                     ]
+                                                        },
+                                             "summary":  {
+                                                             "type":  "string"
+                                                         },
+                                             "file_excerpt_markdown":  {
+                                                                           "type":  "string"
+                                                                       },
+                                             "files_reviewed":  {
+                                                                    "type":  "array",
+                                                                    "items":  {
+                                                                                  "type":  "string"
+                                                                              }
+                                                                },
+                                             "evidence":  {
+                                                              "type":  "array",
+                                                              "items":  {
+                                                                            "type":  "string"
+                                                                        }
+                                                          }
+                                         }
+                      },
+    "id":  "file-reader",
+    "tier":  1,
+    "allowlist":  [
+                      "operator",
+                      "desktop",
+                      "worker"
+                  ],
+    "trigger_rules":  [
+                          "read",
+                          "inspect",
+                          "analyze",
+                          "review",
+                          "summarize",
+                          "extract",
+                          "open file"
+                      ],
+    "risk_class":  "read",
+    "built_in":  true,
+    "preconditions":  [
+                          "file_path"
+                      ],
+    "visibility":  "always"
 }

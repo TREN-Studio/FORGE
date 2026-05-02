@@ -1,0 +1,90 @@
+{
+    "output_schema":  {
+                          "properties":  {
+                                             "response_status":  {
+                                                                     "type":  "number"
+                                                                 },
+                                             "response_body_preview":  {
+                                                                           "type":  "string"
+                                                                       },
+                                             "target_url":  {
+                                                                "type":  "string"
+                                                            },
+                                             "summary":  {
+                                                             "type":  "string"
+                                                         },
+                                             "status":  {
+                                                            "type":  "string",
+                                                            "enum":  [
+                                                                         "completed",
+                                                                         "dry_run"
+                                                                     ]
+                                                        },
+                                             "published_bytes":  {
+                                                                     "type":  "number"
+                                                                 }
+                                         },
+                          "type":  "object",
+                          "required":  [
+                                           "status",
+                                           "target_url",
+                                           "response_status",
+                                           "response_body_preview",
+                                           "published_bytes"
+                                       ]
+                      },
+    "input_schema":  {
+                         "properties":  {
+                                            "content":  {
+                                                            "type":  "string"
+                                                        },
+                                            "prior_results":  {
+                                                                  "type":  "object"
+                                                              },
+                                            "request":  {
+                                                            "type":  "string"
+                                                        },
+                                            "target_url":  {
+                                                               "type":  "string"
+                                                           },
+                                            "method":  {
+                                                           "type":  "string",
+                                                           "enum":  [
+                                                                        "POST",
+                                                                        "PUT",
+                                                                        "PATCH"
+                                                                    ]
+                                                       },
+                                            "objective":  {
+                                                              "type":  "string"
+                                                          }
+                                        },
+                         "type":  "object",
+                         "required":  [
+                                          "request",
+                                          "objective"
+                                      ]
+                     },
+    "id":  "external-publisher",
+    "tier":  2,
+    "allowlist":  [
+                      "operator",
+                      "desktop",
+                      "worker"
+                  ],
+    "trigger_rules":  [
+                          "publish",
+                          "send",
+                          "post",
+                          "upload",
+                          "submit",
+                          "webhook",
+                          "external endpoint"
+                      ],
+    "risk_class":  "publish",
+    "built_in":  true,
+    "preconditions":  [
+                          "target_url"
+                      ],
+    "visibility":  "on_request"
+}

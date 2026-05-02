@@ -14,6 +14,7 @@ INTENT_RULES: dict[IntentKind, tuple[str, ...]] = {
         "browse",
         "visit",
         "website",
+        "site",
         "web",
         "page",
         "url",
@@ -223,6 +224,8 @@ class IntentResolver:
             return IntentKind.DEBUGGING
         if IntentKind.ORCHESTRATION in intents or IntentKind.AUTOMATION in intents:
             return IntentKind.ORCHESTRATION if IntentKind.ORCHESTRATION in intents else IntentKind.AUTOMATION
+        if IntentKind.RESEARCH in intents and IntentKind.ANALYSIS in intents:
+            return IntentKind.RESEARCH
         if IntentKind.RESEARCH in intents and IntentKind.WRITING in intents:
             return IntentKind.RESEARCH
         return intents[0]

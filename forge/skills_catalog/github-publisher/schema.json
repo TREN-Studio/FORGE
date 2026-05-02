@@ -1,30 +1,97 @@
 {
-  "input_schema": {
-    "type": "object",
-    "required": ["request", "objective"],
-    "properties": {
-      "request": { "type": "string" },
-      "objective": { "type": "string" },
-      "target_repo": { "type": "string" },
-      "repo_path": { "type": "string" },
-      "branch": { "type": "string" },
-      "commit_message": { "type": "string" },
-      "content": { "type": "string" }
-    }
-  },
-  "output_schema": {
-    "type": "object",
-    "required": ["status", "repository", "repo_path", "branch", "response_status", "published_bytes"],
-    "properties": {
-      "status": { "type": "string", "enum": ["completed", "dry_run"] },
-      "repository": { "type": "string" },
-      "repo_path": { "type": "string" },
-      "branch": { "type": "string" },
-      "commit_sha": { "type": "string" },
-      "content_url": { "type": "string" },
-      "response_status": { "type": "number" },
-      "published_bytes": { "type": "number" },
-      "summary": { "type": "string" }
-    }
-  }
+    "input_schema":  {
+                         "type":  "object",
+                         "required":  [
+                                          "request",
+                                          "objective"
+                                      ],
+                         "properties":  {
+                                            "request":  {
+                                                            "type":  "string"
+                                                        },
+                                            "objective":  {
+                                                              "type":  "string"
+                                                          },
+                                            "target_repo":  {
+                                                                "type":  "string"
+                                                            },
+                                            "repo_path":  {
+                                                              "type":  "string"
+                                                          },
+                                            "branch":  {
+                                                           "type":  "string"
+                                                       },
+                                            "commit_message":  {
+                                                                   "type":  "string"
+                                                               },
+                                            "content":  {
+                                                            "type":  "string"
+                                                        }
+                                        }
+                     },
+    "output_schema":  {
+                          "type":  "object",
+                          "required":  [
+                                           "status",
+                                           "repository",
+                                           "repo_path",
+                                           "branch",
+                                           "response_status",
+                                           "published_bytes"
+                                       ],
+                          "properties":  {
+                                             "status":  {
+                                                            "type":  "string",
+                                                            "enum":  [
+                                                                         "completed",
+                                                                         "dry_run"
+                                                                     ]
+                                                        },
+                                             "repository":  {
+                                                                "type":  "string"
+                                                            },
+                                             "repo_path":  {
+                                                               "type":  "string"
+                                                           },
+                                             "branch":  {
+                                                            "type":  "string"
+                                                        },
+                                             "commit_sha":  {
+                                                                "type":  "string"
+                                                            },
+                                             "content_url":  {
+                                                                 "type":  "string"
+                                                             },
+                                             "response_status":  {
+                                                                     "type":  "number"
+                                                                 },
+                                             "published_bytes":  {
+                                                                     "type":  "number"
+                                                                 },
+                                             "summary":  {
+                                                             "type":  "string"
+                                                         }
+                                         }
+                      },
+    "id":  "github-publisher",
+    "tier":  2,
+    "allowlist":  [
+                      "operator",
+                      "desktop",
+                      "worker"
+                  ],
+    "trigger_rules":  [
+                          "github",
+                          "publish to github",
+                          "commit",
+                          "push",
+                          "open pr",
+                          "create release"
+                      ],
+    "risk_class":  "publish",
+    "built_in":  true,
+    "preconditions":  [
+                          "target_repo"
+                      ],
+    "visibility":  "on_request"
 }

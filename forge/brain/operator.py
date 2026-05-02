@@ -276,26 +276,43 @@ class ForgeOperator:
             fallbacks=[],
             completion_criteria=["Return a natural, direct answer without fake execution."],
         )
+        normalized_request = request.strip().lower()
+        direct_reply = ""
+        if self._asks_identity(normalized_request):
+            direct_reply = self._identity_text()
+        elif self._is_conversational_prompt(normalized_request):
+            direct_reply = self._friendly_intro_text()
+        provider_telemetry: dict[str, Any] = {}
         try:
-            reply_response = self.session.ask_response(request, task_type=intent.task_type, remember=False)
-            reply = reply_response.content
+            if direct_reply:
+                reply = direct_reply
+                artifacts = {}
+                mission_trace = [
+                    "Intent resolved as conversation.",
+                    "Identity prompt answered from approved branding policy.",
+                    "No model or execution skills were required.",
+                ]
+            else:
+                reply_response = self.session.ask_response(request, task_type=intent.task_type, remember=False)
+                reply = reply_response.content
+                artifacts = {
+                    "conversation_metadata": {
+                        "model_id": reply_response.model_id,
+                        "provider": reply_response.provider,
+                        "latency_ms": reply_response.latency_ms,
+                        "total_tokens": reply_response.total_tokens,
+                        "routing_telemetry": reply_response.routing_telemetry,
+                    }
+                }
+                provider_telemetry = dict(reply_response.routing_telemetry or {})
+                mission_trace = [
+                    "Intent resolved as conversation.",
+                    "No tools were required.",
+                    "FORGE selected the strongest available model path for a direct reply.",
+                ]
             status = CompletionState.FINISHED
             risks: list[str] = []
             best_next_action = "Continue the conversation or give FORGE a concrete task to execute."
-            mission_trace = [
-                "Intent resolved as conversation.",
-                "No tools were required.",
-                "FORGE selected the strongest available model path for a direct reply.",
-            ]
-            artifacts = {
-                "conversation_metadata": {
-                    "model_id": reply_response.model_id,
-                    "provider": reply_response.provider,
-                    "latency_ms": reply_response.latency_ms,
-                    "total_tokens": reply_response.total_tokens,
-                    "routing_telemetry": reply_response.routing_telemetry,
-                }
-            }
         except Exception as exc:
             reply = self._clarification_text(request)
             status = CompletionState.PARTIALLY_FINISHED
@@ -328,7 +345,7 @@ class ForgeOperator:
             audit_log_path=audit_log_path,
             resumed_from_step=resumed_from_step,
             agent_reviews=[],
-            provider_telemetry=reply_response.routing_telemetry if status == CompletionState.FINISHED else {},
+            provider_telemetry=provider_telemetry,
         )
         self.audit_store.save_progress(
             mission_id,
@@ -403,13 +420,7 @@ class ForgeOperator:
 
     @staticmethod
     def _identity_text() -> str:
-        return (
-            "I am FORGE, developed by TREN Studio.\n"
-            "TREN Studio was founded by Larbi Aboudi.\n\n"
-            "I can chat with you, and I am most useful when you give me a concrete task. "
-            "For example, I can inspect files, create reports, edit code, run checks, "
-            "and produce verified outputs."
-        )
+        return "Developed by TREN Studio. Founded by Larbi Aboudi."
 
     @staticmethod
     def _friendly_intro_text() -> str:
@@ -559,7 +570,10 @@ class ForgeOperator:
     def _summarize_artifacts(artifacts: dict[str, Any], step_results: list[StepExecutionResult]) -> str:
         if artifacts:
             lines = []
+            hidden_keys = {"mission_trace", "mission_audit", "agent_reviews", "worker_lanes"}
             for key, value in artifacts.items():
+                if key in hidden_keys:
+                    continue
                 lines.append(f"[{key}]")
                 if isinstance(value, dict):
                     if "analysis_markdown" in value:
@@ -573,32 +587,15 @@ class ForgeOperator:
                     elif "scorecard_markdown" in value:
                         lines.append(str(value["scorecard_markdown"]))
                     elif "page_state" in value or "snapshot_text" in value:
-                        lines.append(str(value.get("summary") or value.get("current_url") or "Browser step completed."))
+                        lines.append(ForgeOperator._browser_analysis_summary(value))
                         if value.get("research_summary_markdown"):
                             lines.append(str(value["research_summary_markdown"]))
-                        if value.get("action_trace"):
-                            lines.append(str(value["action_trace"]))
-                        if value.get("snapshot_text"):
-                            lines.append(str(value["snapshot_text"]))
                     elif "mission_id" in value and "audit_log_path" in value:
-                        lines.append(f"Mission ID: {value.get('mission_id')}")
-                        lines.append(f"Audit log: {value.get('audit_log_path')}")
+                        lines.pop()
+                        continue
                     elif "lanes" in value:
-                        raw_lanes = value.get("lanes", [])
-                        lane_lines: list[str] = []
-                        if isinstance(raw_lanes, dict):
-                            for service in raw_lanes.get("services", [])[:6]:
-                                lane_lines.append(
-                                    f"{service.get('service')}: status={service.get('status')} "
-                                    f"processed={sum(int(worker.get('processed_jobs', 0)) for worker in service.get('workers', []))} "
-                                    f"queued={service.get('queued_jobs', 0)}"
-                                )
-                        else:
-                            for lane in raw_lanes[:6]:
-                                lane_lines.append(
-                                    f"{lane.get('lane_id')}: processed={lane.get('processed_jobs')} queued={lane.get('queued_jobs')}"
-                                )
-                        lines.append("Worker lanes -> " + "; ".join(lane_lines))
+                        lines.pop()
+                        continue
                     elif "diff" in value and value.get("summary"):
                         lines.append(str(value["summary"]))
                         if value["diff"]:
@@ -612,17 +609,91 @@ class ForgeOperator:
                     elif "summary" in value:
                         lines.append(str(value["summary"]))
                     elif "trace_markdown" in value:
-                        lines.append(str(value["trace_markdown"]))
+                        lines.pop()
+                        continue
                     else:
-                        lines.append(str({k: v for k, v in value.items() if k != "payload_preview"}))
+                        summary = value.get("summary") or value.get("content") or value.get("status")
+                        lines.append(str(summary or "Completed."))
                 else:
+                    if key in hidden_keys:
+                        lines.pop()
+                        continue
                     lines.append(str(value))
-            return "\n\n".join(lines)
+            if lines:
+                return "\n\n".join(lines)
+            return "Completed. Technical execution details are available in diagnostics."
         if step_results:
             if step_results[-1].output is None:
                 return step_results[-1].error or "No output produced."
             return str(step_results[-1].output)
         return "No output produced."
+
+    @staticmethod
+    def _browser_analysis_summary(value: dict[str, Any]) -> str:
+        title = str(value.get("title") or "").strip()
+        current_url = str(value.get("current_url") or "").strip()
+        page_state = value.get("page_state") if isinstance(value.get("page_state"), dict) else {}
+        headings = ForgeOperator._page_state_values(page_state.get("headings", []), limit=5)
+        text = ForgeOperator._page_state_values(page_state.get("text", []), limit=6)
+        links = ForgeOperator._page_state_values(page_state.get("links", []), limit=5)
+        buttons = ForgeOperator._page_state_values(page_state.get("buttons", []), limit=4)
+
+        offer_signal = headings[0] if headings else title or current_url or "this site"
+        strengths = []
+        if headings:
+            strengths.append("Clear page hierarchy was detected.")
+        if buttons:
+            strengths.append("The page exposes visible calls to action.")
+        if links:
+            strengths.append("Navigation or outbound paths are available for deeper exploration.")
+        if not strengths:
+            strengths.append("The page loaded and returned readable content.")
+
+        weaknesses = []
+        if not headings:
+            weaknesses.append("No strong heading structure was visible in the captured semantic snapshot.")
+        if not buttons:
+            weaknesses.append("No obvious call-to-action button was visible in the captured semantic snapshot.")
+        if len(text) < 3:
+            weaknesses.append("The captured copy is thin, so the value proposition may need to be clearer above the fold.")
+        if not weaknesses:
+            weaknesses.append("No major structural issue was visible from the first-pass snapshot.")
+
+        improvements = [
+            "Make the primary offer and target audience unmistakable in the first screen.",
+            "Keep one primary CTA repeated at natural decision points.",
+            "Add proof signals such as examples, outcomes, testimonials, or product screenshots where relevant.",
+        ]
+
+        lines = [
+            f"Summary: I opened {current_url or 'the requested URL'} and reviewed the visible page structure.",
+            f"What it presents: {offer_signal}.",
+            "",
+            "Strengths:",
+            *[f"- {item}" for item in strengths[:3]],
+            "",
+            "Weaknesses:",
+            *[f"- {item}" for item in weaknesses[:3]],
+            "",
+            "Improvements:",
+            *[f"- {item}" for item in improvements],
+        ]
+        return "\n".join(lines)
+
+    @staticmethod
+    def _page_state_values(items: Any, *, limit: int) -> list[str]:
+        values: list[str] = []
+        if not isinstance(items, list):
+            return values
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            text = str(item.get("name") or item.get("text") or item.get("value") or "").strip()
+            if text and text not in values:
+                values.append(text[:180])
+            if len(values) >= limit:
+                break
+        return values
 
     @staticmethod
     def _extract_evidence(output: Any) -> list[str]:

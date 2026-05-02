@@ -5,6 +5,7 @@ import re
 from forge.brain.contracts import IntentKind, TaskIntent
 from forge.config.settings import OperatorSettings
 from forge.skills.contracts import RoutingDecision, SkillDefinition, SkillMatch
+from forge.skills.registry import SkillRegistry
 
 
 INTENT_TO_CATEGORY: dict[IntentKind, tuple[str, ...]] = {
@@ -43,6 +44,7 @@ SYSTEM_TERMS = {
     "مواصفات",
 }
 PATH_HINTS = ("/", "\\", ".py", ".ts", ".tsx", ".js", ".json", ".md", ".yml", ".yaml", ".toml", ".html", ".htm")
+URL_HINT_PATTERN = re.compile(r"(https?://[^\s`\"']+|file://[^\s`\"']+|data:text/html,[^\s`\"']+)", flags=re.IGNORECASE)
 EDIT_TERMS = {"write", "edit", "modify", "create", "update", "append", "prepend", "replace", "patch", "save", "اكتب", "حرر", "حدث", "بدل", "اضف"}
 COMMAND_TERMS = {"run", "execute", "command", "shell", "terminal", "compile", "pytest", "git", "rg", "نفذ", "شغل", "امر", "ترمنال"}
 BROWSER_TERMS = {"browse", "visit", "website", "web", "page", "url", "browser", "navigate", "click", "fill", "form", "link", "site", "open", "extract", "افتح", "تصفح", "موقع", "صفحة", "رابط", "اضغط", "املأ", "متصفح", "استخرج"}
@@ -55,8 +57,11 @@ NEGATED_EDIT_PHRASES = ("do not edit", "don't edit", "without editing", "no edit
 class SkillRouter:
     """Structured skill routing with trust and safety awareness."""
 
-    def __init__(self, settings: OperatorSettings) -> None:
+    def __init__(self, settings: OperatorSettings, registry: SkillRegistry | None = None) -> None:
         self._settings = settings
+        self._registry = registry or SkillRegistry(settings)
+        if registry is None:
+            self._registry.refresh()
 
     def route(
         self,
@@ -70,6 +75,16 @@ class SkillRouter:
                 fallback_skills=[],
                 matches=[],
                 reasons=["No skills are registered."],
+            )
+
+        skills = self._governed_skills(intent, skills)
+        if not skills:
+            return RoutingDecision(
+                mode="reasoning_only",
+                selected_skills=[],
+                fallback_skills=[],
+                matches=[],
+                reasons=["No skill passed governance visibility, risk, and precondition checks."],
             )
 
         matches = [self._score_skill(intent, skill) for skill in skills]
@@ -165,8 +180,17 @@ class SkillRouter:
             used_names.add(match.skill_name)
         return selected[: self._settings.max_plan_steps]
 
+    def _governed_skills(self, intent: TaskIntent, skills: list[SkillDefinition]) -> list[SkillDefinition]:
+        candidate_meta = self._registry.skills_for_intent(intent)
+        candidate_ids = {meta.id for meta in candidate_meta}
+        if not candidate_ids:
+            return []
+        return [skill for skill in skills if skill.name in candidate_ids]
+
     def _is_read_only_workspace_request(self, text: str) -> bool:
         lowered = text.lower()
+        if self._has_url_hint(text) and not self._is_workspace_task(text):
+            return False
         if not self._has_explicit_path(text) and not self._is_workspace_task(text):
             return False
         if any(phrase in lowered for phrase in NEGATED_EDIT_PHRASES):
@@ -298,6 +322,9 @@ class SkillRouter:
         ):
             score += 0.34
             reasons.append("Skill is specialized for live browser execution.")
+            if self._has_url_hint(intent.raw_request):
+                score += 0.16
+                reasons.append("Explicit URL requires live browser analysis.")
         elif (
             self._has_term_overlap(intent.raw_request, BROWSER_TERMS) or self._has_url_hint(intent.raw_request)
         ) and any(token in lowered_name for token in ("writer", "artifact", "reader")):
@@ -349,7 +376,7 @@ class SkillRouter:
 
     @staticmethod
     def _has_explicit_path(text: str) -> bool:
-        lowered = text.lower()
+        lowered = URL_HINT_PATTERN.sub(" ", text.lower())
         return any(hint in lowered for hint in PATH_HINTS)
 
     @staticmethod

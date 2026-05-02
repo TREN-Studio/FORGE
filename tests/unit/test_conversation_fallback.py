@@ -25,8 +25,7 @@ class ConversationFallbackTests(unittest.TestCase):
     def test_identity_prompt_uses_approved_branding_only(self) -> None:
         reply = ForgeOperator._clarification_text("who developed you?")
 
-        self.assertIn("developed by TREN Studio", reply)
-        self.assertIn("TREN Studio was founded by Larbi Aboudi", reply)
+        self.assertEqual(reply, "Developed by TREN Studio. Founded by Larbi Aboudi.")
         self.assertNotIn("not a general chatbot", reply)
 
     def test_ambiguous_prompt_guides_toward_agent_task(self) -> None:

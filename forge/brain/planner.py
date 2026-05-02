@@ -388,7 +388,7 @@ class PlanningEngine:
     @staticmethod
     def _extract_publish_target(request: str) -> str:
         lowered = request.lower()
-        if not any(term in lowered for term in PUBLISH_TERMS):
+        if not PlanningEngine._contains_named_term(lowered, PUBLISH_TERMS):
             return ""
         match = URL_PATTERN.search(request)
         return PlanningEngine._clean_url_target(match.group(1)) if match else ""
@@ -396,7 +396,7 @@ class PlanningEngine:
     @staticmethod
     def _extract_github_target(request: str, paths: list[str]) -> dict[str, str]:
         lowered = request.lower()
-        if not any(term in lowered for term in PUBLISH_TERMS):
+        if not PlanningEngine._contains_named_term(lowered, PUBLISH_TERMS):
             return {}
         if not PlanningEngine._contains_named_term(lowered, GITHUB_TERMS) and "github.com/" not in lowered:
             return {}
@@ -437,7 +437,7 @@ class PlanningEngine:
     @staticmethod
     def _extract_wordpress_target(request: str, publish_target: str) -> dict[str, str]:
         lowered = request.lower()
-        if not any(term in lowered for term in PUBLISH_TERMS):
+        if not PlanningEngine._contains_named_term(lowered, PUBLISH_TERMS):
             return {}
         if not PlanningEngine._contains_named_term(lowered, WORDPRESS_TERMS):
             return {}

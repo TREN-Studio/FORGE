@@ -1,20 +1,69 @@
 {
-  "input_schema": {
-    "type": "object",
-    "required": ["request", "objective"],
-    "properties": {
-      "request": { "type": "string" },
-      "objective": { "type": "string" },
-      "memory_context": { "type": "string" }
-    }
-  },
-  "output_schema": {
-    "type": "object",
-    "required": ["status", "scorecard_markdown", "recommendation"],
-    "properties": {
-      "status": { "type": "string", "enum": ["completed", "dry_run"] },
-      "scorecard_markdown": { "type": "string" },
-      "recommendation": { "type": "string", "enum": ["go", "test", "reject"] }
-    }
-  }
+    "input_schema":  {
+                         "type":  "object",
+                         "required":  [
+                                          "request",
+                                          "objective"
+                                      ],
+                         "properties":  {
+                                            "request":  {
+                                                            "type":  "string"
+                                                        },
+                                            "objective":  {
+                                                              "type":  "string"
+                                                          },
+                                            "memory_context":  {
+                                                                   "type":  "string"
+                                                               }
+                                        }
+                     },
+    "output_schema":  {
+                          "type":  "object",
+                          "required":  [
+                                           "status",
+                                           "scorecard_markdown",
+                                           "recommendation"
+                                       ],
+                          "properties":  {
+                                             "status":  {
+                                                            "type":  "string",
+                                                            "enum":  [
+                                                                         "completed",
+                                                                         "dry_run"
+                                                                     ]
+                                                        },
+                                             "scorecard_markdown":  {
+                                                                        "type":  "string"
+                                                                    },
+                                             "recommendation":  {
+                                                                    "type":  "string",
+                                                                    "enum":  [
+                                                                                 "go",
+                                                                                 "test",
+                                                                                 "reject"
+                                                                             ]
+                                                                }
+                                         }
+                      },
+    "id":  "affiliate-offer-analyzer",
+    "tier":  1,
+    "allowlist":  [
+                      "operator",
+                      "desktop",
+                      "worker"
+                  ],
+    "trigger_rules":  [
+                          "affiliate",
+                          "offer",
+                          "scorecard",
+                          "analyze offer",
+                          "review offer"
+                      ],
+    "risk_class":  "read",
+    "built_in":  true,
+    "preconditions":  [
+                          "request",
+                          "objective"
+                      ],
+    "visibility":  "always"
 }

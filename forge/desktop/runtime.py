@@ -57,6 +57,30 @@ Source: demo_input.md
 _DEMO_PROMPT = f"""Read demo_input.md first, then create action_items.md with this content:
 ```markdown
 {_DEMO_OUTPUT}```"""
+_VISIBLE_WORD_LIMIT = 180
+_VISIBLE_BLOCKED_MARKERS = (
+    "mission_trace",
+    "worker_lanes",
+    "agent_reviews",
+    "provider_telemetry",
+    "routing_telemetry",
+    "model_used",
+    "provider_used",
+    "audit_log",
+    "fallback_count",
+    "attempted_providers",
+    "raw approvals",
+    "nvidia",
+    "deepseek",
+    "openai",
+    "anthropic",
+    "gemini",
+    "groq",
+    "mistral",
+    "openrouter",
+    "together",
+    "cloudflare",
+)
 
 
 def _default_state_directory() -> Path:
@@ -265,9 +289,17 @@ def stream_prompt(
         raise ValueError("Prompt is empty.")
 
     yield {
+        "type": "status",
+        "stage": "intent",
+        "text": "Analyzing your request...",
+        "message": "Analyzing your request...",
+        "elapsed_ms": 0,
+    }
+    yield {
         "type": "intent_analyzing",
         "stage": "intent",
-        "message": "Analyzing intent and workspace context...",
+        "text": "Analyzing your request...",
+        "message": "Analyzing your request...",
     }
 
     normalized_workspace_root = _normalize_workspace_root(workspace_root)
@@ -287,10 +319,41 @@ def stream_prompt(
 
     if intent.primary_intent == IntentKind.CONVERSATION and not routing.selected_skills:
         started = time.monotonic()
+        normalized_prompt = prompt.strip().lower()
+        direct_answer = ""
+        direct_approach = ""
+        if operator._asks_identity(normalized_prompt):
+            direct_answer = operator._identity_text()
+            direct_approach = "Identity prompt answered from the approved branding policy."
+        elif operator._is_conversational_prompt(normalized_prompt):
+            direct_answer = operator._friendly_intro_text()
+            direct_approach = "Conversational prompt answered with friendly agent guidance."
+        if direct_answer:
+            answer = direct_answer
+            payload = _serialize_direct_response(
+                answer=answer,
+                intent=intent,
+                workspace_root=normalized_workspace_root,
+                approach=direct_approach,
+            )
+            footer = _stream_footer(payload, elapsed_ms=(time.monotonic() - started) * 1000)
+            payload["stream_footer"] = footer
+            yield {
+                "type": "user_response",
+                "content": payload.get("user_response") or answer,
+                "has_details": bool(payload.get("technical_details") or payload.get("diagnostics")),
+            }
+            yield {
+                "type": "technical_details",
+                "content": payload.get("technical_details") or payload.get("diagnostics") or {},
+                "hidden": True,
+            }
+            yield _done_event(payload, footer=footer)
+            return
         yield {
             "type": "status",
             "stage": "routing",
-            "message": "Selecting the strongest available provider path...",
+            "message": "Preparing the best response path...",
         }
         try:
             response = None
@@ -306,15 +369,12 @@ def stream_prompt(
                     display_name = str(event.get("display_name") or event.get("model") or provider).strip()
                     yield {
                         "type": "provider_selected",
-                        "provider": provider,
-                        "model": str(event.get("model") or "").strip(),
-                        "display_name": display_name,
-                        "message": f"Using {display_name} on {provider}.",
+                        "message": "Response path ready.",
                     }
                     yield {
                         "type": "status",
                         "stage": "routing",
-                        "message": f"Using {display_name} on {provider}.",
+                        "message": "Response path ready.",
                     }
                     continue
                 if kind == "delta":
@@ -339,11 +399,16 @@ def stream_prompt(
             footer = _stream_footer(payload, elapsed_ms=(time.monotonic() - started) * 1000)
             payload["stream_footer"] = footer
             yield {
-                "type": "done",
-                "done": True,
-                "payload": payload,
-                "footer": footer,
+                "type": "user_response",
+                "content": payload.get("user_response") or payload.get("answer") or "",
+                "has_details": bool(payload.get("technical_details") or payload.get("diagnostics")),
             }
+            yield {
+                "type": "technical_details",
+                "content": payload.get("technical_details") or payload.get("diagnostics") or {},
+                "hidden": True,
+            }
+            yield _done_event(payload, footer=footer)
             return
         except Exception as exc:
             fallback = operator._clarification_text(prompt)
@@ -353,14 +418,17 @@ def stream_prompt(
                 workspace_root=normalized_workspace_root,
                 error=str(exc),
             )
-            for delta in _iter_text_deltas(fallback):
-                yield {"type": "delta", "delta": delta}
             yield {
-                "type": "done",
-                "done": True,
-                "payload": payload,
-                "footer": payload.get("stream_footer", ""),
+                "type": "user_response",
+                "content": payload.get("user_response") or fallback,
+                "has_details": bool(payload.get("technical_details") or payload.get("diagnostics")),
             }
+            yield {
+                "type": "technical_details",
+                "content": payload.get("technical_details") or payload.get("diagnostics") or {},
+                "hidden": True,
+            }
+            yield _done_event(payload, footer=str(payload.get("stream_footer") or ""))
             return
 
     started = time.monotonic()
@@ -377,21 +445,28 @@ def stream_prompt(
     plan = operator.planner.build(intent, routing, safety, request=prompt, max_steps=operator.settings.max_plan_steps)
     mission_id, audit_log_path, resume_state = operator.audit_store.begin(prompt, plan)
     plan_payload = plan.model_dump(mode="json")
+    plan_steps = _plan_steps(plan)
     yield {
         "type": "plan_ready",
         "stage": "planning",
         "message": _plan_summary(plan),
+        "visible": False,
         "plan": plan_payload,
-        "steps": _plan_steps(plan),
+        "steps": plan_steps,
         "mission_id": mission_id,
         "audit_log_path": audit_log_path,
     }
     yield {
+        "type": "plan",
+        "stage": "planning",
+        "message": _plan_summary(plan),
+        "steps": [step.get("label") or step.get("action") or step.get("id") for step in plan_steps],
+        "structured_steps": plan_steps,
+        "elapsed_ms": round((time.monotonic() - started) * 1000, 2),
+    }
+    yield {
         "type": "provider_selected",
-        "provider": "local",
-        "model": "skills-runtime",
-        "display_name": "Local skills runtime",
-        "message": "Using the local skills runtime; model provider telemetry will appear if a step calls a model.",
+        "message": "Execution path ready.",
     }
 
     events: Queue[tuple[str, Any]] = Queue()
@@ -421,7 +496,7 @@ def stream_prompt(
     yield {
         "type": "status",
         "stage": "routing",
-        "message": "Selecting the strongest available provider path...",
+        "message": "Preparing the best response path...",
     }
     yield {
         "type": "status",
@@ -433,6 +508,7 @@ def stream_prompt(
     result_emitted = False
     started_steps: set[str] = set()
     finished_steps: set[str] = set()
+    step_started_at: dict[str, float] = {}
     last_audit_mtime = 0.0
     _maybe_emit_next_step_started(plan, started_steps, finished_steps, events)
 
@@ -451,8 +527,29 @@ def stream_prompt(
                 )
             continue
 
-        if kind in {"step_started", "step_completed", "step_failed"}:
+        if kind == "step_started":
+            step_id = str(payload.get("step_id") or "").strip()
+            if step_id:
+                step_started_at[step_id] = time.monotonic()
             yield payload
+            yield _step_start_alias(payload)
+            continue
+
+        if kind == "step_completed":
+            yield payload
+            yield _step_done_alias(payload, step_started_at)
+            continue
+
+        if kind == "step_failed":
+            failed_payload = dict(payload)
+            failed_payload.update(_step_failed_alias(payload, step_started_at))
+            yield failed_payload
+            yield {
+                "type": "status",
+                "stage": "recovery",
+                "text": "A step needs attention. FORGE is preserving details for recovery.",
+                "message": "A step needs attention. FORGE is preserving details for recovery.",
+            }
             continue
 
         if kind == "error":
@@ -470,7 +567,25 @@ def stream_prompt(
                 except Empty:
                     break
                 if queued_kind in {"step_started", "step_completed", "step_failed"}:
-                    yield queued_payload
+                    if queued_kind == "step_started":
+                        step_id = str(queued_payload.get("step_id") or "").strip()
+                        if step_id:
+                            step_started_at[step_id] = time.monotonic()
+                        yield queued_payload
+                        yield _step_start_alias(queued_payload)
+                    elif queued_kind == "step_completed":
+                        yield queued_payload
+                        yield _step_done_alias(queued_payload, step_started_at)
+                    else:
+                        failed_payload = dict(queued_payload)
+                        failed_payload.update(_step_failed_alias(queued_payload, step_started_at))
+                        yield failed_payload
+                        yield {
+                            "type": "status",
+                            "stage": "recovery",
+                            "text": "A step needs attention. FORGE is preserving details for recovery.",
+                            "message": "A step needs attention. FORGE is preserving details for recovery.",
+                        }
                     continue
                 deferred_events.append((queued_kind, queued_payload))
             for deferred in deferred_events:
@@ -487,7 +602,7 @@ def stream_prompt(
                 "success": result.get("validation_status") == CompletionState.FINISHED.value,
                 "mission_id": result.get("mission_id"),
                 "total_latency_ms": round(total_latency_ms, 2),
-                "final_provider": telemetry.get("final_provider_used") if telemetry else "local/skills-runtime",
+                "final_provider": "FORGE",
                 "artifact_paths": _artifact_paths(result),
             }
             yield {
@@ -495,17 +610,25 @@ def stream_prompt(
                 "stage": "streaming",
                 "message": "Response ready. Streaming output...",
             }
-            answer = str(result.get("answer") or result.get("result") or "No result produced.")
+            answer = str(result.get("user_response") or result.get("answer") or result.get("result") or "No result produced.")
             footer = _stream_footer(result, elapsed_ms=(time.monotonic() - started) * 1000)
             result["stream_footer"] = footer
-            for delta in _iter_text_deltas(answer):
-                yield {"type": "delta", "delta": delta}
             yield {
-                "type": "done",
-                "done": True,
-                "payload": result,
-                "footer": footer,
+                "type": "result",
+                "content": answer,
+                "has_details": bool(result.get("technical_details") or result.get("diagnostics")),
             }
+            yield {
+                "type": "user_response",
+                "content": answer,
+                "has_details": bool(result.get("technical_details") or result.get("diagnostics")),
+            }
+            yield {
+                "type": "technical_details",
+                "content": result.get("technical_details") or result.get("diagnostics") or {},
+                "hidden": True,
+            }
+            yield _done_event(result, footer=footer)
             result_emitted = True
             continue
 
@@ -616,6 +739,7 @@ def _plan_steps(plan: ExecutionPlan) -> list[dict[str, Any]]:
     return [
         {
             "id": step.id,
+            "label": _human_step_label(step.skill or step.tool or step.action),
             "action": step.action,
             "skill": step.skill,
             "tool": step.tool,
@@ -631,6 +755,21 @@ def _plan_summary(plan: ExecutionPlan) -> str:
         return "Plan ready: direct response without execution steps."
     labels = [step.skill or step.tool or "reasoning" for step in plan.steps]
     return f"Plan ready: {' -> '.join(labels)}."
+
+
+def _human_step_label(value: str | None) -> str:
+    raw = str(value or "Work on the request").strip()
+    labels = {
+        "file-reader": "Read files",
+        "file-editor": "Write or update files",
+        "codebase-analyzer": "Analyze code",
+        "workspace-inspector": "Inspect workspace",
+        "browser-executor": "Open and inspect web page",
+        "shell-executor": "Run checks",
+        "artifact-writer": "Write report",
+        "research-brief": "Gather findings",
+    }
+    return labels.get(raw, raw.replace("-", " ").strip().capitalize())
 
 
 def _maybe_emit_next_step_started(
@@ -754,16 +893,73 @@ def _step_failed_event(step: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _step_start_alias(payload: dict[str, Any]) -> dict[str, Any]:
+    label = _human_step_label(str(payload.get("skill") or payload.get("tool") or payload.get("action") or "step"))
+    index = int(payload.get("index") or 0)
+    return {
+        "type": "step_start",
+        "stage": "execution",
+        "step": index or payload.get("step_id"),
+        "step_id": payload.get("step_id"),
+        "label": f"{label}...",
+        "text": f"{label}...",
+        "message": f"{label}...",
+    }
+
+
+def _step_done_alias(payload: dict[str, Any], started_at: dict[str, float]) -> dict[str, Any]:
+    step_id = str(payload.get("step_id") or "").strip()
+    elapsed = 0.0
+    if step_id and step_id in started_at:
+        elapsed = (time.monotonic() - started_at[step_id]) * 1000
+    label = _human_step_label(str(payload.get("skill") or payload.get("tool") or "step"))
+    return {
+        "type": "step_done",
+        "stage": "execution",
+        "step": payload.get("step_id"),
+        "step_id": payload.get("step_id"),
+        "label": label,
+        "text": f"{label} complete",
+        "message": f"{label} complete",
+        "ms": round(elapsed, 2),
+    }
+
+
+def _step_failed_alias(payload: dict[str, Any], started_at: dict[str, float]) -> dict[str, Any]:
+    step_id = str(payload.get("step_id") or "").strip()
+    elapsed = 0.0
+    if step_id and step_id in started_at:
+        elapsed = (time.monotonic() - started_at[step_id]) * 1000
+    label = _human_step_label(str(payload.get("skill") or payload.get("tool") or "step"))
+    return {
+        "type": "step_failed",
+        "stage": "execution",
+        "step": payload.get("step_id"),
+        "step_id": payload.get("step_id"),
+        "label": label,
+        "text": f"{label} needs recovery",
+        "message": f"{label} needs recovery",
+        "ms": round(elapsed, 2),
+    }
+
+
+def _done_event(payload: dict[str, Any], *, footer: str = "") -> dict[str, Any]:
+    return {
+        "type": "done",
+        "done": True,
+        "user_response": str(payload.get("user_response") or payload.get("answer") or payload.get("result") or ""),
+        "has_details": bool(payload.get("technical_details") or payload.get("diagnostics")),
+        "footer": footer,
+    }
+
+
 def _provider_events_from_telemetry(telemetry: dict[str, Any]):
     attempts = telemetry.get("attempts") if isinstance(telemetry.get("attempts"), list) else []
     selected = str(telemetry.get("selected_provider") or "").strip()
     if selected:
-        provider, _, model = selected.partition("/")
         yield {
             "type": "provider_selected",
-            "provider": provider,
-            "model": model,
-            "message": f"Provider selected: {selected}.",
+            "message": "Response path ready.",
         }
     for attempt in attempts:
         if not isinstance(attempt, dict):
@@ -772,19 +968,14 @@ def _provider_events_from_telemetry(telemetry: dict[str, Any]):
         if status == "timeout":
             yield {
                 "type": "provider_timeout",
-                "provider": attempt.get("provider"),
-                "model": attempt.get("model"),
                 "latency_ms": attempt.get("latency_ms"),
-                "error": attempt.get("error"),
-                "message": f"Provider timeout: {attempt.get('provider')}/{attempt.get('model')}.",
+                "message": "A response path was slow.",
             }
     if int(telemetry.get("fallback_count") or 0):
         yield {
             "type": "provider_fallback",
             "fallback_count": telemetry.get("fallback_count"),
-            "attempted_providers": telemetry.get("attempted_providers", []),
-            "final_provider_used": telemetry.get("final_provider_used"),
-            "message": f"Provider fallback -> {telemetry.get('final_provider_used')}.",
+            "message": "FORGE retried with another route.",
         }
 
 
@@ -911,7 +1102,7 @@ def _serialize_operator_result(
 ) -> dict[str, Any]:
     workspace_status = get_workspace_status()
     payload = result.model_dump(mode="json")
-    payload["answer"] = operator.composer.compose(result)
+    payload["answer"] = result.user_response or operator.composer.compose(result)
     payload["completed_steps"] = sum(1 for step in result.step_results if step.status.value == "finished")
     payload["total_steps"] = len(result.step_results)
     payload["evidence_count"] = sum(len(step.evidence) for step in result.step_results)
@@ -934,7 +1125,104 @@ def _serialize_operator_result(
     payload.update(workspace_status)
     payload["workspace_root"] = str(workspace_root)
     payload["artifact_root"] = str(operator.settings.artifact_root)
+    return _with_human_first_response(payload)
+
+
+def _with_human_first_response(payload: dict[str, Any]) -> dict[str, Any]:
+    diagnostics = payload.get("technical_details") if isinstance(payload.get("technical_details"), dict) else {}
+    if not diagnostics:
+        diagnostics = _diagnostics_payload(payload)
+
+    raw_answer = str(payload.get("user_response") or payload.get("answer") or payload.get("result") or "").strip()
+    visible = _humanize_visible_response(raw_answer, payload)
+    payload["technical_details"] = diagnostics
+    payload["has_technical_details"] = bool(diagnostics)
+    payload["user_response"] = visible
+    payload["answer"] = visible
+    payload["result"] = visible
+    payload["diagnostics"] = diagnostics
     return payload
+
+
+def _humanize_visible_response(text: str, payload: dict[str, Any] | None = None) -> str:
+    payload = payload or {}
+    action_summary = _action_completion_summary(text)
+    if action_summary:
+        return action_summary
+    cleaned = _strip_visible_technical_noise(text)
+    if not cleaned:
+        cleaned = _fallback_visible_summary(payload)
+    cleaned = _limit_words(cleaned, _VISIBLE_WORD_LIMIT)
+    return cleaned or "Done. Technical details are available if you want to inspect the execution."
+
+
+def _strip_visible_technical_noise(text: str) -> str:
+    lines: list[str] = []
+    skip_json_block = False
+    for raw_line in str(text or "").splitlines():
+        line = raw_line.strip()
+        lowered = line.lower()
+        if lowered.startswith("# browser research summary"):
+            break
+        if re.match(r"^\[step[_-]?\d+\]$", lowered):
+            continue
+        if line.startswith(("--- ", "+++ ", "@@ ", "+")):
+            continue
+        if lowered.startswith("status:"):
+            continue
+        if not line:
+            if lines and lines[-1] != "":
+                lines.append("")
+            continue
+        if lowered.startswith("[") and lowered.endswith("]"):
+            if any(marker in lowered for marker in _VISIBLE_BLOCKED_MARKERS):
+                skip_json_block = True
+                continue
+            if lowered in {"[page_state]", "[worker_lanes]", "[agent_reviews]", "[mission_trace]"}:
+                skip_json_block = True
+                continue
+        if skip_json_block and (line.startswith("{") or line.startswith("[") or line.startswith('"') or ":" in line):
+            continue
+        skip_json_block = False
+        if any(marker in lowered for marker in _VISIBLE_BLOCKED_MARKERS):
+            continue
+        if lowered.startswith(("trace:", "provider:", "model:", "worker lanes", "mission trace")):
+            continue
+        lines.append(raw_line.rstrip())
+
+    cleaned = "\n".join(lines).strip()
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned
+
+
+def _action_completion_summary(text: str) -> str:
+    match = re.search(r"Applied\s+(create|update|edit)\s+on\s+`([^`]+)`", str(text or ""), flags=re.IGNORECASE)
+    if not match:
+        return ""
+    operation = match.group(1).lower()
+    path = match.group(2).strip()
+    verb = "created" if operation == "create" else "updated"
+    return f"Done. I {verb} `{path}` and verified the change.\n\nNext: open `{path}` and review the content."
+
+
+def _fallback_visible_summary(payload: dict[str, Any]) -> str:
+    status = str(payload.get("validation_status") or "").replace("_", " ").strip()
+    artifacts = _artifact_paths(payload)
+    if artifacts:
+        created = ", ".join(artifacts[:3])
+        return f"Done. I completed the task and produced the requested artifact(s): {created}.\n\nNext: open the file and review the result."
+    if status == CompletionState.FINISHED.value:
+        return "Done. I completed the task successfully.\n\nNext: tell me what you want to inspect or improve next."
+    if status:
+        return f"I could not fully complete this yet. Status: {status}.\n\nNext: adjust the request or check the technical details."
+    return "I can help. Give me one concrete task and the output you want.\n\nNext: ask me to inspect, create, edit, or verify something."
+
+
+def _limit_words(text: str, limit: int) -> str:
+    words = text.split()
+    if len(words) <= limit:
+        return text.strip()
+    return " ".join(words[:limit]).rstrip(" ,.;:") + "...\n\nNext: ask me for the full report if you want more detail."
 
 
 def _iter_text_deltas(text: str) -> list[str]:
@@ -952,29 +1240,19 @@ def _iter_text_deltas(text: str) -> list[str]:
 
 
 def _stream_footer(result: dict[str, Any], *, elapsed_ms: float) -> str:
-    model = str(result.get("model_used") or "").strip()
-    provider = str(result.get("provider_used") or "").strip()
     latency_ms = result.get("latency_ms")
     total_tokens = result.get("total_tokens")
     provider_telemetry = result.get("provider_telemetry") if isinstance(result.get("provider_telemetry"), dict) else {}
     if provider_telemetry:
-        provider = str(provider_telemetry.get("final_provider_used") or provider).strip()
         latency_ms = provider_telemetry.get("provider_latency_ms") or latency_ms
 
-    if not model and isinstance(result.get("step_results"), list) and result["step_results"]:
-        final_skill = result["step_results"][-1].get("skill") or result["step_results"][-1].get("tool")
-        model = f"{final_skill or 'mission'}"
-
-    label = provider or model or "FORGE"
-    parts = [label]
+    parts = ["FORGE"]
     if latency_ms:
         parts.append(f"{max(float(latency_ms), elapsed_ms) / 1000:.1f}s")
     else:
         parts.append(f"{elapsed_ms / 1000:.1f}s")
     if total_tokens:
         parts.append(f"{int(total_tokens)} tok")
-    if provider_telemetry and int(provider_telemetry.get("fallback_count") or 0):
-        parts.append(f"fallbacks={int(provider_telemetry.get('fallback_count') or 0)}")
     return " | ".join(parts)
 
 
@@ -1040,7 +1318,59 @@ def _serialize_conversation_response(
         "artifact_root": workspace_status["artifact_root"],
     }
     payload.update(workspace_status)
-    return payload
+    return _with_human_first_response(payload)
+
+
+def _serialize_direct_response(
+    *,
+    answer: str,
+    intent,
+    workspace_root: Path,
+    approach: str,
+) -> dict[str, Any]:
+    workspace_status = get_workspace_status()
+    plan = ExecutionPlan(
+        objective=intent.objective or "Answer the user directly.",
+        task_type=intent.task_type,
+        risk_level=intent.risk_level,
+        steps=[],
+        fallbacks=[],
+        completion_criteria=["Return a natural, direct answer without fake execution."],
+    )
+    payload = {
+        "objective": intent.objective or "Answer the user directly.",
+        "approach_taken": [
+            f"Intent resolved as `{intent.primary_intent.value}`.",
+            approach,
+            "No execution skills were needed.",
+        ],
+        "result": answer,
+        "answer": answer,
+        "validation_status": CompletionState.FINISHED.value,
+        "risks_or_limitations": [],
+        "best_next_action": "Continue the conversation or give FORGE a concrete task to execute.",
+        "intent": intent.model_dump(mode="json"),
+        "plan": plan.model_dump(mode="json"),
+        "step_results": [],
+        "artifacts": {},
+        "mission_trace": [
+            "Intent resolved as conversation.",
+            approach,
+            "No model or execution skills were required.",
+        ],
+        "mission_id": "",
+        "audit_log_path": "",
+        "resumed_from_step": None,
+        "agent_reviews": [],
+        "completed_steps": 0,
+        "total_steps": 0,
+        "evidence_count": 0,
+        "artifacts_count": 0,
+        "workspace_root": str(workspace_root),
+        "artifact_root": workspace_status["artifact_root"],
+    }
+    payload.update(workspace_status)
+    return _with_human_first_response(payload)
 
 
 def _serialize_clarification_response(
@@ -1093,4 +1423,25 @@ def _serialize_clarification_response(
         "stream_footer": "FORGE | fallback",
     }
     payload.update(workspace_status)
-    return payload
+    return _with_human_first_response(payload)
+
+
+def _diagnostics_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    artifacts = payload.get("artifacts") if isinstance(payload.get("artifacts"), dict) else {}
+    diagnostics = {
+        "mission_id": payload.get("mission_id", ""),
+        "audit_log_path": payload.get("audit_log_path", ""),
+        "validation_status": payload.get("validation_status", ""),
+        "intent": payload.get("intent", {}),
+        "plan": payload.get("plan", {}),
+        "step_results": payload.get("step_results", []),
+        "mission_trace": payload.get("mission_trace", []),
+        "agent_reviews": payload.get("agent_reviews", []),
+        "provider_telemetry": payload.get("provider_telemetry", {}),
+        "artifact_keys": list(artifacts.keys()) if isinstance(artifacts, dict) else [],
+    }
+    if isinstance(artifacts, dict):
+        for key in ("mission_trace", "mission_audit", "agent_reviews", "worker_lanes"):
+            if key in artifacts:
+                diagnostics[key] = artifacts[key]
+    return diagnostics
