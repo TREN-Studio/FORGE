@@ -1402,6 +1402,7 @@ DESKTOP_HTML = """<!doctype html>
     let pendingDeviceLogin = null;
     let pendingDevicePoll = null;
     let activeStream = null;
+    let liveThinkingTimer = null;
     let pendingUserDisplayText = "";
     let demoStreamActive = false;
 
@@ -1865,6 +1866,32 @@ DESKTOP_HTML = """<!doctype html>
         activeStream.close();
         activeStream = null;
       }
+      stopThinkingTimer();
+    }
+
+    function startThinkingTimer() {
+      stopThinkingTimer();
+      const startedAt = Date.now();
+      liveThinkingTimer = window.setInterval(() => {
+        const elapsed = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
+        if (elapsed >= 30) {
+          workspaceSubtitle.textContent = "Switching route... please wait";
+          setLiveStatus("Switching route... please wait");
+        } else if (elapsed >= 15) {
+          workspaceSubtitle.textContent = "Taking longer than usual... still working";
+          setLiveStatus("Taking longer than usual... still working");
+        } else {
+          workspaceSubtitle.textContent = "Thinking... " + String(elapsed) + "s";
+          setLiveStatus("Thinking... " + String(elapsed) + "s");
+        }
+      }, 1000);
+    }
+
+    function stopThinkingTimer() {
+      if (liveThinkingTimer) {
+        window.clearInterval(liveThinkingTimer);
+        liveThinkingTimer = null;
+      }
     }
 
     function setMissionStatus(value) {
@@ -2227,6 +2254,7 @@ DESKTOP_HTML = """<!doctype html>
       renderDiagnostics({});
       resetLiveProgress();
       setLiveStatus("Analyzing your request...");
+      startThinkingTimer();
 
       const assistantBubble = createBubble("assistant", "");
       let streamedText = "";
@@ -2245,6 +2273,7 @@ DESKTOP_HTML = """<!doctype html>
 
       function finishStream() {
         streamFinished = true;
+        stopThinkingTimer();
         closeActiveStream();
         sendButton.disabled = false;
         sendButton.textContent = "Send";

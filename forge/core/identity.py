@@ -8,6 +8,8 @@ FORGE_FILE_CAPABILITY_RESPONSE = (
     "Yes. I can create, read, and edit files inside your selected FORGE workspace. "
     "Give me the file path and the content you want, and I will create it and verify it exists."
 )
+FORGE_GREETING_RESPONSE = "Hi! I'm FORGE. What do you want me to do?"
+FORGE_TEST_RESPONSE = "FORGE is running. Give me a task."
 
 FORGE_IDENTITY_SYSTEM_INSTRUCTION = f"""
 Identity rules:
@@ -166,6 +168,67 @@ def asks_file_capability(text: str) -> bool:
         "are you able to create files",
     )
     return any(phrase in normalized for phrase in capability_phrases)
+
+
+def _missing_single_file_content_response(text: str) -> str | None:
+    raw_text = str(text or "").strip()
+    normalized = raw_text.lower()
+    tokens = [token for token in re.split(r"[^a-z0-9\u0600-\u06ff.\\/-]+", normalized) if token]
+    if len(tokens) > 14:
+        return None
+    if not any(token.startswith(("creat", "write", "make", "save")) for token in tokens):
+        return None
+    if any(marker in normalized for marker in (" with content ", " content ", " containing ", " text ", " says ", "```")):
+        return None
+    if any(token in {"project", "app", "tests", "analyze", "analyse", "read", "report"} for token in tokens):
+        return None
+
+    named_match = re.search(
+        r"\b(?:named|called)\s+([^\s`\"']+\.(?:txt|md|json|py|csv|html|css|js|ts|yml|yaml))\b",
+        raw_text,
+        flags=re.IGNORECASE,
+    )
+    file_matches = re.findall(
+        r"\b[^\s`\"']+\.(?:txt|md|json|py|csv|html|css|js|ts|yml|yaml)\b",
+        raw_text,
+        flags=re.IGNORECASE,
+    )
+    if named_match:
+        target = named_match.group(1).strip()
+    elif len(file_matches) == 1:
+        target = file_matches[0].strip()
+    else:
+        return None
+    return (
+        f"Yes. What content should I put in `{target}`? "
+        f"You can say: create `{target}` with content hello forge."
+    )
+
+
+def instant_response(text: str) -> str | None:
+    """Return a local answer for prompts that must never wait on a provider."""
+    normalized = str(text or "").strip().lower()
+    if not normalized:
+        return None
+
+    if asks_identity(normalized):
+        return FORGE_IDENTITY_RESPONSE
+    if asks_file_capability(normalized):
+        return FORGE_FILE_CAPABILITY_RESPONSE
+    missing_content = _missing_single_file_content_response(text)
+    if missing_content is not None:
+        return missing_content
+
+    cleaned = normalized.strip(" \t\r\n?!.,:;\"'")
+    short_tokens = [token for token in re.split(r"[^a-z0-9\u0600-\u06ff]+", cleaned) if token]
+    if len(short_tokens) > 4:
+        return None
+
+    if cleaned in {"hi", "hello", "hey", "yo", "salam", "سلام", "اهلا", "أهلا"}:
+        return FORGE_GREETING_RESPONSE
+    if cleaned in {"test", "ping", "status?", "status"}:
+        return FORGE_TEST_RESPONSE
+    return None
 
 
 def enforce_identity_guard(text: str) -> str:

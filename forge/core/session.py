@@ -20,11 +20,12 @@ from forge.core.identity import (
     asks_file_capability,
     asks_identity,
     enforce_forge_response_guard,
+    instant_response,
 )
 from forge.core.discovery import SelfDiscoveryEngine
 from forge.core.models import ForgeResponse, Message, TaskType
 from forge.core.quota import QuotaGuardian
-from forge.core.router import ForgeRouter
+from forge.core.router import ForgeRouter, timeout_for_prompt
 from forge.memory.graph import MemoryGraph
 from forge.providers import iter_provider_classes
 
@@ -214,12 +215,9 @@ class ForgeSession:
         remember: bool,
     ) -> ForgeResponse:
         task_type = self._normalize_task_type(task_type)
-        if asks_identity(prompt):
-            response = self._identity_response()
-            self._remember_response(prompt, response, remember=remember)
-            return response
-        if asks_file_capability(prompt):
-            response = self._file_capability_response()
+        instant = instant_response(prompt)
+        if instant is not None:
+            response = self._instant_response(instant)
             self._remember_response(prompt, response, remember=remember)
             return response
         messages = self._build_messages(prompt)
@@ -229,6 +227,7 @@ class ForgeSession:
             task_type=task_type,
             max_tokens=max_tokens,
             temperature=temperature,
+            timeout=timeout_for_prompt(prompt),
         )
         self._remember_response(prompt, response, remember=remember)
         return response
@@ -242,17 +241,11 @@ class ForgeSession:
         remember: bool,
     ):
         normalized_task_type = self._normalize_task_type(task_type)
-        if asks_identity(prompt):
-            response = self._identity_response()
+        instant = instant_response(prompt)
+        if instant is not None:
+            response = self._instant_response(instant)
             self._remember_response(prompt, response, remember=remember)
-            yield {"type": "start", "provider": "forge", "model": "forge-identity-guard"}
-            yield {"type": "delta", "delta": response.content}
-            yield {"type": "response", "response": response}
-            return
-        if asks_file_capability(prompt):
-            response = self._file_capability_response()
-            self._remember_response(prompt, response, remember=remember)
-            yield {"type": "start", "provider": "forge", "model": "forge-capability-guard"}
+            yield {"type": "start", "provider": "forge", "model": response.model_id}
             yield {"type": "delta", "delta": response.content}
             yield {"type": "response", "response": response}
             return
@@ -354,6 +347,24 @@ class ForgeSession:
             finish_reason="capability_guard",
             score_used=1.0,
             routing_telemetry={"capability_guard": True},
+        )
+
+    @staticmethod
+    def _instant_response(content: str) -> ForgeResponse:
+        if content == FORGE_IDENTITY_RESPONSE:
+            return ForgeSession._identity_response()
+        if content == FORGE_FILE_CAPABILITY_RESPONSE:
+            return ForgeSession._file_capability_response()
+        return ForgeResponse(
+            content=content,
+            model_id="forge-instant-guard",
+            provider="forge",
+            latency_ms=0.0,
+            input_tokens=0,
+            output_tokens=0,
+            finish_reason="instant_response",
+            score_used=1.0,
+            routing_telemetry={"instant_response": True},
         )
 
     @staticmethod

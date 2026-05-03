@@ -99,6 +99,25 @@ TIER_ORDER = {
     ModelTier.FAST:  1,
 }
 
+PROVIDER_TIMEOUTS = {
+    "fast_queries": 8.0,
+    "normal_queries": 20.0,
+    "complex_queries": 45.0,
+}
+
+
+def classify_query_speed(prompt: str) -> str:
+    words = len(str(prompt or "").split())
+    if words <= 6:
+        return "fast_queries"
+    if words <= 30:
+        return "normal_queries"
+    return "complex_queries"
+
+
+def timeout_for_prompt(prompt: str) -> float:
+    return PROVIDER_TIMEOUTS[classify_query_speed(prompt)]
+
 
 class ForgeRouter:
     """

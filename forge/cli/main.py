@@ -74,6 +74,12 @@ def _get_session():
     return ForgeSession()
 
 
+def _instant_cli_response(prompt: str) -> str | None:
+    from forge.core.identity import instant_response
+
+    return instant_response(prompt)
+
+
 def _is_writable_directory(path: Path) -> bool:
     try:
         path.mkdir(parents=True, exist_ok=True)
@@ -247,6 +253,13 @@ def start(
             )
             continue
 
+        instant = _instant_cli_response(user_input)
+        if instant is not None:
+            console.print()
+            console.print(Panel(instant, border_style="#FF6B1A", padding=(0, 1)))
+            console.print("[dim]0.0s[/dim]\n")
+            continue
+
         started = time.monotonic()
         try:
             with Live(Spinner("line", text="[dim]Thinking...[/dim]"), refresh_per_second=12, transient=True):
@@ -275,6 +288,14 @@ def ask(
     """Run a one-shot prompt."""
     if not raw:
         console.print("[bold #FF6B1A]FORGE[/bold #FF6B1A]")
+
+    instant = _instant_cli_response(prompt)
+    if instant is not None:
+        if raw:
+            print(instant)
+        else:
+            console.print(Panel(instant, border_style="#FF6B1A", padding=(0, 1)))
+        return
 
     if raw:
         session = _get_session()
@@ -310,6 +331,14 @@ def operate(
 
     if not raw:
         console.print("[bold #FF6B1A]FORGE[/bold #FF6B1A]")
+
+    instant = _instant_cli_response(request)
+    if instant is not None:
+        if raw:
+            print(instant)
+        else:
+            console.print(Panel(instant, border_style="#FF6B1A", padding=(0, 1)))
+        return
 
     if raw:
         operator = _get_operator(no_memory=no_memory, workspace_root=workspace)

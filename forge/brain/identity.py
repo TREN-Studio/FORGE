@@ -9,6 +9,7 @@ from forge.core.identity import (
     enforce_agent_capability_guard,
     enforce_forge_response_guard,
     enforce_identity_guard,
+    instant_response,
 )
 
 __all__ = [
@@ -20,4 +21,5 @@ __all__ = [
     "enforce_agent_capability_guard",
     "enforce_forge_response_guard",
     "enforce_identity_guard",
+    "instant_response",
 ]

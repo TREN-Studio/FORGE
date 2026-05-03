@@ -12,10 +12,11 @@ import time
 from typing import Any
 
 from forge import __version__
-from forge.brain.contracts import CompletionState, ExecutionPlan, IntentKind, OperatorResult
+from forge.brain.contracts import CompletionState, ExecutionPlan, IntentKind, OperatorResult, TaskIntent
 from forge.brain.identity import enforce_forge_response_guard
 from forge.brain.operator import ForgeOperator
 from forge.config.settings import OperatorSettings
+from forge.core.identity import instant_response
 from forge.core.session import ForgeSession
 from forge.skills.runtime import SkillExecutionContext
 from forge.tools.workspace import WorkspaceTools
@@ -109,6 +110,82 @@ def _normalize_workspace_root(value: str | Path | None) -> Path:
     if not workspace.is_dir():
         raise NotADirectoryError(f"Workspace is not a directory: {workspace}")
     return workspace
+
+
+_REAL_CHANGE_TERMS = (
+    "create",
+    "write",
+    "save",
+    "edit",
+    "modify",
+    "update",
+    "انشئ",
+    "أنشئ",
+    "اكتب",
+)
+_EXPLICIT_PATH_TERMS = (
+    "desktop",
+    "my pc",
+    "my computer",
+    "this computer",
+    "local machine",
+    "~/",
+    "home folder",
+    "c:\\",
+    "d:\\",
+)
+_DESTRUCTIVE_TERMS = (
+    "delete",
+    "remove",
+    "erase",
+    "format",
+    "wipe",
+    "rm ",
+    "del ",
+    "حذف",
+)
+
+
+def _should_allow_real_changes_for_prompt(prompt: str) -> bool:
+    lowered = str(prompt or "").lower()
+    if any(term in lowered for term in _DESTRUCTIVE_TERMS):
+        return False
+    wants_change = any(term in lowered for term in _REAL_CHANGE_TERMS)
+    has_explicit_path = any(term in lowered for term in _EXPLICIT_PATH_TERMS)
+    has_file_target = bool(re.search(r"\b[\w .-]+\.(?:txt|md|json|py|csv|html|css|js|ts|yml|yaml)\b", lowered))
+    return wants_change and (has_explicit_path or has_file_target)
+
+
+def _resolve_workspace_for_prompt(prompt: str, current_workspace: Path) -> Path:
+    lowered = str(prompt or "").lower()
+    if "desktop" in lowered:
+        desktop = Path.home() / "Desktop"
+        if desktop.exists() and desktop.is_dir():
+            return desktop.resolve()
+    if "~/" in lowered or "home folder" in lowered:
+        home = Path.home()
+        if home.exists() and home.is_dir():
+            return home.resolve()
+
+    match = re.search(r"\b([a-zA-Z]:\\[^:*?\"<>|\r\n]+)", str(prompt or ""))
+    if match:
+        candidate = Path(match.group(1)).expanduser()
+        parent = candidate if candidate.is_dir() else candidate.parent
+        if parent.exists() and parent.is_dir():
+            return parent.resolve()
+    return current_workspace
+
+
+def _instant_intent(prompt: str) -> TaskIntent:
+    return TaskIntent(
+        raw_request=prompt,
+        objective="Answer instantly from FORGE local policy.",
+        primary_intent=IntentKind.CONVERSATION,
+        intents=[IntentKind.CONVERSATION],
+        task_type="fast",
+        requested_output="short user response",
+        notes=["Answered without a provider call."],
+    )
 
 
 def _load_workspace_state() -> DesktopWorkspaceState:
@@ -400,9 +477,21 @@ def operate_prompt(
     if not prompt:
         raise ValueError("Prompt is empty.")
 
-    normalized_workspace_root = _normalize_workspace_root(workspace_root)
-    if workspace_root is not None:
+    base_workspace_root = _normalize_workspace_root(workspace_root)
+    normalized_workspace_root = _resolve_workspace_for_prompt(prompt, base_workspace_root)
+    if workspace_root is not None or normalized_workspace_root != base_workspace_root:
         set_workspace_root(normalized_workspace_root)
+    if not dry_run and _should_allow_real_changes_for_prompt(prompt):
+        confirmed = True
+
+    instant = instant_response(prompt)
+    if instant is not None:
+        return _serialize_direct_response(
+            answer=instant,
+            intent=_instant_intent(prompt),
+            workspace_root=normalized_workspace_root,
+            approach="Answered from FORGE local fast path before any provider call.",
+        )
 
     if _is_local_demo_prompt(prompt, normalized_workspace_root):
         normalized_workspace_root.mkdir(parents=True, exist_ok=True)
@@ -470,9 +559,36 @@ def stream_prompt(
         "message": "Analyzing your request...",
     }
 
-    normalized_workspace_root = _normalize_workspace_root(workspace_root)
-    if workspace_root is not None:
+    base_workspace_root = _normalize_workspace_root(workspace_root)
+    normalized_workspace_root = _resolve_workspace_for_prompt(prompt, base_workspace_root)
+    if workspace_root is not None or normalized_workspace_root != base_workspace_root:
         set_workspace_root(normalized_workspace_root)
+    if not dry_run and _should_allow_real_changes_for_prompt(prompt):
+        confirmed = True
+
+    instant = instant_response(prompt)
+    if instant is not None:
+        started = time.monotonic()
+        payload = _serialize_direct_response(
+            answer=instant,
+            intent=_instant_intent(prompt),
+            workspace_root=normalized_workspace_root,
+            approach="Answered from FORGE local fast path before any provider call.",
+        )
+        footer = _stream_footer(payload, elapsed_ms=(time.monotonic() - started) * 1000)
+        payload["stream_footer"] = footer
+        yield {
+            "type": "user_response",
+            "content": payload.get("user_response") or instant,
+            "has_details": bool(payload.get("technical_details") or payload.get("diagnostics")),
+        }
+        yield {
+            "type": "technical_details",
+            "content": payload.get("technical_details") or payload.get("diagnostics") or {},
+            "hidden": True,
+        }
+        yield _done_event(payload, footer=footer)
+        return
 
     if _is_local_demo_prompt(prompt, normalized_workspace_root):
         yield from _stream_local_demo(normalized_workspace_root, started=time.monotonic())
