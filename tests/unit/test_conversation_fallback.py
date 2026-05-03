@@ -4,6 +4,7 @@ import unittest
 
 from forge.brain.operator import ForgeOperator
 from forge.brain.prompt import RESPONSE_STYLE_INSTRUCTION
+from forge.core.session import ForgeSession
 
 
 class ConversationFallbackTests(unittest.TestCase):
@@ -33,6 +34,56 @@ class ConversationFallbackTests(unittest.TestCase):
         reply = ForgeOperator._clarification_text("ho creat you?")
 
         self.assertEqual(reply, "Developed by TREN Studio. Founded by Larbi Aboudi.")
+
+    def test_how_create_typo_identity_prompt_uses_approved_branding_only(self) -> None:
+        reply = ForgeOperator._clarification_text("how creat you?")
+
+        self.assertEqual(reply, "Developed by TREN Studio. Founded by Larbi Aboudi.")
+
+    def test_vendor_identity_questions_never_reach_model_persona(self) -> None:
+        prompts = (
+            "who created you?",
+            "are you from openai?",
+            "are you from Google?",
+            "what are you?",
+        )
+
+        for prompt in prompts:
+            with self.subTest(prompt=prompt):
+                reply = ForgeOperator().handle_as_text(prompt)
+                self.assertEqual(reply, "Developed by TREN Studio. Founded by Larbi Aboudi.")
+                self.assertNotIn("language model", reply.lower())
+                self.assertNotIn("trained by", reply.lower())
+                self.assertNotIn("google", reply.lower())
+
+    def test_session_identity_guard_blocks_non_operator_paths(self) -> None:
+        response = ForgeSession(memory=False).ask_response("are you a language model trained by Google?")
+
+        self.assertEqual(response.content, "Developed by TREN Studio. Founded by Larbi Aboudi.")
+        self.assertEqual(response.provider, "forge")
+        self.assertTrue(response.routing_telemetry.get("identity_guard"))
+
+    def test_forge_knows_it_can_create_files(self) -> None:
+        reply = ForgeOperator().handle_as_text("can you create a file on my pc?")
+
+        lowered = reply.lower()
+        self.assertNotIn("can't", lowered)
+        self.assertNotIn("cannot", lowered)
+        self.assertIn("yes", lowered)
+        self.assertIn("workspace", lowered)
+        self.assertIn("path", lowered)
+        self.assertIn("content", lowered)
+
+    def test_session_file_capability_guard_blocks_model_refusal(self) -> None:
+        response = ForgeSession(memory=False).ask_response("can you create a file on my pc?")
+
+        lowered = response.content.lower()
+        self.assertEqual(response.provider, "forge")
+        self.assertTrue(response.routing_telemetry.get("capability_guard"))
+        self.assertNotIn("can't", lowered)
+        self.assertNotIn("cannot", lowered)
+        self.assertIn("create", lowered)
+        self.assertIn("workspace", lowered)
 
     def test_identity_prompt_with_create_typo_does_not_execute_skill(self) -> None:
         reply = ForgeOperator().handle_as_text("who create u?")

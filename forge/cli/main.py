@@ -235,7 +235,7 @@ def ask(
 ):
     """Run a one-shot prompt."""
     if not raw:
-        console.print(f"[dim]FORGE ->[/dim] [dim]{prompt[:72]}[/dim]")
+        console.print("[bold #FF6B1A]FORGE[/bold #FF6B1A]")
 
     if raw:
         session = _get_session()
@@ -270,7 +270,7 @@ def operate(
     confirmed = confirm or allow_real_changes
 
     if not raw:
-        console.print(f"[dim]FORGE operator ->[/dim] [dim]{request[:72]}[/dim]")
+        console.print("[bold #FF6B1A]FORGE[/bold #FF6B1A]")
 
     if raw:
         operator = _get_operator(no_memory=no_memory, workspace_root=workspace)

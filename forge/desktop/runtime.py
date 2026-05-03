@@ -13,6 +13,7 @@ from typing import Any
 
 from forge import __version__
 from forge.brain.contracts import CompletionState, ExecutionPlan, IntentKind, OperatorResult
+from forge.brain.identity import enforce_forge_response_guard
 from forge.brain.operator import ForgeOperator
 from forge.config.settings import OperatorSettings
 from forge.core.session import ForgeSession
@@ -512,6 +513,30 @@ def stream_prompt(
         yield _done_event(payload, footer=footer)
         return
 
+    if operator._asks_file_capability(prompt.strip().lower()):
+        started = time.monotonic()
+        answer = operator._file_capability_text()
+        payload = _serialize_direct_response(
+            answer=answer,
+            intent=intent,
+            workspace_root=normalized_workspace_root,
+            approach="File capability prompt answered from FORGE workspace policy.",
+        )
+        footer = _stream_footer(payload, elapsed_ms=(time.monotonic() - started) * 1000)
+        payload["stream_footer"] = footer
+        yield {
+            "type": "user_response",
+            "content": payload.get("user_response") or answer,
+            "has_details": bool(payload.get("technical_details") or payload.get("diagnostics")),
+        }
+        yield {
+            "type": "technical_details",
+            "content": payload.get("technical_details") or payload.get("diagnostics") or {},
+            "hidden": True,
+        }
+        yield _done_event(payload, footer=footer)
+        return
+
     if intent.primary_intent == IntentKind.CONVERSATION and not routing.selected_skills:
         started = time.monotonic()
         normalized_prompt = prompt.strip().lower()
@@ -520,6 +545,9 @@ def stream_prompt(
         if operator._asks_identity(normalized_prompt):
             direct_answer = operator._identity_text()
             direct_approach = "Identity prompt answered from the approved branding policy."
+        elif operator._asks_file_capability(normalized_prompt):
+            direct_answer = operator._file_capability_text()
+            direct_approach = "File capability prompt answered from FORGE workspace policy."
         elif operator._is_conversational_prompt(normalized_prompt):
             direct_answer = operator._friendly_intro_text()
             direct_approach = "Conversational prompt answered with friendly agent guidance."
@@ -1341,6 +1369,7 @@ def _with_human_first_response(payload: dict[str, Any]) -> dict[str, Any]:
 
 def _humanize_visible_response(text: str, payload: dict[str, Any] | None = None) -> str:
     payload = payload or {}
+    text = enforce_forge_response_guard(text)
     action_summary = _action_completion_summary(text)
     if action_summary:
         return action_summary
@@ -1348,7 +1377,7 @@ def _humanize_visible_response(text: str, payload: dict[str, Any] | None = None)
     if not cleaned:
         cleaned = _fallback_visible_summary(payload)
     cleaned = _limit_words(cleaned, _VISIBLE_WORD_LIMIT)
-    return cleaned or "Done. Technical details are available if you want to inspect the execution."
+    return enforce_forge_response_guard(cleaned or "Done. Technical details are available if you want to inspect the execution.")
 
 
 def _strip_visible_technical_noise(text: str) -> str:

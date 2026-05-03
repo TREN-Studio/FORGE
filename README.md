@@ -71,8 +71,8 @@ This makes new skills pluggable without rewriting the core brain.
 ## Install
 
 ```bash
-pip install forge-agent==1.1.5
-forge --version  # FORGE 1.1.5
+pip install forge-agent==1.1.6
+forge --version  # FORGE 1.1.6
 ```
 
 ## Quick Start
@@ -85,7 +85,7 @@ forge operate "Analyze this repository and save a summary file"
 forge operate "Read forge/brain/operator.py and explain the execution flow"
 ```
 
-Current Python package release: `1.1.5` on PyPI.
+Current Python package release: `1.1.6` on PyPI.
 
 ## Python API
 
@@ -118,11 +118,11 @@ Current foundation includes:
 
 ## Public Releases
 
-- Current public release line: `1.1.5`.
+- Current public release line: `1.1.6`.
 - The primary public user path is the Windows Desktop download from the official site and GitHub Release.
-- PyPI remains the developer CLI path: https://pypi.org/project/forge-agent/1.1.5/
-- GitHub's latest stable release must also resolve to `v1.1.5`.
-- The canonical public release record is the GitHub Release for the matching tag: https://github.com/TREN-Studio/FORGE/releases/tag/v1.1.5
+- PyPI remains the developer CLI path: https://pypi.org/project/forge-agent/1.1.6/
+- GitHub's latest stable release must also resolve to `v1.1.6`.
+- The canonical public release record is the GitHub Release for the matching tag: https://github.com/TREN-Studio/FORGE/releases/tag/v1.1.6
 - The PyPI publishing workflow in `.github/workflows/publish-pypi.yml` builds the wheel and source distribution, publishes to PyPI through Trusted Publisher, and attaches `dist/*` to the GitHub Release.
 - The Windows release workflow in `.github/workflows/release_forge_windows.yml` builds desktop installer and portable assets for the current release line.
 - The supported desktop build entrypoint is `python tools/build_windows_desktop.py`; that script is the source of truth for orchestration and invokes the portable `FORGE-Desktop.spec`.
@@ -169,9 +169,9 @@ GitHub Release is the canonical release record. PyPI is the recommended install 
 
 The current public download set is:
 
-- `https://pypi.org/project/forge-agent/1.1.5/`
-- `https://github.com/TREN-Studio/FORGE/releases/download/v1.1.5/forge_agent-1.1.5-py3-none-any.whl`
-- `https://github.com/TREN-Studio/FORGE/releases/download/v1.1.5/forge_agent-1.1.5.tar.gz`
+- `https://pypi.org/project/forge-agent/1.1.6/`
+- `https://github.com/TREN-Studio/FORGE/releases/download/v1.1.6/forge_agent-1.1.6-py3-none-any.whl`
+- `https://github.com/TREN-Studio/FORGE/releases/download/v1.1.6/forge_agent-1.1.6.tar.gz`
 
 No official-site binary mirror is published for the current release.
 

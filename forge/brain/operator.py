@@ -5,6 +5,7 @@ from typing import Any
 
 from forge.brain.composer import ResponseComposer
 from forge.brain.contracts import CompletionState, ExecutionPlan, IntentKind, OperatorResult, StepExecutionResult
+from forge.brain.identity import FORGE_FILE_CAPABILITY_RESPONSE, FORGE_IDENTITY_RESPONSE, asks_file_capability, asks_identity
 from forge.brain.mission_store import MissionAuditStore
 from forge.brain.intent import IntentResolver
 from forge.brain.orchestrator import MissionOrchestrator
@@ -94,6 +95,16 @@ class ForgeOperator:
         )
 
         if self._asks_identity(request.strip().lower()):
+            return self._conversation_result(
+                request=request,
+                intent=intent,
+                routing=routing,
+                mission_id=mission_id,
+                audit_log_path=audit_log_path,
+                resumed_from_step=resume_state.resumed_from_step if resume_state else None,
+            )
+
+        if self._asks_file_capability(request.strip().lower()):
             return self._conversation_result(
                 request=request,
                 intent=intent,
@@ -291,6 +302,8 @@ class ForgeOperator:
         direct_reply = ""
         if self._asks_identity(normalized_request):
             direct_reply = self._identity_text()
+        elif self._asks_file_capability(normalized_request):
+            direct_reply = self._file_capability_text()
         elif self._is_conversational_prompt(normalized_request):
             direct_reply = self._friendly_intro_text()
         provider_telemetry: dict[str, Any] = {}
@@ -376,12 +389,15 @@ class ForgeOperator:
         text = request.strip().lower()
         if ForgeOperator._asks_identity(text):
             return ForgeOperator._identity_text()
+        if ForgeOperator._asks_file_capability(text):
+            return ForgeOperator._file_capability_text()
         if ForgeOperator._is_conversational_prompt(text):
             return ForgeOperator._friendly_intro_text()
         return ForgeOperator._agent_guidance_text()
 
     @staticmethod
     def _asks_identity(text: str) -> bool:
+        return asks_identity(text)
         tokens = [token for token in re.split(r"[^a-z0-9\u0600-\u06ff]+", text.lower()) if token]
         token_set = set(tokens)
         asks_who = bool(token_set & {"who", "whos", "whose", "ho", "من"})
@@ -406,6 +422,10 @@ class ForgeOperator:
             "\u0645\u0646 \u0627\u0644\u0645\u0624\u0633\u0633",
         )
         return any(phrase in text for phrase in identity_phrases)
+
+    @staticmethod
+    def _asks_file_capability(text: str) -> bool:
+        return asks_file_capability(text)
 
     @staticmethod
     def _is_conversational_prompt(text: str) -> bool:
@@ -441,7 +461,11 @@ class ForgeOperator:
 
     @staticmethod
     def _identity_text() -> str:
-        return "Developed by TREN Studio. Founded by Larbi Aboudi."
+        return FORGE_IDENTITY_RESPONSE
+
+    @staticmethod
+    def _file_capability_text() -> str:
+        return FORGE_FILE_CAPABILITY_RESPONSE
 
     @staticmethod
     def _friendly_intro_text() -> str:

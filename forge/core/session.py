@@ -14,6 +14,13 @@ from queue import Queue
 import threading
 from typing import Any
 
+from forge.core.identity import (
+    FORGE_FILE_CAPABILITY_RESPONSE,
+    FORGE_IDENTITY_RESPONSE,
+    asks_file_capability,
+    asks_identity,
+    enforce_forge_response_guard,
+)
 from forge.core.discovery import SelfDiscoveryEngine
 from forge.core.models import ForgeResponse, Message, TaskType
 from forge.core.quota import QuotaGuardian
@@ -207,6 +214,14 @@ class ForgeSession:
         remember: bool,
     ) -> ForgeResponse:
         task_type = self._normalize_task_type(task_type)
+        if asks_identity(prompt):
+            response = self._identity_response()
+            self._remember_response(prompt, response, remember=remember)
+            return response
+        if asks_file_capability(prompt):
+            response = self._file_capability_response()
+            self._remember_response(prompt, response, remember=remember)
+            return response
         messages = self._build_messages(prompt)
 
         response: ForgeResponse = await self._router.route(
@@ -227,6 +242,20 @@ class ForgeSession:
         remember: bool,
     ):
         normalized_task_type = self._normalize_task_type(task_type)
+        if asks_identity(prompt):
+            response = self._identity_response()
+            self._remember_response(prompt, response, remember=remember)
+            yield {"type": "start", "provider": "forge", "model": "forge-identity-guard"}
+            yield {"type": "delta", "delta": response.content}
+            yield {"type": "response", "response": response}
+            return
+        if asks_file_capability(prompt):
+            response = self._file_capability_response()
+            self._remember_response(prompt, response, remember=remember)
+            yield {"type": "start", "provider": "forge", "model": "forge-capability-guard"}
+            yield {"type": "delta", "delta": response.content}
+            yield {"type": "response", "response": response}
+            return
         messages = self._build_messages(prompt)
 
         response: ForgeResponse | None = None
@@ -281,6 +310,7 @@ class ForgeSession:
         return messages
 
     def _remember_response(self, prompt: str, response: ForgeResponse, *, remember: bool) -> None:
+        response.content = enforce_forge_response_guard(response.content)
         self._last_response = response
         self._guardian.record_usage(response.provider, response.total_tokens)
         self._history.append(Message(role="user", content=prompt))
@@ -299,11 +329,49 @@ class ForgeSession:
             )
 
     @staticmethod
+    def _identity_response() -> ForgeResponse:
+        return ForgeResponse(
+            content=FORGE_IDENTITY_RESPONSE,
+            model_id="forge-identity-guard",
+            provider="forge",
+            latency_ms=0.0,
+            input_tokens=0,
+            output_tokens=0,
+            finish_reason="identity_guard",
+            score_used=1.0,
+            routing_telemetry={"identity_guard": True},
+        )
+
+    @staticmethod
+    def _file_capability_response() -> ForgeResponse:
+        return ForgeResponse(
+            content=FORGE_FILE_CAPABILITY_RESPONSE,
+            model_id="forge-capability-guard",
+            provider="forge",
+            latency_ms=0.0,
+            input_tokens=0,
+            output_tokens=0,
+            finish_reason="capability_guard",
+            score_used=1.0,
+            routing_telemetry={"capability_guard": True},
+        )
+
+    @staticmethod
     def _default_system() -> str:
         return (
             "You are FORGE - an expert AI agent. "
             "You are precise, direct, and deeply capable. "
             "When writing code, write production-quality code with no placeholders. "
             "When answering questions, be thorough but concise. "
-            "You have access to tools and can execute code when needed."
+            "You have access to tools and can execute code when needed. "
+            "You can create, read, edit, and verify files inside the selected FORGE workspace. "
+            "Never say you cannot access the file system when the user is asking about FORGE workspace actions.\n\n"
+            "Identity rules:\n"
+            "- You are FORGE.\n"
+            "- You are not OpenAI, Google, Anthropic, or any external model brand.\n"
+            "- Never say you are a language model trained by any company.\n"
+            "- If asked who created, built, made, trained, owns, developed, or founded you, answer exactly: "
+            "\"Developed by TREN Studio. Founded by Larbi Aboudi.\"\n"
+            "- If asked whether you are from OpenAI, Google, Anthropic, Gemini, Claude, ChatGPT, or another model/provider, answer exactly: "
+            "\"Developed by TREN Studio. Founded by Larbi Aboudi.\""
         )

@@ -78,6 +78,29 @@ agent_reviews: [{"agent":"critic"}]
         self.assertNotIn("deepseek", footer.lower())
         self.assertNotIn("fallback", footer.lower())
 
+    def test_identity_leak_is_replaced_before_visible_response(self) -> None:
+        visible = _humanize_visible_response(
+            "I am a large language model, trained by Google. What can I do for you today?",
+            {},
+        )
+
+        self.assertEqual(visible, "Developed by TREN Studio. Founded by Larbi Aboudi.")
+        self.assertNotIn("language model", visible.lower())
+        self.assertNotIn("google", visible.lower())
+
+    def test_file_refusal_is_replaced_before_visible_response(self) -> None:
+        visible = _humanize_visible_response(
+            "I can't directly create files on your computer because I don't have access to your local file system.",
+            {},
+        )
+
+        lowered = visible.lower()
+        self.assertIn("yes", lowered)
+        self.assertIn("workspace", lowered)
+        self.assertIn("path", lowered)
+        self.assertNotIn("can't", lowered)
+        self.assertNotIn("local file system", lowered)
+
 
 if __name__ == "__main__":
     unittest.main()
