@@ -5,8 +5,9 @@ import re
 
 FORGE_IDENTITY_RESPONSE = "Developed by TREN Studio. Founded by Larbi Aboudi."
 FORGE_FILE_CAPABILITY_RESPONSE = (
-    "Yes. I can create, read, and edit files inside your selected FORGE workspace. "
-    "Give me the file path and the content you want, and I will create it and verify it exists."
+    "Yes. I can create, read, and edit files inside your selected FORGE workspace "
+    "or an explicit local path such as Desktop or Documents. Give me the file path "
+    "and content, and I will create it and verify it exists."
 )
 FORGE_GREETING_RESPONSE = "Hi! I'm FORGE. What do you want me to do?"
 FORGE_TEST_RESPONSE = "FORGE is running. Give me a task."
@@ -178,7 +179,7 @@ def _missing_single_file_content_response(text: str) -> str | None:
         return None
     if not any(token.startswith(("creat", "write", "make", "save")) for token in tokens):
         return None
-    if any(marker in normalized for marker in (" with content ", " content ", " containing ", " text ", " says ", "```")):
+    if any(marker in normalized for marker in (" with ", " content ", " containing ", " text ", " says ", "```")):
         return None
     if re.search(r"\b(?:with\s+)?(?:content|text)\s*:", normalized):
         return None

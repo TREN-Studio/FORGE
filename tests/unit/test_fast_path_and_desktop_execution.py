@@ -56,6 +56,7 @@ class FastPathAndDesktopExecutionTests(unittest.TestCase):
 
     def test_single_file_create_with_content_is_not_intercepted(self) -> None:
         self.assertIsNone(instant_response("create hello.txt on my desktop with content: Hello from FORGE"))
+        self.assertIsNone(instant_response("create hello.txt on my desktop with hello world"))
 
     def test_explicit_file_create_auto_confirms_real_workspace_write(self) -> None:
         workspace = Path(".forge_artifacts/unit_fast_path_workspace").resolve()
@@ -90,6 +91,24 @@ class FastPathAndDesktopExecutionTests(unittest.TestCase):
         )
 
         self.assertEqual(target.read_text(encoding="utf-8"), "Hello from FORGE")
+
+    def test_plain_with_content_writes_file_body(self) -> None:
+        workspace = Path(".forge_artifacts/unit_plain_with_workspace").resolve()
+        workspace.mkdir(parents=True, exist_ok=True)
+        target = workspace / "plain_with_note.txt"
+        target.unlink(missing_ok=True)
+
+        result = operate_prompt(
+            "create plain_with_note.txt with hello world",
+            confirmed=False,
+            dry_run=False,
+            workspace_root=workspace,
+        )
+
+        self.assertTrue(target.exists())
+        self.assertEqual(target.read_text(encoding="utf-8"), "hello world")
+        self.assertEqual(result["validation_status"], "finished")
+        self.assertTrue(result["step_results"][0]["output"]["verified"])
 
     def test_stream_short_prompt_finishes_without_provider_details(self) -> None:
         events = list(stream_prompt("hi"))

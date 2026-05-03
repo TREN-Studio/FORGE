@@ -183,11 +183,44 @@ def _extract_content(text: str) -> str:
         while collected and not collected[-1].strip():
             collected.pop()
         return _trim_inline_content_boundary("\n".join(collected).strip())
+
+    inline = _extract_plain_with_content(text)
+    if inline:
+        return inline
     return ""
 
 
 def _normalize_explicit_content(content: str) -> str:
     return re.sub(r"^\s*(?:with\s+)?(?:content|text)\s*:\s*", "", content, flags=re.IGNORECASE)
+
+
+def _extract_plain_with_content(text: str) -> str:
+    raw = str(text or "").strip()
+    lowered = raw.lower()
+    tokens = [token for token in re.split(r"[^a-z0-9\u0600-\u06ff./\\:-]+", lowered) if token]
+    if len(tokens) > 18:
+        return ""
+    if not tokens or not any(token.startswith(("creat", "write", "save", "make")) for token in tokens):
+        return ""
+
+    path_matches = re.findall(
+        r"\b[^\s`\"']+\.(?:txt|md|json|py|csv|html|css|js|ts|yml|yaml)\b",
+        raw,
+        flags=re.IGNORECASE,
+    )
+    if len(path_matches) != 1:
+        return ""
+
+    escaped_path = re.escape(path_matches[0])
+    match = re.search(
+        escaped_path + r"\s+(?:with|containing|saying)\s+(?P<content>.+)$",
+        raw,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if not match:
+        return ""
+    content = _normalize_explicit_content(match.group("content").strip())
+    return _trim_inline_content_boundary(content)
 
 
 def _trim_inline_content_boundary(content: str) -> str:

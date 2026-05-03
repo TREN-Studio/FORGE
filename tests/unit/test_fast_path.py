@@ -38,6 +38,13 @@ class IdentityGuardFastPathTests(unittest.TestCase):
 
         self.assertEqual(cleaned, "Developed by TREN Studio. Founded by Larbi Aboudi.")
 
+    def test_sanitize_blocks_false_file_system_refusal(self) -> None:
+        cleaned = sanitize_response("I can't directly create files on your computer.")
+
+        self.assertNotIn("can't", cleaned.lower())
+        self.assertIn("create", cleaned.lower())
+        self.assertIn("verify", cleaned.lower())
+
 
 if __name__ == "__main__":
     unittest.main()
