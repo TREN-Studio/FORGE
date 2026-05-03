@@ -21,6 +21,8 @@ class DeployConfig:
     remote_root: str
     portal_backend_local_root: Path | None = None
     portal_backend_remote_root: str | None = None
+    forge_auth_local_root: Path | None = None
+    forge_auth_remote_root: str | None = None
     backup_index: bool = True
     allow_root_index_deploy: bool = False
     dry_run: bool = False
@@ -38,6 +40,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=os.getenv("FORGE_SITE_BACKEND_LOCAL_ROOT", "site_backend/forge_portal"),
     )
     parser.add_argument("--portal-backend-remote-root", default=os.getenv("HOSTINGER_PORTAL_BACKEND_ROOT"))
+    parser.add_argument(
+        "--forge-auth-local-root",
+        default=os.getenv("FORGE_AUTH_LOCAL_ROOT", "site_external/forge_auth"),
+    )
+    parser.add_argument("--forge-auth-remote-root", default=os.getenv("HOSTINGER_FORGE_AUTH_ROOT"))
     parser.add_argument("--host", default=os.getenv("HOSTINGER_HOST"))
     parser.add_argument("--port", type=int, default=int(os.getenv("HOSTINGER_PORT", "22")))
     parser.add_argument("--username", default=os.getenv("HOSTINGER_USERNAME"))
@@ -67,9 +74,17 @@ def load_config(args: argparse.Namespace) -> DeployConfig:
     if not backend_local_root.exists():
         backend_local_root = None
     remote_root = args.remote_root.strip("/")
+    forge_auth_local_root = Path(args.forge_auth_local_root).resolve()
+    if not forge_auth_local_root.exists():
+        forge_auth_local_root = None
     backend_remote_root = (
         (args.portal_backend_remote_root or _default_portal_backend_remote_root(remote_root)).strip("/")
         if backend_local_root is not None
+        else None
+    )
+    forge_auth_remote_root = (
+        (args.forge_auth_remote_root or _default_forge_auth_remote_root(remote_root)).strip("/")
+        if forge_auth_local_root is not None
         else None
     )
     if args.dry_run:
@@ -82,6 +97,8 @@ def load_config(args: argparse.Namespace) -> DeployConfig:
             remote_root=remote_root,
             portal_backend_local_root=backend_local_root,
             portal_backend_remote_root=backend_remote_root,
+            forge_auth_local_root=forge_auth_local_root,
+            forge_auth_remote_root=forge_auth_remote_root,
             backup_index=not args.no_backup_index,
             allow_root_index_deploy=bool(args.allow_root_index_deploy),
             dry_run=True,
@@ -95,6 +112,8 @@ def load_config(args: argparse.Namespace) -> DeployConfig:
         remote_root=remote_root,
         portal_backend_local_root=backend_local_root,
         portal_backend_remote_root=backend_remote_root,
+        forge_auth_local_root=forge_auth_local_root,
+        forge_auth_remote_root=forge_auth_remote_root,
         backup_index=not args.no_backup_index,
         allow_root_index_deploy=bool(args.allow_root_index_deploy),
         dry_run=bool(args.dry_run),
@@ -116,6 +135,13 @@ def _default_portal_backend_remote_root(remote_root: str) -> str:
     if marker in remote_root:
         return remote_root.replace(marker, "/private/forge_portal")
     return posixpath.join(posixpath.dirname(remote_root), "forge_portal_backend")
+
+
+def _default_forge_auth_remote_root(remote_root: str) -> str:
+    marker = "/public_html/FORGE"
+    if marker in remote_root:
+        return remote_root.replace(marker, "/public_html/forge-auth")
+    return posixpath.join(posixpath.dirname(remote_root), "forge-auth")
 
 
 def ensure_remote_dir(sftp: paramiko.SFTPClient, remote_dir: str) -> None:
@@ -178,6 +204,10 @@ def deploy(config: DeployConfig) -> list[tuple[str, int]]:
             for local_path in iter_site_files(config.portal_backend_local_root):
                 relative = local_path.relative_to(config.portal_backend_local_root).as_posix()
                 uploaded.append((posixpath.join(config.portal_backend_remote_root, relative), local_path.stat().st_size))
+        if config.forge_auth_local_root and config.forge_auth_remote_root:
+            for local_path in iter_site_files(config.forge_auth_local_root):
+                relative = local_path.relative_to(config.forge_auth_local_root).as_posix()
+                uploaded.append((posixpath.join(config.forge_auth_remote_root, relative), local_path.stat().st_size))
         return uploaded
 
     client = paramiko.SSHClient()
@@ -221,6 +251,16 @@ def deploy(config: DeployConfig) -> list[tuple[str, int]]:
                 size = sftp.stat(remote_path).st_size
                 uploaded.append((remote_path, size))
                 print(f"Uploaded backend {relative} -> {remote_path} ({size} bytes)")
+        if config.forge_auth_local_root and config.forge_auth_remote_root:
+            ensure_remote_dir(sftp, config.forge_auth_remote_root)
+            for local_path in iter_site_files(config.forge_auth_local_root):
+                relative = local_path.relative_to(config.forge_auth_local_root).as_posix()
+                remote_path = posixpath.join(config.forge_auth_remote_root, relative)
+                ensure_remote_dir(sftp, posixpath.dirname(remote_path))
+                sftp.put(str(local_path), remote_path)
+                size = sftp.stat(remote_path).st_size
+                uploaded.append((remote_path, size))
+                print(f"Uploaded auth {relative} -> {remote_path} ({size} bytes)")
         if root_index_before is not None:
             root_index_after = sha256_remote(sftp, remote_index)
             if root_index_after != root_index_before:

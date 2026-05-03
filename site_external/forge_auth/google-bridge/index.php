@@ -1,19 +1,26 @@
-<!doctype html>
+<?php
+header('Cache-Control: no-store, no-cache, must-revalidate');
+header('Pragma: no-cache');
+header('Expires: 0');
+header('Referrer-Policy: no-referrer');
+header('X-Content-Type-Options: nosniff');
+header('X-Frame-Options: DENY');
+header("Content-Security-Policy: default-src 'self'; base-uri 'self'; img-src 'self' data: https://*.gstatic.com https://*.googleusercontent.com; style-src 'self' 'unsafe-inline' https://accounts.google.com; script-src 'self' 'unsafe-inline' https://accounts.google.com https://static.cloudflareinsights.com; connect-src https://accounts.google.com https://oauth2.googleapis.com https://cloudflareinsights.com; frame-src https://accounts.google.com https://*.google.com; form-action https://www.trenstudio.com; object-src 'none'; upgrade-insecure-requests");
+?><!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>FORGE Google Bridge</title>
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://accounts.google.com; script-src 'self' 'unsafe-inline' https://accounts.google.com; connect-src https://accounts.google.com https://oauth2.googleapis.com; frame-src https://accounts.google.com https://*.google.com; form-action https://www.trenstudio.com; object-src 'none'; upgrade-insecure-requests">
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <style>
     :root {
-      --bg: #0d1117;
-      --panel: rgba(17, 24, 32, 0.92);
-      --line: rgba(255,255,255,0.08);
-      --text: #f3f5f7;
-      --muted: #9aa4b2;
-      --accent: #d5bc86;
+      --bg: #070707;
+      --panel: rgba(16, 16, 16, 0.92);
+      --line: rgba(255,255,255,0.09);
+      --text: #f2f0ec;
+      --muted: #a6a09a;
+      --accent: #FF6B1A;
     }
     * { box-sizing: border-box; }
     body {
@@ -23,8 +30,8 @@
       place-items: center;
       padding: 24px;
       background:
-        radial-gradient(circle at top left, rgba(213,188,134,0.16), transparent 26%),
-        linear-gradient(135deg, #0d1117 0%, #111827 100%);
+        radial-gradient(circle at top left, rgba(255,107,26,0.18), transparent 28%),
+        linear-gradient(135deg, #070707 0%, #12100f 100%);
       color: var(--text);
       font-family: "Segoe UI", system-ui, sans-serif;
     }
@@ -34,7 +41,7 @@
       border-radius: 24px;
       border: 1px solid var(--line);
       background: var(--panel);
-      box-shadow: 0 28px 70px rgba(0,0,0,0.32);
+      box-shadow: 0 28px 70px rgba(0,0,0,0.35);
     }
     .eyebrow {
       font-size: 12px;
@@ -79,14 +86,15 @@
 </head>
 <body>
   <main class="panel">
-    <div class="eyebrow">Postgenius Pro Bridge</div>
+    <div class="eyebrow">TREN Studio Auth Bridge</div>
     <h1>Continue to FORGE with Google</h1>
-    <p>This page completes Google sign-in on an allowed origin, then returns you to the FORGE portal with a verified session.</p>
+    <p>This page completes Google sign-in on trenstudio.com, then returns you to the FORGE portal with a verified session.</p>
     <div id="google-button-host" class="button-host"></div>
-    <div id="status" class="status">Preparing Google sign-in…</div>
+    <div id="status" class="status">Preparing Google sign-in...</div>
   </main>
 
   <script>
+    const allowedReturnTo = "https://www.trenstudio.com/FORGE/portal/api/index.php/auth/google/bridge-complete";
     const params = new URLSearchParams(window.location.search);
     const state = params.get("state") || "";
     const returnTo = params.get("return_to") || "";
@@ -123,6 +131,10 @@
         setStatus("Google bridge is missing state, return_to, or client_id.", "error");
         return;
       }
+      if (returnTo !== allowedReturnTo) {
+        setStatus("Google bridge return target is not allowed.", "error");
+        return;
+      }
       if (!window.google || !window.google.accounts || !window.google.accounts.id) {
         setStatus("Google Identity Services failed to load on the bridge.", "error");
         return;
@@ -137,7 +149,7 @@
             setStatus("Google returned no credential.", "error");
             return;
           }
-          setStatus("Google account verified. Returning to FORGE…");
+          setStatus("Google account verified. Returning to FORGE...");
           submitCredential(credential);
         }
       });

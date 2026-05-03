@@ -101,6 +101,15 @@ PROVIDER_FIELDS: dict[str, list[str]] = {
     "ollama": ["api_key"],
 }
 ALLOWED_SECRET_FIELDS = {"api_key", "account_id", "organization", "project", "global_key", "email"}
+DEFAULT_GOOGLE_BRIDGE_URL = "https://www.trenstudio.com/forge-auth/google-bridge/"
+LEGACY_GOOGLE_BRIDGE_HOSTS = ("postgeniuspro.com",)
+
+
+def normalize_google_bridge_url(value: str | None) -> str:
+    bridge_url = (value or "").strip()
+    if not bridge_url or any(host in bridge_url.lower() for host in LEGACY_GOOGLE_BRIDGE_HOSTS):
+        return DEFAULT_GOOGLE_BRIDGE_URL
+    return f"{bridge_url.rstrip('/')}/"
 
 
 @dataclass
@@ -117,7 +126,10 @@ class PortalConfig:
     google_token_url: str = "https://oauth2.googleapis.com/token"
     google_userinfo_url: str = "https://openidconnect.googleapis.com/v1/userinfo"
     google_tokeninfo_url: str = "https://oauth2.googleapis.com/tokeninfo"
-    google_bridge_url: str = ""
+    google_bridge_url: str = DEFAULT_GOOGLE_BRIDGE_URL
+
+    def __post_init__(self) -> None:
+        self.google_bridge_url = normalize_google_bridge_url(self.google_bridge_url)
 
     @property
     def google_oauth_enabled(self) -> bool:

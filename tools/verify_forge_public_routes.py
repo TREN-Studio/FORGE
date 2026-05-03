@@ -12,6 +12,7 @@ from html.parser import HTMLParser
 
 ROOT = Path(__file__).resolve().parents[1]
 GITHUB_API = "https://api.github.com/repos/TREN-Studio/FORGE"
+EXPECTED_GOOGLE_BRIDGE_URL = "https://www.trenstudio.com/forge-auth/google-bridge/"
 
 
 class TitleParser(HTMLParser):
@@ -42,6 +43,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--project-url", default="https://www.trenstudio.com/FORGE/")
     parser.add_argument("--downloads-url", default="https://www.trenstudio.com/FORGE/downloads/")
     parser.add_argument("--manifest-url", default="https://www.trenstudio.com/FORGE/release-manifest.json")
+    parser.add_argument("--google-bridge-url", default=EXPECTED_GOOGLE_BRIDGE_URL)
+    parser.add_argument("--portal-health-url", default="https://www.trenstudio.com/FORGE/portal/api/index.php/health")
     parser.add_argument(
         "--expected-manifest",
         default="",
@@ -204,6 +207,34 @@ def verify_manifest(actual: dict[str, Any], expected: dict[str, Any] | None) -> 
                     raise ValueError(f"{name}: public manifest {key} does not match expected manifest.")
 
 
+def verify_google_bridge_page(html: str) -> None:
+    verify_clean_title(html, "FORGE Google Bridge", "/forge-auth/google-bridge/")
+    required_markers = [
+        "TREN Studio Auth Bridge",
+        "Continue to FORGE with Google",
+        "https://www.trenstudio.com/FORGE/portal/api/index.php/auth/google/bridge-complete",
+    ]
+    for marker in required_markers:
+        if marker not in html:
+            raise ValueError(f"/forge-auth/google-bridge/ is missing marker: {marker}")
+    forbidden_markers = ["postgeniuspro.com", "Postgenius", "PostGenius", "forge-google-bridge"]
+    for marker in forbidden_markers:
+        if marker in html:
+            raise ValueError(f"/forge-auth/google-bridge/ contains legacy bridge marker: {marker}")
+
+
+def verify_portal_health_google_bridge(payload: dict[str, Any]) -> None:
+    google_oauth = payload.get("google_oauth")
+    if not isinstance(google_oauth, dict):
+        raise ValueError("Portal health response is missing google_oauth.")
+    bridge_url = str(google_oauth.get("bridge_url", "")).strip()
+    if "postgeniuspro.com" in bridge_url.lower():
+        raise ValueError(f"Portal health still points Google bridge at legacy domain: {bridge_url}")
+    mode = str(google_oauth.get("mode", "")).strip()
+    if mode == "bridge_id_token" and bridge_url != EXPECTED_GOOGLE_BRIDGE_URL:
+        raise ValueError(f"Portal health Google bridge {bridge_url!r} != {EXPECTED_GOOGLE_BRIDGE_URL!r}")
+
+
 def verify_github_latest(manifest: dict[str, Any]) -> None:
     latest = fetch_json(f"{GITHUB_API}/releases/latest")
     if latest.get("prerelease"):
@@ -217,17 +248,22 @@ def main() -> None:
     args = build_parser().parse_args()
     project_html, project_headers = fetch_text(args.project_url)
     downloads_html, downloads_headers = fetch_text(args.downloads_url)
+    bridge_html, bridge_headers = fetch_text(args.google_bridge_url)
     manifest = fetch_json(args.manifest_url)
+    portal_health = fetch_json(args.portal_health_url)
     expected = load_expected_manifest((ROOT / args.expected_manifest).resolve()) if args.expected_manifest else None
 
     verify_project_root(project_html)
     verify_downloads_page(downloads_html)
+    verify_google_bridge_page(bridge_html)
+    verify_portal_health_google_bridge(portal_health)
     verify_manifest(manifest, expected)
     if args.verify_github_latest:
         verify_github_latest(manifest)
 
     print(f"Verified project route: {args.project_url} ({len(project_html)} bytes)")
     print(f"Verified downloads route: {args.downloads_url} ({len(downloads_html)} bytes)")
+    print(f"Verified Google bridge route: {args.google_bridge_url} ({len(bridge_html)} bytes)")
     print(
         "Verified public manifest: "
         f"version={manifest['version']} tag={manifest['release_tag']} assets={len(manifest['assets'])}"
@@ -236,6 +272,7 @@ def main() -> None:
         print(f"Verified GitHub latest stable release: {manifest['release_tag']}")
     print(f"Project cache-control: {project_headers.get('Cache-Control', '<unset>')}")
     print(f"Downloads cache-control: {downloads_headers.get('Cache-Control', '<unset>')}")
+    print(f"Google bridge cache-control: {bridge_headers.get('Cache-Control', '<unset>')}")
 
 
 if __name__ == "__main__":

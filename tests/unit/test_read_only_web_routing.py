@@ -39,7 +39,7 @@ class ReadOnlyWebRoutingTests(unittest.TestCase):
             _close_operator(operator)
 
     def test_analyze_site_uses_browser_analysis_not_publish(self) -> None:
-        snapshot = self._routing_snapshot("Analyze this site https://postgeniuspro.com/")
+        snapshot = self._routing_snapshot("Analyze this site https://www.trenstudio.com/FORGE/")
 
         intent = snapshot["intent"]
         routing = snapshot["routing"]
@@ -56,7 +56,7 @@ class ReadOnlyWebRoutingTests(unittest.TestCase):
         self.assertNotIn("external-publisher", [step.skill for step in plan.steps])
 
     def test_read_only_website_review_does_not_request_approval(self) -> None:
-        snapshot = self._routing_snapshot("Review this website https://postgeniuspro.com/")
+        snapshot = self._routing_snapshot("Review this website https://www.trenstudio.com/FORGE/")
 
         safety = snapshot["safety"]
         plan = snapshot["plan"]
@@ -85,10 +85,10 @@ class ReadOnlyWebRoutingTests(unittest.TestCase):
                 "worker_lanes": {"lanes": ["raw worker lane state"]},
                 "agent_reviews": [{"raw": True}],
                 "browser-executor": {
-                    "current_url": "https://postgeniuspro.com/",
-                    "title": "PostGenius Pro",
+                    "current_url": "https://www.trenstudio.com/FORGE/",
+                    "title": "FORGE",
                     "page_state": {
-                        "headings": [{"name": "PostGenius Pro"}],
+                        "headings": [{"name": "FORGE"}],
                         "text": [
                             {"name": "AI content studio"},
                             {"name": "Create better social posts"},

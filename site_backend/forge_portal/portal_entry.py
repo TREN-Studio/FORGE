@@ -18,6 +18,8 @@ except ModuleNotFoundError:
     from api import PortalConfig, handle_request
     from store import PortalStateStore
 
+DEFAULT_GOOGLE_BRIDGE_URL = "https://www.trenstudio.com/forge-auth/google-bridge/"
+
 
 def _load_runtime_config(root: Path) -> dict[str, str]:
     config_path = root / "portal_runtime_config.json"
@@ -64,7 +66,10 @@ def main() -> int:
                 google_token_url=os.environ.get("FORGE_GOOGLE_TOKEN_URL", "https://oauth2.googleapis.com/token"),
                 google_userinfo_url=os.environ.get("FORGE_GOOGLE_USERINFO_URL", "https://openidconnect.googleapis.com/v1/userinfo"),
                 google_tokeninfo_url=os.environ.get("FORGE_GOOGLE_TOKENINFO_URL", "https://oauth2.googleapis.com/tokeninfo"),
-                google_bridge_url=os.environ.get("FORGE_GOOGLE_BRIDGE_URL", runtime_config.get("FORGE_GOOGLE_BRIDGE_URL", "")),
+                google_bridge_url=os.environ.get(
+                    "FORGE_GOOGLE_BRIDGE_URL",
+                    runtime_config.get("FORGE_GOOGLE_BRIDGE_URL", DEFAULT_GOOGLE_BRIDGE_URL),
+                ),
             ),
             store,
             method=method.upper(),
