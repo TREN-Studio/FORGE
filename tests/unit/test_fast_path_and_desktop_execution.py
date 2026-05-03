@@ -5,10 +5,12 @@ import unittest
 from pathlib import Path
 
 from forge.cli.main import _instant_cli_response
+from forge.cli.main import _is_system_workspace_candidate
 from forge.core.identity import FORGE_IDENTITY_RESPONSE, instant_response
 from forge.core.router import classify_query_speed, timeout_for_prompt
 from forge.core.session import ForgeSession
 from forge.desktop.runtime import (
+    resolve_path_from_prompt,
     _should_allow_real_changes_for_prompt,
     operate_prompt,
     stream_prompt,
@@ -52,6 +54,9 @@ class FastPathAndDesktopExecutionTests(unittest.TestCase):
         self.assertIn("Illa.txt".lower(), reply.lower())
         self.assertNotIn("can't", reply.lower())
 
+    def test_single_file_create_with_content_is_not_intercepted(self) -> None:
+        self.assertIsNone(instant_response("create hello.txt on my desktop with content: Hello from FORGE"))
+
     def test_explicit_file_create_auto_confirms_real_workspace_write(self) -> None:
         workspace = Path(".forge_artifacts/unit_fast_path_workspace").resolve()
         workspace.mkdir(parents=True, exist_ok=True)
@@ -68,6 +73,23 @@ class FastPathAndDesktopExecutionTests(unittest.TestCase):
         self.assertTrue(target.exists())
         self.assertIn("hello fast path", target.read_text(encoding="utf-8"))
         self.assertEqual(result["validation_status"], "finished")
+        output = result["step_results"][0]["output"]
+        self.assertTrue(output["verified"])
+
+    def test_content_prefix_is_not_written_as_file_body(self) -> None:
+        workspace = Path(".forge_artifacts/unit_content_prefix_workspace").resolve()
+        workspace.mkdir(parents=True, exist_ok=True)
+        target = workspace / "prefix_note.txt"
+        target.unlink(missing_ok=True)
+
+        operate_prompt(
+            "create prefix_note.txt with content: Hello from FORGE",
+            confirmed=False,
+            dry_run=False,
+            workspace_root=workspace,
+        )
+
+        self.assertEqual(target.read_text(encoding="utf-8"), "Hello from FORGE")
 
     def test_stream_short_prompt_finishes_without_provider_details(self) -> None:
         events = list(stream_prompt("hi"))
@@ -83,9 +105,23 @@ class FastPathAndDesktopExecutionTests(unittest.TestCase):
 
     def test_desktop_real_change_detection_is_conservative(self) -> None:
         self.assertTrue(_should_allow_real_changes_for_prompt("create a file on my desktop named Illa.txt"))
+        self.assertTrue(_should_allow_real_changes_for_prompt("create hello.txt in Documents with content ok"))
         self.assertTrue(_should_allow_real_changes_for_prompt("write report.md with content ok"))
         self.assertFalse(_should_allow_real_changes_for_prompt("delete report.md on my desktop"))
         self.assertFalse(_should_allow_real_changes_for_prompt("what can you do?"))
+
+    def test_prompt_path_resolution_supports_common_user_locations(self) -> None:
+        desktop = resolve_path_from_prompt("create hello.txt on my desktop with content hi")
+        documents = resolve_path_from_prompt("create hello.txt in Documents with content hi")
+
+        if (Path.home() / "Desktop").exists():
+            self.assertEqual(desktop, (Path.home() / "Desktop").resolve())
+        if (Path.home() / "Documents").exists():
+            self.assertEqual(documents, (Path.home() / "Documents").resolve())
+
+    def test_cli_does_not_use_system32_as_default_workspace(self) -> None:
+        self.assertTrue(_is_system_workspace_candidate(Path(r"C:\Windows\System32")))
+        self.assertFalse(_is_system_workspace_candidate(Path.home()))
 
     def test_provider_timeout_classification(self) -> None:
         self.assertEqual(classify_query_speed("hello there"), "fast_queries")

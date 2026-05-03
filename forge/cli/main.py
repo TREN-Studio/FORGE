@@ -75,9 +75,10 @@ def _get_session():
 
 
 def _instant_cli_response(prompt: str) -> str | None:
-    from forge.core.identity import instant_response
+    from forge.brain.identity_guard import get_instant_response
 
-    return instant_response(prompt)
+    instant = get_instant_response(prompt)
+    return str(instant.get("user_response") or "") if instant else None
 
 
 def _is_writable_directory(path: Path) -> bool:
@@ -98,6 +99,22 @@ def _fallback_workspace_root() -> Path:
     return Path.home() / ".forge" / "workspace"
 
 
+def _is_system_workspace_candidate(path: Path) -> bool:
+    resolved = path.resolve()
+    windir = Path(os.environ.get("WINDIR", r"C:\Windows")).resolve()
+    system_roots = {
+        windir,
+        windir / "System32",
+        windir / "SysWOW64",
+    }
+    program_files = [os.environ.get("ProgramFiles"), os.environ.get("ProgramFiles(x86)")]
+    for raw in program_files:
+        if raw:
+            system_roots.add(Path(raw).resolve())
+
+    return any(resolved == root or root in resolved.parents for root in system_roots)
+
+
 def _resolve_operator_workspace(workspace_root: str | Path | None = None) -> Path:
     if workspace_root:
         normalized = Path(workspace_root).expanduser().resolve()
@@ -109,7 +126,9 @@ def _resolve_operator_workspace(workspace_root: str | Path | None = None) -> Pat
     candidates = []
     if env_root:
         candidates.append(Path(env_root).expanduser().resolve())
-    candidates.append(Path.cwd().resolve())
+    cwd = Path.cwd().resolve()
+    if not _is_system_workspace_candidate(cwd):
+        candidates.append(cwd)
     candidates.append(_fallback_workspace_root().resolve())
 
     for candidate in candidates:

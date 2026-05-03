@@ -82,6 +82,15 @@ def execute(payload: dict, context) -> dict:
         find_text=spec.get("find_text"),
         replace_text=spec.get("replace_text"),
     )
+    verified = False
+    verified_bytes = 0
+    try:
+        verified_path = tools.resolve_workspace_path(applied["path"])
+        verified = verified_path.exists() and verified_path.is_file()
+        verified_bytes = verified_path.stat().st_size if verified else 0
+    except Exception:
+        verified = False
+    evidence.append(f"verified:{verified}")
     return {
         "status": "completed",
         "summary": summary,
@@ -89,8 +98,10 @@ def execute(payload: dict, context) -> dict:
         "operation": applied["mode"],
         "changed": applied["changed"],
         "created": applied["created"],
+        "verified": verified,
         "diff": applied["diff"],
         "bytes_written": applied["bytes_written"],
+        "verified_bytes": verified_bytes,
         "rollback": applied.get("rollback"),
         "evidence": evidence,
         "structured_validation": {"format": "json", "repaired": json_repaired} if applied["path"].lower().endswith(".json") else None,
@@ -116,7 +127,7 @@ def _resolve_edit_spec(payload: dict) -> dict[str, str]:
         replace_payload = _extract_replace_payload(payload, request)
         spec.update(replace_payload)
     else:
-        content = str(payload.get("content") or _extract_content(request) or "")
+        content = _normalize_explicit_content(str(payload.get("content") or _extract_content(request) or ""))
         if not content:
             raise ValueError("file-editor requires explicit content for this edit.")
         spec["content"] = content
@@ -173,6 +184,10 @@ def _extract_content(text: str) -> str:
             collected.pop()
         return _trim_inline_content_boundary("\n".join(collected).strip())
     return ""
+
+
+def _normalize_explicit_content(content: str) -> str:
+    return re.sub(r"^\s*(?:with\s+)?(?:content|text)\s*:\s*", "", content, flags=re.IGNORECASE)
 
 
 def _trim_inline_content_boundary(content: str) -> str:

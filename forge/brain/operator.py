@@ -4,7 +4,8 @@ import re
 from typing import Any
 
 from forge.brain.composer import ResponseComposer
-from forge.brain.contracts import CompletionState, ExecutionPlan, IntentKind, OperatorResult, StepExecutionResult
+from forge.brain.contracts import CompletionState, ExecutionPlan, IntentKind, OperatorResult, StepExecutionResult, TaskIntent
+from forge.brain.identity_guard import get_instant_response, sanitize_response
 from forge.brain.identity import FORGE_FILE_CAPABILITY_RESPONSE, FORGE_IDENTITY_RESPONSE, asks_file_capability, asks_identity
 from forge.brain.mission_store import MissionAuditStore
 from forge.brain.intent import IntentResolver
@@ -70,6 +71,10 @@ class ForgeOperator:
         resume_mission_id: str | None = None,
         memory_context_override: str | None = None,
     ) -> OperatorResult:
+        instant = get_instant_response(request)
+        if instant:
+            return self._instant_result(request, instant)
+
         if memory_context_override is not None:
             memory_context = memory_context_override
         else:
@@ -385,7 +390,53 @@ class ForgeOperator:
         return result
 
     @staticmethod
+    def _instant_result(request: str, instant: dict) -> OperatorResult:
+        answer = sanitize_response(str(instant.get("user_response") or instant.get("content") or ""))
+        intent = TaskIntent(
+            raw_request=request,
+            objective="Answer instantly from FORGE identity guard.",
+            primary_intent=IntentKind.CONVERSATION,
+            intents=[IntentKind.CONVERSATION],
+            task_type="fast",
+            requested_output="short user response",
+            notes=["Answered locally before provider routing."],
+        )
+        plan = ExecutionPlan(
+            objective=intent.objective,
+            task_type=intent.task_type,
+            risk_level=intent.risk_level,
+            steps=[],
+            fallbacks=[],
+            completion_criteria=["Return the local fast-path response."],
+        )
+        return OperatorResult(
+            objective=intent.objective,
+            approach_taken=[
+                "Matched FORGE identity guard fast path.",
+                "No provider, model, or execution skill was used.",
+            ],
+            result=answer,
+            user_response=answer,
+            technical_details=dict(instant.get("technical_details") or {}),
+            validation_status=CompletionState.FINISHED,
+            risks_or_limitations=[],
+            best_next_action="Give FORGE a concrete task to execute next.",
+            intent=intent,
+            plan=plan,
+            step_results=[],
+            artifacts={},
+            mission_trace=[
+                "Identity guard matched prompt.",
+                "FORGE returned a local response before provider routing.",
+            ],
+            provider_telemetry={"instant_response": True, "provider_call": False},
+        )
+
+    @staticmethod
     def _clarification_text(request: str) -> str:
+        instant = get_instant_response(request)
+        if instant:
+            return sanitize_response(str(instant.get("user_response") or instant.get("content") or ""))
         text = request.strip().lower()
         if ForgeOperator._asks_identity(text):
             return ForgeOperator._identity_text()

@@ -180,6 +180,8 @@ def _missing_single_file_content_response(text: str) -> str | None:
         return None
     if any(marker in normalized for marker in (" with content ", " content ", " containing ", " text ", " says ", "```")):
         return None
+    if re.search(r"\b(?:with\s+)?(?:content|text)\s*:", normalized):
+        return None
     if any(token in {"project", "app", "tests", "analyze", "analyse", "read", "report"} for token in tokens):
         return None
 

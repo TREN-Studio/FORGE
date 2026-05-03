@@ -2415,6 +2415,14 @@ DESKTOP_HTML = """<!doctype html>
           return;
         }
 
+        if (data.type === "confirmation") {
+          const text = data.message || "Real changes enabled for this explicit local path.";
+          workspaceSubtitle.textContent = text;
+          pushLiveEvent(text);
+          appendNote(text);
+          return;
+        }
+
         if (data.type === "mission_completed") {
           setMissionStatus(data.success ? "finished" : "failed");
           const latency = data.total_latency_ms ? (Number(data.total_latency_ms) / 1000).toFixed(1) + "s" : "unknown latency";

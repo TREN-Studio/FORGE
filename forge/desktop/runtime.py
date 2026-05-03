@@ -125,6 +125,8 @@ _REAL_CHANGE_TERMS = (
 )
 _EXPLICIT_PATH_TERMS = (
     "desktop",
+    "documents",
+    "document folder",
     "my pc",
     "my computer",
     "this computer",
@@ -156,12 +158,16 @@ def _should_allow_real_changes_for_prompt(prompt: str) -> bool:
     return wants_change and (has_explicit_path or has_file_target)
 
 
-def _resolve_workspace_for_prompt(prompt: str, current_workspace: Path) -> Path:
+def resolve_path_from_prompt(prompt: str) -> Path | None:
     lowered = str(prompt or "").lower()
     if "desktop" in lowered:
         desktop = Path.home() / "Desktop"
         if desktop.exists() and desktop.is_dir():
             return desktop.resolve()
+    if "documents" in lowered or "document folder" in lowered:
+        documents = Path.home() / "Documents"
+        if documents.exists() and documents.is_dir():
+            return documents.resolve()
     if "~/" in lowered or "home folder" in lowered:
         home = Path.home()
         if home.exists() and home.is_dir():
@@ -173,6 +179,13 @@ def _resolve_workspace_for_prompt(prompt: str, current_workspace: Path) -> Path:
         parent = candidate if candidate.is_dir() else candidate.parent
         if parent.exists() and parent.is_dir():
             return parent.resolve()
+    return None
+
+
+def _resolve_workspace_for_prompt(prompt: str, current_workspace: Path) -> Path:
+    resolved = resolve_path_from_prompt(prompt)
+    if resolved is not None:
+        return resolved
     return current_workspace
 
 
@@ -481,8 +494,10 @@ def operate_prompt(
     normalized_workspace_root = _resolve_workspace_for_prompt(prompt, base_workspace_root)
     if workspace_root is not None or normalized_workspace_root != base_workspace_root:
         set_workspace_root(normalized_workspace_root)
+    auto_confirmed = False
     if not dry_run and _should_allow_real_changes_for_prompt(prompt):
         confirmed = True
+        auto_confirmed = True
 
     instant = instant_response(prompt)
     if instant is not None:
@@ -563,8 +578,10 @@ def stream_prompt(
     normalized_workspace_root = _resolve_workspace_for_prompt(prompt, base_workspace_root)
     if workspace_root is not None or normalized_workspace_root != base_workspace_root:
         set_workspace_root(normalized_workspace_root)
+    auto_confirmed = False
     if not dry_run and _should_allow_real_changes_for_prompt(prompt):
         confirmed = True
+        auto_confirmed = True
 
     instant = instant_response(prompt)
     if instant is not None:
@@ -593,6 +610,14 @@ def stream_prompt(
     if _is_local_demo_prompt(prompt, normalized_workspace_root):
         yield from _stream_local_demo(normalized_workspace_root, started=time.monotonic())
         return
+
+    if auto_confirmed:
+        yield {
+            "type": "confirmation",
+            "stage": "safety",
+            "message": f"Explicit local path detected. Real changes enabled for workspace: {normalized_workspace_root}",
+            "workspace_root": str(normalized_workspace_root),
+        }
 
     operator = ForgeOperator(
         settings=OperatorSettings(
