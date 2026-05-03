@@ -6,7 +6,8 @@ header('Referrer-Policy: no-referrer');
 header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: DENY');
 header("Content-Security-Policy: default-src 'self'; base-uri 'self'; img-src 'self' data: https://*.gstatic.com https://*.googleusercontent.com; style-src 'self' 'unsafe-inline' https://accounts.google.com; script-src 'self' 'unsafe-inline' https://accounts.google.com https://static.cloudflareinsights.com; connect-src https://accounts.google.com https://oauth2.googleapis.com https://cloudflareinsights.com; frame-src https://accounts.google.com https://*.google.com; form-action https://www.trenstudio.com; object-src 'none'; upgrade-insecure-requests");
-?><!doctype html>
+?><!-- FORGE-owned Google bridge; keep this flow on trenstudio.com. -->
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
