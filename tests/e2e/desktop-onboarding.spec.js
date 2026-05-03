@@ -3,60 +3,32 @@ const fs = require('fs');
 const path = require('path');
 
 test.describe.serial('FORGE desktop onboarding', () => {
-  test('completes Desktop first-run sign-in through the shared portal Google flow', async ({ page }) => {
+  test('starts in guest mode without forcing login or provider setup', async ({ page }) => {
     await page.goto('/');
 
     await expect(page.getByRole('heading', { name: 'Talk to FORGE' })).toBeVisible();
     await expect(page.locator('#send')).toHaveText('Send');
+    await expect(page.locator('#send')).toBeEnabled();
+    await expect(page.locator('#prompt')).toBeEnabled();
     await expect(page.locator('#clear')).toHaveText('New Chat');
-    await expect(page.locator('#workspace-subtitle')).toContainText('Sign in first');
-    await expect(page.locator('#sidebar-toggle')).toHaveText('Sign In');
-    await expect(page.locator('#auth-gate')).toBeVisible();
-    await expect(page.locator('#auth-gate')).toContainText('Sign in once, then just chat');
+    await expect(page.locator('#workspace-subtitle')).toContainText('Guest mode is ready');
+    await expect(page.locator('#sidebar-toggle')).toHaveText('Settings');
+    await expect(page.locator('#auth-gate')).toBeHidden();
+    await expect(page.locator('#provider-setup')).toBeHidden();
+    await expect(page.locator('#demo-task')).toBeVisible();
+    await expect(page.locator('#demo-task-status')).toContainText('No provider required');
 
-    const popupPromise = page.waitForEvent('popup');
-    await page.locator('#auth-gate-google').click();
-    const popup = await popupPromise;
-    await expect.poll(() => popup.url(), { timeout: 10000 }).not.toBe('about:blank');
-    expect(popup.url()).toContain('device_code=');
-
-    await expect(page.locator('#sidebar-toggle')).toHaveText('Settings', { timeout: 20000 });
     await page.locator('#sidebar-toggle').click();
-    await expect(page.locator('#auth-logged-in')).toBeVisible({ timeout: 20000 });
-    await expect(page.locator('#account-email')).toContainText('google-user@example.com');
-    await expect(page.locator('#account-role')).toContainText('User');
+    await expect(page.locator('#auth-logged-out')).toBeVisible();
+    await expect(page.locator('#account-summary')).toContainText('Guest mode is ready');
     await expect(page.locator('#provider-select')).toBeVisible();
     await expect(page.locator('#workspace-path')).toBeVisible();
-    await expect(page.locator('#auth-status')).toContainText('Desktop session is active.');
+    await expect(page.locator('#auth-status')).toContainText('Guest mode active');
     await page.locator('#sidebar-scrim').click({ force: true });
-    await expect(page.locator('#provider-setup')).toBeVisible({ timeout: 20000 });
-    await expect(page.locator('#provider-setup')).toContainText('Choose how FORGE should think');
-    await expect(page.locator('#provider-setup')).toContainText('Ollama is not running');
-    await expect(page.locator('#provider-setup-groq')).toBeVisible();
-    await expect(page.locator('#provider-setup-ollama')).toBeVisible();
-    await expect(page.locator('#provider-setup-byok')).toBeVisible();
-    await page.locator('#provider-setup-groq').click();
-    await expect(page.locator('#provider-select')).toHaveValue('groq');
-    await expect(page.locator('#provider-status')).toContainText('Groq selected');
-    await expect(page.locator('#sidebar-toggle')).toHaveText('Settings');
-    await expect(page.locator('#send')).toBeEnabled();
-    await popup.waitForLoadState('domcontentloaded');
   });
 
   test('runs the one-click local demo and creates action_items.md', async ({ page }) => {
     await page.goto('/');
-
-    const popupPromise = page.waitForEvent('popup');
-    await page.locator('#auth-gate-google').click();
-    const popup = await popupPromise;
-    await expect.poll(() => popup.url(), { timeout: 10000 }).not.toBe('about:blank');
-    expect(popup.url()).toContain('device_code=');
-
-    await expect(page.locator('#sidebar-toggle')).toHaveText('Settings', { timeout: 20000 });
-    await page.locator('#sidebar-toggle').click();
-    await expect(page.locator('#auth-logged-in')).toBeVisible({ timeout: 20000 });
-    await popup.waitForLoadState('domcontentloaded');
-    await page.locator('#sidebar-scrim').click({ force: true });
 
     await expect(page.locator('#demo-task')).toBeVisible({ timeout: 20000 });
     await expect(page.locator('#demo-task')).toContainText('Try a local agent demo');
@@ -90,7 +62,8 @@ test.describe.serial('FORGE desktop onboarding', () => {
     await page.goto('/');
 
     const popupPromise = page.waitForEvent('popup');
-    await page.locator('#auth-gate-google').click();
+    await page.locator('#sidebar-toggle').click();
+    await page.locator('#google-login-button').click();
     const popup = await popupPromise;
     await expect.poll(() => popup.url(), { timeout: 10000 }).not.toBe('about:blank');
     expect(popup.url()).toContain('device_code=');

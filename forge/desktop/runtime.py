@@ -317,6 +317,30 @@ def stream_prompt(
     routing = operator.skill_router.route(intent, operator.registry.list())
     routing.selected_skills = operator._ordered_skill_names(routing.selected_skills)
 
+    if operator._asks_identity(prompt.strip().lower()):
+        started = time.monotonic()
+        answer = operator._identity_text()
+        payload = _serialize_direct_response(
+            answer=answer,
+            intent=intent,
+            workspace_root=normalized_workspace_root,
+            approach="Identity prompt answered from the approved branding policy.",
+        )
+        footer = _stream_footer(payload, elapsed_ms=(time.monotonic() - started) * 1000)
+        payload["stream_footer"] = footer
+        yield {
+            "type": "user_response",
+            "content": payload.get("user_response") or answer,
+            "has_details": bool(payload.get("technical_details") or payload.get("diagnostics")),
+        }
+        yield {
+            "type": "technical_details",
+            "content": payload.get("technical_details") or payload.get("diagnostics") or {},
+            "hidden": True,
+        }
+        yield _done_event(payload, footer=footer)
+        return
+
     if intent.primary_intent == IntentKind.CONVERSATION and not routing.selected_skills:
         started = time.monotonic()
         normalized_prompt = prompt.strip().lower()

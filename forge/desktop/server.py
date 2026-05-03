@@ -920,12 +920,7 @@ DESKTOP_HTML = """<!doctype html>
     }
 
     .chat-shell.guest-mode .composer {
-      opacity: 0.56;
-    }
-
-    .chat-shell.guest-mode textarea,
-    .chat-shell.guest-mode #send {
-      pointer-events: none;
+      opacity: 1;
     }
 
     .hidden { display: none !important; }
@@ -1015,9 +1010,9 @@ DESKTOP_HTML = """<!doctype html>
 
       <section class="card">
         <h2>Account</h2>
-        <div id="account-summary" class="footnote">Login required. Every user must bring their own provider keys.</div>
+        <div id="account-summary" class="footnote">Guest mode is ready. Sign in only for sync, saved cloud keys, admin, or private portal features.</div>
         <div id="auth-logged-out" class="auth-grid">
-          <div class="footnote">First run: complete sign-in once, then FORGE Desktop will import your account and user-owned provider keys automatically.</div>
+          <div class="footnote">Optional account path. You can use FORGE locally first, then connect an account when you want cloud key sync or private controls.</div>
           <label class="field-label" for="auth-name">Display Name</label>
           <input id="auth-name" class="text-field" type="text" placeholder="Your name">
           <label class="field-label" for="auth-email">Email</label>
@@ -1067,7 +1062,7 @@ DESKTOP_HTML = """<!doctype html>
           <button id="verify-email-button" type="button" class="button-ghost">Verify Email</button>
           <button id="apply-reset-button" type="button" class="button-ghost">Apply Reset</button>
         </div>
-        <div id="auth-status" class="inline-status">Awaiting account action.</div>
+        <div id="auth-status" class="inline-status">Guest mode active. Account sign-in is optional.</div>
       </section>
 
       <section class="card">
@@ -1099,9 +1094,9 @@ DESKTOP_HTML = """<!doctype html>
           <button id="save-provider-key" type="button" class="button-ghost">Save Key</button>
           <button id="refresh-provider-keys" type="button" class="button-ghost">Reload</button>
         </div>
-        <div id="provider-status" class="inline-status">Provider secrets are encrypted and bound to the logged-in user.</div>
+        <div id="provider-status" class="inline-status">Optional: sign in to save encrypted cloud provider keys. The local demo does not need a key.</div>
         <div id="provider-secret-list" class="secret-list">
-          <div class="operator-copy">Login to manage your provider keys.</div>
+          <div class="operator-copy">Sign in only when you want saved provider keys.</div>
         </div>
       </section>
 
@@ -1201,15 +1196,15 @@ DESKTOP_HTML = """<!doctype html>
           </p>
         </div>
         <div class="workspace-topbar-actions">
-          <button id="sidebar-toggle" type="button" class="sidebar-toggle">Sign In</button>
+          <button id="sidebar-toggle" type="button" class="sidebar-toggle">Settings</button>
         </div>
       </header>
 
       <section id="auth-gate" class="auth-gate hidden">
-        <div class="auth-gate-kicker">Secure setup</div>
-        <h3>Sign in once, then just chat.</h3>
+        <div class="auth-gate-kicker">Optional sync</div>
+        <h3>Connect an account only when you need it.</h3>
         <p>
-          FORGE uses each user’s own encrypted provider keys. Finish account setup first, then talk to FORGE like a normal assistant. It will automatically choose the best available response path when your request needs real intelligence or execution.
+          FORGE Desktop works locally as a guest. Sign in later only if you want saved cloud keys, sync, admin controls, or private portal features.
         </p>
         <div class="auth-gate-actions">
           <button id="auth-gate-google" type="button">Continue with Google</button>
@@ -1278,16 +1273,16 @@ DESKTOP_HTML = """<!doctype html>
         </article>
       </section>
 
-      <section id="chat-shell" class="chat-shell guest-mode">
+      <section id="chat-shell" class="chat-shell">
         <section id="chat-empty" class="chat-empty">
-          <div class="chat-empty-kicker">Conversation first</div>
-          <h3>How can FORGE help?</h3>
+          <div class="chat-empty-kicker">Guest mode ready</div>
+          <h3>Hey, I'm FORGE - your AI agent.</h3>
           <p>
-            Ask naturally. FORGE should sound human, think through the request, then choose the strongest available model path and only drop into tools when the task truly requires execution.
+            I can chat, create files, inspect a workspace, and turn notes into verified artifacts. Try the local demo or ask: "Create notes.txt with content hello forge".
           </p>
         </section>
 
-        <section id="demo-task" class="demo-task hidden">
+        <section id="demo-task" class="demo-task">
           <div class="demo-task-title">Try a local agent demo</div>
           <div class="demo-task-copy">FORGE will read demo_input.md, create action_items.md, and stream each execution step.</div>
           <div class="demo-task-actions">
@@ -1429,8 +1424,8 @@ DESKTOP_HTML = """<!doctype html>
 
     function updateConversationLayout() {
       const hasMessages = chat.querySelector(".bubble") !== null;
-      chatEmpty.classList.toggle("hidden", hasMessages || !currentUser);
-      chatShell.classList.toggle("guest-mode", !currentUser);
+      chatEmpty.classList.toggle("hidden", hasMessages);
+      chatShell.classList.remove("guest-mode");
     }
 
     function clearNode(node) {
@@ -1521,8 +1516,8 @@ DESKTOP_HTML = """<!doctype html>
 
     function requireAuthenticated() {
       if (currentUser) return true;
-      addBubble("error", "Login required. Create an account or sign in, then add your own provider keys.");
-      setAuthStatus("Login required before FORGE can execute missions.");
+      addBubble("error", "Sign in is only needed for sync, saved provider keys, admin, and private portal features.");
+      setAuthStatus("Guest mode is active. Sign in only for private features.");
       return false;
     }
 
@@ -1530,7 +1525,8 @@ DESKTOP_HTML = """<!doctype html>
       const needsSetup = !!(currentUser && setup && setup.needs_provider_setup);
       providerSetup.classList.toggle("hidden", !needsSetup);
       if (!currentUser) {
-        providerSetupStatus.textContent = "Sign in first.";
+        providerSetup.classList.add("hidden");
+        providerSetupStatus.textContent = "Guest mode is ready. Provider setup is optional.";
         return;
       }
       if (!setup) {
@@ -1628,12 +1624,12 @@ DESKTOP_HTML = """<!doctype html>
       currentUser = authenticated ? data.user : null;
       authLoggedOut.classList.toggle("hidden", authenticated);
       authLoggedIn.classList.toggle("hidden", !authenticated);
-      authGate.classList.toggle("hidden", authenticated);
+      authGate.classList.add("hidden");
       providerSetup.classList.add("hidden");
-      demoTask.classList.toggle("hidden", !authenticated);
+      demoTask.classList.remove("hidden");
       adminPanel.classList.toggle("hidden", !(authenticated && data.user.is_admin));
-      sendButton.disabled = !authenticated;
-      promptBox.disabled = !authenticated;
+      sendButton.disabled = false;
+      promptBox.disabled = false;
 
       if (authenticated) {
         stopDevicePolling();
@@ -1649,20 +1645,20 @@ DESKTOP_HTML = """<!doctype html>
         promptBox.placeholder = "Message FORGE...";
         promptBox.focus();
       } else {
-        sidebarToggle.textContent = "Sign In";
+        sidebarToggle.textContent = "Settings";
         closeSidebar();
-        accountSummary.textContent = "Login required. Every user must bring their own provider keys.";
+        accountSummary.textContent = "Guest mode is ready. Sign in only for sync, saved cloud keys, admin, or private portal features.";
         accountEmail.textContent = "-";
         accountRole.textContent = "User";
         accountManagerGate.textContent = "Closed";
         accountEmailVerification.textContent = "Pending";
-        providerStatus.textContent = "Provider secrets are encrypted and bound to the logged-in user.";
+        providerStatus.textContent = "Optional: sign in to save encrypted cloud provider keys. The local demo does not need a key.";
         renderProviderSecrets([]);
-        setListPlaceholder(workerServices, "Login to view worker telemetry.");
-        workspaceName.textContent = "Login required";
-        workspaceSummary.textContent = "Sign in to select a workspace and run FORGE. First-run setup can complete in your browser and return here automatically.";
-        workspaceSubtitle.textContent = "Sign in first, then talk to FORGE naturally or give it a real task inside your workspace.";
-        promptBox.placeholder = "Sign in first, then message FORGE...";
+        setListPlaceholder(workerServices, "Local worker telemetry is available in guest mode.");
+        workspaceName.textContent = "Guest workspace";
+        workspaceSummary.textContent = "Choose a local workspace or run the demo immediately. Account sync is optional.";
+        workspaceSubtitle.textContent = "Guest mode is ready. Try the demo or ask FORGE to create a file in your workspace.";
+        promptBox.placeholder = "Message FORGE...";
       }
       updateConversationLayout();
     }
@@ -2072,14 +2068,6 @@ DESKTOP_HTML = """<!doctype html>
     }
 
     async function loadBootStatus() {
-      if (!currentUser) {
-        document.getElementById("runtime-state").textContent = "Login";
-        document.getElementById("providers").textContent = "-";
-        document.getElementById("models").textContent = "-";
-        document.getElementById("version").textContent = "FORGE";
-        renderProviderSetup(null);
-        return;
-      }
       try {
         const response = await fetch("/api/boot");
         const data = await response.json();
@@ -2102,11 +2090,6 @@ DESKTOP_HTML = """<!doctype html>
     }
 
     async function loadWorkspace() {
-      if (!currentUser) {
-        workspaceName.textContent = "Login required";
-        workspaceSummary.textContent = "Sign in to select a workspace and run FORGE.";
-        return;
-      }
       try {
         const response = await fetch("/api/workspace");
         const data = await response.json();
@@ -2168,7 +2151,6 @@ DESKTOP_HTML = """<!doctype html>
     }
 
     async function runDemoTask() {
-      if (!requireAuthenticated()) return;
       runDemoTaskButton.disabled = true;
       runDemoTaskButton.textContent = "Preparing...";
       demoTaskStatus.textContent = "Creating safe demo workspace...";
@@ -2203,7 +2185,16 @@ DESKTOP_HTML = """<!doctype html>
 
     async function loadWorkerTelemetry() {
       if (!currentUser) {
-        setListPlaceholder(workerServices, "Login to view worker telemetry.");
+        try {
+          const response = await fetch("/api/workers");
+          const data = await response.json();
+          if (!response.ok) {
+            throw new Error(data.error || "Worker telemetry load failed.");
+          }
+          renderWorkers(data);
+        } catch (error) {
+          setListPlaceholder(workerServices, "Local worker telemetry unavailable: " + error.message);
+        }
         return;
       }
       try {
@@ -2221,7 +2212,6 @@ DESKTOP_HTML = """<!doctype html>
     async function sendPrompt() {
       const prompt = promptBox.value.trim();
       if (!prompt || sendButton.disabled) return;
-      if (!requireAuthenticated()) return;
 
       closeActiveStream();
       const displayPrompt = pendingUserDisplayText || prompt;
@@ -2664,7 +2654,8 @@ DESKTOP_HTML = """<!doctype html>
         if (currentUser) {
           await Promise.all([loadBootStatus(), loadWorkspace(), loadProviderKeys(), loadWorkerTelemetry(), loadAdmin()]);
         } else {
-          setAuthStatus("Login required before missions can run.");
+          setAuthStatus("Guest mode active. Sign in only for sync and private features.");
+          await Promise.all([loadBootStatus(), loadWorkspace(), loadWorkerTelemetry()]);
         }
       })
       .catch((error) => {
@@ -2722,9 +2713,7 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
             self._send_json(reply.payload, headers=headers or None)
             return
         if route == "/api/stream":
-            user = self._require_user()
-            if user is None:
-                return
+            user = self._current_user()
             prompt = str(query.get("prompt", [""])[0]).strip()
             if not prompt:
                 self._send_json({"error": "Prompt is empty."}, status=HTTPStatus.BAD_REQUEST)
@@ -2740,10 +2729,11 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
                     confirmed=confirmed,
                     dry_run=dry_run,
                     workspace_root=workspace_root,
-                    provider_secrets=self._provider_secrets(),
+                    provider_secrets=self._runtime_provider_secrets(),
                 ):
                     if event.get("type") == "done" and isinstance(event.get("payload"), dict):
-                        self._sync_remote_mission(user, event["payload"])
+                        if user is not None:
+                            self._sync_remote_mission(user, event["payload"])
                     self._send_sse(event)
             except BrokenPipeError:
                 return
@@ -2756,11 +2746,8 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
                     pass
             return
         if route == "/api/boot":
-            user = self._require_user()
-            if user is None:
-                return
             try:
-                status = boot_status_for_user(self._provider_secrets())
+                status = boot_status_for_user(self._runtime_provider_secrets())
             except Exception as exc:
                 log_exception("Boot endpoint failed", exc)
                 self._send_json({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
@@ -2777,8 +2764,6 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
             self._send_json(payload)
             return
         if route == "/api/workspace":
-            if self._require_user() is None:
-                return
             try:
                 self._send_json(get_workspace_status())
             except Exception as exc:
@@ -2786,8 +2771,6 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
             return
         if route == "/api/workers":
-            if self._require_user() is None:
-                return
             self._send_json({"workers": MissionOrchestrator.worker_snapshot()})
             return
         if route == "/api/user/keys":
@@ -2975,8 +2958,6 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
             self._send_json({"ok": True})
             return
         if route == "/api/demo/prepare":
-            if self._require_user() is None:
-                return
             try:
                 self._send_json(prepare_demo_workspace())
             except Exception as exc:
@@ -2996,8 +2977,6 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
             self._send_json(response)
             return
         if route == "/api/workspace":
-            if self._require_user() is None:
-                return
             payload = self._read_json()
             workspace_root = str(payload.get("workspace_root", "")).strip()
             if not workspace_root:
@@ -3015,8 +2994,6 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
             self._send_json(result)
             return
         if route == "/api/workspace/dialog":
-            if self._require_user() is None:
-                return
             try:
                 result = choose_workspace_root()
             except Exception as exc:
@@ -3026,9 +3003,7 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
             self._send_json(result)
             return
         if route == "/api/chat":
-            user = self._require_user()
-            if user is None:
-                return
+            user = self._current_user()
             payload = self._read_json()
             prompt = str(payload.get("prompt", "")).strip()
             if not prompt:
@@ -3041,18 +3016,17 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
                     confirmed=bool(payload.get("confirmed")),
                     dry_run=bool(payload.get("dry_run")),
                     workspace_root=payload.get("workspace_root"),
-                    provider_secrets=self._provider_secrets(),
+                    provider_secrets=self._runtime_provider_secrets(),
                 )
             except Exception as exc:
                 self._send_json({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
                 return
-            self._sync_remote_mission(user, result)
+            if user is not None:
+                self._sync_remote_mission(user, result)
             self._send_json({"answer": result.get("answer"), "mode": "operator_only"})
             return
         if route == "/api/operate":
-            user = self._require_user()
-            if user is None:
-                return
+            user = self._current_user()
             payload = self._read_json()
             prompt = str(payload.get("prompt", "")).strip()
             if not prompt:
@@ -3065,12 +3039,13 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
                     confirmed=bool(payload.get("confirmed")),
                     dry_run=bool(payload.get("dry_run")),
                     workspace_root=payload.get("workspace_root"),
-                    provider_secrets=self._provider_secrets(),
+                    provider_secrets=self._runtime_provider_secrets(),
                 )
             except Exception as exc:
                 self._send_json({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
                 return
-            self._sync_remote_mission(user, result)
+            if user is not None:
+                self._sync_remote_mission(user, result)
             self._send_json(result)
             return
 
@@ -3108,6 +3083,11 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
         if not token:
             return {}
         return self.server.portal.export_user_secrets(token)
+
+    def _runtime_provider_secrets(self) -> dict[str, dict[str, str]] | None:
+        if self._current_user() is None:
+            return None
+        return self._provider_secrets()
 
     def _require_user(self) -> dict[str, object] | None:
         user = self._current_user()
@@ -3259,3 +3239,4 @@ def launch_desktop(host: str = "127.0.0.1", port: int = 0, open_browser: bool = 
         log_event("Desktop server shutting down")
         server.server_close()
     return address
+
