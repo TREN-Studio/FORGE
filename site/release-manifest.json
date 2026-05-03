@@ -1,36 +1,65 @@
 {
   "assets": [
     {
-      "canonical_url": "https://github.com/TREN-Studio/FORGE/releases/download/v1.1.5/forge_agent-1.1.5-py3-none-any.whl",
-      "kind": "wheel",
-      "label": "Python Wheel",
+      "canonical_url": "https://github.com/TREN-Studio/FORGE/releases/download/v1.1.5/FORGE-Desktop.exe",
+      "kind": "executable",
+      "label": "Windows Desktop Executable",
       "mirror_url": null,
-      "name": "forge_agent-1.1.5-py3-none-any.whl",
-      "platform": "python",
-      "sha256": "c2f2f29c539853d543e42ed6a412bd27af66463eb19ce98a271aeb188c1d477e",
-      "size": 249173
+      "name": "FORGE-Desktop.exe",
+      "platform": "windows",
+      "sha256": "c900fac5d4d284b61b6f92d46f588fe622040bcaab218bb1da9ec31e34f8f68d",
+      "size": 36577297
     },
     {
-      "canonical_url": "https://github.com/TREN-Studio/FORGE/releases/download/v1.1.5/forge_agent-1.1.5.tar.gz",
-      "kind": "sdist",
-      "label": "Source Distribution",
+      "canonical_url": "https://github.com/TREN-Studio/FORGE/releases/download/v1.1.5/FORGE-Setup-1.1.5.exe",
+      "kind": "installer",
+      "label": "Windows Installer",
       "mirror_url": null,
-      "name": "forge_agent-1.1.5.tar.gz",
-      "platform": "python",
-      "sha256": "3c46d5ac814b6d503bedf02d33659588bd0e5db1b7a0e88c9b254decc9d6423c",
-      "size": 200044
+      "name": "FORGE-Setup-1.1.5.exe",
+      "platform": "windows",
+      "sha256": "c00d34a7ffece1e7e9a366613aec05540c66d2dcf0ef04196ecdf16b2ae2c034",
+      "size": 37758725
+    },
+    {
+      "canonical_url": "https://github.com/TREN-Studio/FORGE/releases/download/v1.1.5/FORGE-Windows-Portable-1.1.5.zip",
+      "kind": "portable",
+      "label": "Windows Portable ZIP",
+      "mirror_url": null,
+      "name": "FORGE-Windows-Portable-1.1.5.zip",
+      "platform": "windows",
+      "sha256": "2bcc60d082ef285b96146eebd5b49efd9171033068b5dc25862b248caa8e218e",
+      "size": 36192654
+    },
+    {
+      "canonical_url": "https://github.com/TREN-Studio/FORGE/releases/download/v1.1.5/FORGE-Source-v1.1.5.zip",
+      "kind": "source",
+      "label": "Source Archive",
+      "mirror_url": null,
+      "name": "FORGE-Source-v1.1.5.zip",
+      "platform": "all",
+      "sha256": "32c6e3d85e4989e6904b76155dbe4a5495b8a4e5a9dcc8962faaa3836649f5b1",
+      "size": 469240
+    },
+    {
+      "canonical_url": "https://github.com/TREN-Studio/FORGE/releases/download/v1.1.5/SHA256SUMS-1.1.5.txt",
+      "kind": "checksums",
+      "label": "SHA256 Checksums",
+      "mirror_url": null,
+      "name": "SHA256SUMS-1.1.5.txt",
+      "platform": "all",
+      "sha256": "26fe6c98129db0e7d4ddccad6521e83ced6a87c4d5990c6df6ac85bd543cdc51",
+      "size": 365
     }
   ],
   "canonical_host": "github_release",
-  "canonical_note": "GitHub Release is the canonical release record. PyPI is the recommended install path for the Python package.",
+  "canonical_note": "GitHub Release is the canonical release record. Hostinger may mirror the same release assets byte-for-byte when mirror_url is present.",
   "mirrors": {
     "hostinger": {
-      "base_url": "https://www.trenstudio.com/FORGE/downloads",
-      "identity_policy": "No mirrored binary assets are published for v1.1.5; official downloads resolve to PyPI or GitHub Release assets.",
+      "base_url": null,
+      "identity_policy": "mirror_url assets must match canonical_url by version, file size, and SHA256.",
       "status": "disabled"
     }
   },
-  "pypi_url": "https://pypi.org/project/forge-agent/1.1.5/",
   "release_tag": "v1.1.5",
   "release_url": "https://github.com/TREN-Studio/FORGE/releases/tag/v1.1.5",
   "schema_version": 1,

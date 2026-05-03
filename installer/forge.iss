@@ -1,6 +1,6 @@
 #define MyAppId "{{3E4D7F95-3BC3-4A59-92B0-0C493B4C07E2}"
 #define MyAppName "FORGE"
-#define MyAppVersion "1.1.4"
+#define MyAppVersion "1.1.5"
 #define MyAppPublisher "TREN Studio"
 #define MyAppURL "https://www.trenstudio.com/FORGE/"
 #define MyAppExeName "FORGE-Desktop.exe"

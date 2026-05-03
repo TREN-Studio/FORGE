@@ -119,15 +119,16 @@ Current foundation includes:
 ## Public Releases
 
 - Current public release line: `1.1.5`.
-- The canonical public install path is PyPI: https://pypi.org/project/forge-agent/1.1.5/
+- The primary public user path is the Windows Desktop download from the official site and GitHub Release.
+- PyPI remains the developer CLI path: https://pypi.org/project/forge-agent/1.1.5/
 - GitHub's latest stable release must also resolve to `v1.1.5`.
 - The canonical public release record is the GitHub Release for the matching tag: https://github.com/TREN-Studio/FORGE/releases/tag/v1.1.5
 - The PyPI publishing workflow in `.github/workflows/publish-pypi.yml` builds the wheel and source distribution, publishes to PyPI through Trusted Publisher, and attaches `dist/*` to the GitHub Release.
-- The Windows release workflow in `.github/workflows/release_forge_windows.yml` is retained for future desktop installer releases. Desktop installer links are not shown on the public downloads page unless those artifacts exist for the current release.
+- The Windows release workflow in `.github/workflows/release_forge_windows.yml` builds desktop installer and portable assets for the current release line.
 - The supported desktop build entrypoint is `python tools/build_windows_desktop.py`; that script is the source of truth for orchestration and invokes the portable `FORGE-Desktop.spec`.
 - Release packaging runs through `python tools/package_release_assets.py`, which writes release assets under `release-assets/` only. It does not publish or sync binary files into `site/downloads/`.
-- The public downloads page at `site/downloads/index.html` reads `release-manifest.json` and points users to PyPI plus existing GitHub Release assets only.
-- `python tools/verify_release_public_assets.py --manifest release-assets/release-manifest.json --require-mirror` verifies version, size, SHA256, GitHub Release presence, and byte identity for the Hostinger mirror.
+- The public downloads page at `site/downloads/index.html` reads `release-manifest.json`, puts Windows first, and keeps PyPI/source links under the developer section.
+- `python tools/verify_release_public_assets.py --manifest release-assets/release-manifest.json` verifies version, size, SHA256, and GitHub Release presence. Add `--require-mirror` only after Hostinger has byte-identical mirrored assets.
 - `tools/deploy_hostinger_site.py` deploys the downloads page, portal, and release manifest only; the TREN Studio root page owns `https://www.trenstudio.com/FORGE/`.
 - Legacy desktop spec variants were removed. `FORGE-Desktop.spec` is the only supported PyInstaller spec.
 - If `WINDOWS_PFX_BASE64` and `WINDOWS_PFX_PASSWORD` are configured in GitHub Secrets, the workflow signs both artifacts before publishing the GitHub Release.

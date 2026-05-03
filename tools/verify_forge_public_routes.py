@@ -114,25 +114,44 @@ def verify_no_stale_public_markers(html: str, route: str) -> None:
         "1.1.0",
         "forge start",
         "forge add-key",
-        "FORGE-Setup",
-        "FORGE-Windows-Portable",
         "FORGE-macOS-Starter",
         "FORGE-Linux-Starter",
-        "FORGE-Source",
-        "SHA256SUMS",
+        "FORGE-Setup-1.1.4",
+        "FORGE-Setup-1.1.3",
+        "FORGE-Windows-Portable-1.1.4",
+        "FORGE-Source-v1.1.4",
+        "SHA256SUMS-1.1.4",
     ]
     for marker in forbidden_markers:
         if marker in html:
             raise ValueError(f"{route} contains stale or invalid public marker: {marker}")
 
 
-def verify_index_install_markup(html: str, route: str) -> None:
-    if html.count('id="cmd-text"') != 1:
-        raise ValueError(f"{route} must contain exactly one #cmd-text element.")
-    if '<span id="cmd-text">pip install forge-agent==1.1.5</span>' not in html:
-        raise ValueError(f"{route} command chip must show pip install forge-agent==1.1.5.")
-    if "navigator.clipboard.writeText('pip install forge-agent==1.1.5')" not in html:
-        raise ValueError(f"{route} copy command must copy pip install forge-agent==1.1.5.")
+def verify_windows_first_download_markup(html: str, route: str) -> None:
+    required = [
+        "Download FORGE for Windows",
+        "Windows Download (Recommended)",
+        "FORGE-Setup-1.1.5.exe",
+        "FORGE-Windows-Portable-1.1.5.zip",
+        "No login required",
+        "Works instantly",
+        "Includes demo",
+        "Press Run Demo",
+        "For Developers",
+        "pip install forge-agent==1.1.5",
+    ]
+    for marker in required:
+        if marker not in html:
+            raise ValueError(f"{route} is missing Windows-first marker: {marker}")
+    first_windows = html.find("Download FORGE for Windows")
+    first_pypi = html.find("PyPI")
+    first_source = html.find("Source Archive")
+    if first_windows == -1:
+        raise ValueError(f"{route} must expose Windows download first.")
+    if first_pypi != -1 and first_pypi < first_windows:
+        raise ValueError(f"{route} shows PyPI before Windows download.")
+    if first_source != -1 and first_source < first_windows:
+        raise ValueError(f"{route} shows Source before Windows download.")
     old_install_snippets = [
         '<span id="cmd-text">pip install forge-agent</span>',
         "navigator.clipboard.writeText('pip install forge-agent')",
@@ -148,10 +167,10 @@ def verify_index_install_markup(html: str, route: str) -> None:
 def verify_project_root(html: str) -> None:
     verify_clean_title(html, "FORGE - Free Open Reasoning & Generation Engine", "/FORGE/")
     required_markers = [
-        "OPEN SOURCE",
-        "MULTIPLATFORM DESKTOP OPERATOR",
-        "Downloads v1.1.5",
-        "pip install forge-agent==1.1.5",
+        "FORGE v1.1.5",
+        "WINDOWS DESKTOP READY",
+        "Windows Download",
+        "Quick Start",
         "GitHub Release v1.1.5",
         "/FORGE/favicon.svg",
     ]
@@ -159,17 +178,17 @@ def verify_project_root(html: str) -> None:
         if marker not in html:
             raise ValueError(f"/FORGE/ is missing original project marker: {marker}")
     verify_no_stale_public_markers(html, "/FORGE/")
-    verify_index_install_markup(html, "/FORGE/")
+    verify_windows_first_download_markup(html, "/FORGE/")
 
 
 def verify_downloads_page(html: str) -> None:
     verify_clean_title(html, "FORGE - Free Open Reasoning & Generation Engine", "/FORGE/downloads/")
     required_markers = [
-        "MULTIPLATFORM DESKTOP OPERATOR",
-        "Download Bundles",
-        "pip install forge-agent==1.1.5",
+        "WINDOWS DESKTOP READY",
+        "Download FORGE for Windows",
+        "Windows Download (Recommended)",
         "GitHub Release v1.1.5",
-        "../release-manifest.json",
+        "/FORGE/release-manifest.json",
         "/FORGE/favicon.svg",
     ]
     for marker in required_markers:
@@ -178,6 +197,7 @@ def verify_downloads_page(html: str) -> None:
     if 'href="portal/?from=download"' in html:
         raise ValueError("Downloads page still contains a relative portal link.")
     verify_no_stale_public_markers(html, "/FORGE/downloads/")
+    verify_windows_first_download_markup(html, "/FORGE/downloads/")
 
 
 def verify_manifest(actual: dict[str, Any], expected: dict[str, Any] | None) -> None:
