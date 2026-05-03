@@ -2,7 +2,7 @@
 header('Cache-Control: no-store, no-cache, must-revalidate');
 header('Pragma: no-cache');
 header('Expires: 0');
-header('Referrer-Policy: no-referrer');
+header('Referrer-Policy: origin');
 header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: DENY');
 header("Content-Security-Policy: default-src 'self'; base-uri 'self'; img-src 'self' data: https://*.gstatic.com https://*.googleusercontent.com; style-src 'self' 'unsafe-inline' https://accounts.google.com; script-src 'self' 'unsafe-inline' https://accounts.google.com https://static.cloudflareinsights.com; connect-src https://accounts.google.com https://oauth2.googleapis.com https://cloudflareinsights.com; frame-src https://accounts.google.com https://*.google.com; form-action https://www.trenstudio.com; object-src 'none'; upgrade-insecure-requests");
