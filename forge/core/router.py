@@ -28,6 +28,12 @@ from forge.core.models import (
     ProviderStatus,
     TaskType,
 )
+from forge.providers.registry import (
+    MAX_PROGRESSIVE_ATTEMPTS,
+    classify_speed,
+    progressive_attempt_timeout,
+    timeout_for_prompt as _timeout_for_prompt,
+)
 
 if TYPE_CHECKING:
     from forge.providers.base import BaseProvider
@@ -101,22 +107,67 @@ TIER_ORDER = {
 
 PROVIDER_TIMEOUTS = {
     "fast_queries": 8.0,
-    "normal_queries": 20.0,
-    "complex_queries": 45.0,
+    "normal_queries": 15.0,
+    "complex_queries": 30.0,
 }
 
 
 def classify_query_speed(prompt: str) -> str:
-    words = len(str(prompt or "").split())
-    if words <= 6:
+    speed = classify_speed(prompt)
+    if speed == "fast":
         return "fast_queries"
-    if words <= 30:
-        return "normal_queries"
-    return "complex_queries"
+    if speed == "complex":
+        return "complex_queries"
+    return "normal_queries"
+
+
+def classify_speed_label(prompt: str) -> str:
+    return classify_speed(prompt)
 
 
 def timeout_for_prompt(prompt: str) -> float:
-    return PROVIDER_TIMEOUTS[classify_query_speed(prompt)]
+    return _timeout_for_prompt(prompt)
+
+
+def _timeout_label(timeout: float) -> str:
+    return f"{timeout:.0f}s" if timeout >= 1 else f"{timeout:.2f}s"
+
+
+def _prompt_from_messages(messages: list[Message]) -> str:
+    for message in reversed(messages):
+        if message.role == "user":
+            return message.content
+    return " ".join(message.content for message in messages[-2:])
+
+
+def _attempt_timeout(total_budget: float, attempt_index: int) -> float:
+    return progressive_attempt_timeout(total_budget, attempt_index)
+
+
+def _demote_slow_score(score: ModelScore, latency_ms: float, timeout_s: float) -> None:
+    score.latency_ms = max(score.latency_ms, latency_ms)
+    if latency_ms >= timeout_s * 1000 * 0.9:
+        score.status = ProviderStatus.SLOW
+
+
+def _is_quota_error(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return "quota" in text or "rate" in text
+
+
+def _max_attempts_for_budget(max_attempts: int | None) -> int:
+    if max_attempts is None:
+        return MAX_PROGRESSIVE_ATTEMPTS
+    return max(1, min(MAX_PROGRESSIVE_ATTEMPTS, int(max_attempts)))
+
+
+def _remaining_candidates(ranked: list[tuple[str, ModelScore]], max_attempts: int) -> list[tuple[str, ModelScore]]:
+    return ranked[:max_attempts]
+
+
+def _route_error_message(task_type: TaskType, last_error: Exception | None, attempts: list[dict[str, Any]]) -> str:
+    attempted = ", ".join(f"{item.get('provider')}/{item.get('model')}" for item in attempts) or "none"
+    return f"All models failed for task '{task_type}'. Attempts: {attempted}. Last error: {last_error}"
 
 
 class ForgeRouter:
@@ -208,6 +259,7 @@ class ForgeRouter:
         temperature: float  = 0.7,
         require_vision: bool = False,
         timeout: float      = 45.0,
+        max_attempts: int | None = None,
     ) -> ForgeResponse:
         """
         Pick the best available model and call it.
@@ -220,8 +272,11 @@ class ForgeRouter:
         last_error: Exception | None = None
         attempts: list[dict[str, Any]] = []
         total_started = time.monotonic()
-        timeout_label = f"{timeout:.0f}s" if timeout >= 1 else f"{timeout:.2f}s"
-        for key, score in ranked:
+        prompt = _prompt_from_messages(messages)
+        query_speed = classify_speed(prompt)
+        timeout_budget = timeout if timeout is not None else timeout_for_prompt(prompt)
+        attempt_limit = _max_attempts_for_budget(max_attempts)
+        for attempt_index, (key, score) in enumerate(_remaining_candidates(ranked, attempt_limit)):
             provider = self._providers[score.provider]
             spec     = provider.get_model(score.model_id)
             if spec is None:
@@ -229,6 +284,8 @@ class ForgeRouter:
 
             logger.debug(f"Trying {score.provider}/{score.model_id} (score={score.composite_score:.3f})")
             t_start = time.monotonic()
+            attempt_timeout = _attempt_timeout(timeout_budget, attempt_index)
+            timeout_label = _timeout_label(attempt_timeout)
             try:
                 raw = await asyncio.wait_for(
                     provider.complete(
@@ -237,7 +294,7 @@ class ForgeRouter:
                         max_tokens=min(max_tokens, spec.max_output_tokens),
                         temperature=temperature,
                     ),
-                    timeout=timeout,
+                    timeout=attempt_timeout,
                 )
                 latency = (time.monotonic() - t_start) * 1000
                 async with self._lock:
@@ -250,6 +307,8 @@ class ForgeRouter:
                         "model": score.model_id,
                         "status": "success",
                         "latency_ms": round(latency, 2),
+                        "attempt_timeout_s": round(attempt_timeout, 2),
+                        "query_speed": query_speed,
                     }
                 )
                 raw.routing_telemetry = self._routing_telemetry(
@@ -258,6 +317,8 @@ class ForgeRouter:
                     final_model=score.model_id,
                     final_latency_ms=latency,
                     total_started=total_started,
+                    query_speed=query_speed,
+                    timeout_budget_s=timeout_budget,
                 )
                 logger.info("provider_telemetry %s", raw.routing_telemetry)
                 logger.info(
@@ -270,7 +331,7 @@ class ForgeRouter:
                 latency = (time.monotonic() - t_start) * 1000
                 async with self._lock:
                     score.record_failure("timeout")
-                    score.status = ProviderStatus.SLOW
+                    _demote_slow_score(score, latency, attempt_timeout)
                 last_error = TimeoutError(f"{score.provider}/{score.model_id} timed out")
                 attempts.append(
                     {
@@ -279,6 +340,8 @@ class ForgeRouter:
                         "status": "timeout",
                         "latency_ms": round(latency, 2),
                         "error": f"timeout after {timeout_label}",
+                        "attempt_timeout_s": round(attempt_timeout, 2),
+                        "query_speed": query_speed,
                     }
                 )
                 logger.warning(f"✗ Timeout on {score.provider}/{score.model_id}")
@@ -286,7 +349,7 @@ class ForgeRouter:
                 latency = (time.monotonic() - t_start) * 1000
                 async with self._lock:
                     score.record_failure(str(exc))
-                    if "quota" in str(exc).lower() or "rate" in str(exc).lower():
+                    if _is_quota_error(exc):
                         score.status = ProviderStatus.QUOTA
                 last_error = exc
                 attempts.append(
@@ -296,13 +359,13 @@ class ForgeRouter:
                         "status": "error",
                         "latency_ms": round(latency, 2),
                         "error": str(exc),
+                        "attempt_timeout_s": round(attempt_timeout, 2),
+                        "query_speed": query_speed,
                     }
                 )
                 logger.warning(f"✗ Error on {score.provider}/{score.model_id}: {exc}")
 
-        raise RuntimeError(
-            f"All models failed for task '{task_type}'. Last error: {last_error}"
-        )
+        raise RuntimeError(_route_error_message(task_type, last_error, attempts))
 
     async def route_stream(
         self,
@@ -311,6 +374,8 @@ class ForgeRouter:
         max_tokens: int = 2048,
         temperature: float = 0.7,
         require_vision: bool = False,
+        timeout: float = 45.0,
+        max_attempts: int | None = None,
     ):
         ranked = self._rank(task_type, require_vision)
         if not ranked:
@@ -319,7 +384,11 @@ class ForgeRouter:
         last_error: Exception | None = None
         attempts: list[dict[str, Any]] = []
         total_started = time.monotonic()
-        for key, score in ranked:
+        prompt = _prompt_from_messages(messages)
+        query_speed = classify_speed(prompt)
+        timeout_budget = timeout if timeout is not None else timeout_for_prompt(prompt)
+        attempt_limit = _max_attempts_for_budget(max_attempts)
+        for attempt_index, (key, score) in enumerate(_remaining_candidates(ranked, attempt_limit)):
             provider = self._providers[score.provider]
             spec = provider.get_model(score.model_id)
             if spec is None:
@@ -328,6 +397,7 @@ class ForgeRouter:
             logger.debug(f"Streaming with {score.provider}/{score.model_id} (score={score.composite_score:.3f})")
             response: ForgeResponse | None = None
             t_start = time.monotonic()
+            attempt_timeout = _attempt_timeout(timeout_budget, attempt_index)
             try:
                 yield {
                     "type": "start",
@@ -335,12 +405,17 @@ class ForgeRouter:
                     "model": score.model_id,
                     "display_name": spec.display_name,
                 }
-                async for event in provider.stream(
+                stream = provider.stream(
                     model=spec,
                     messages=messages,
                     max_tokens=min(max_tokens, spec.max_output_tokens),
                     temperature=temperature,
-                ):
+                )
+                while True:
+                    try:
+                        event = await asyncio.wait_for(stream.__anext__(), timeout=attempt_timeout)
+                    except StopAsyncIteration:
+                        break
                     kind = str(event.get("type") or "").strip().lower()
                     if kind == "delta":
                         yield event
@@ -361,6 +436,8 @@ class ForgeRouter:
                         "model": score.model_id,
                         "status": "success",
                         "latency_ms": round(response.latency_ms, 2),
+                        "attempt_timeout_s": round(attempt_timeout, 2),
+                        "query_speed": query_speed,
                     }
                 )
                 response.routing_telemetry = self._routing_telemetry(
@@ -369,6 +446,8 @@ class ForgeRouter:
                     final_model=score.model_id,
                     final_latency_ms=response.latency_ms,
                     total_started=total_started,
+                    query_speed=query_speed,
+                    timeout_budget_s=timeout_budget,
                 )
                 logger.info("provider_telemetry %s", response.routing_telemetry)
                 logger.info(
@@ -381,7 +460,7 @@ class ForgeRouter:
                 latency = (time.monotonic() - t_start) * 1000
                 async with self._lock:
                     score.record_failure("timeout")
-                    score.status = ProviderStatus.SLOW
+                    _demote_slow_score(score, latency, attempt_timeout)
                 last_error = TimeoutError(f"{score.provider}/{score.model_id} timed out")
                 attempts.append(
                     {
@@ -389,7 +468,9 @@ class ForgeRouter:
                         "model": score.model_id,
                         "status": "timeout",
                         "latency_ms": round(latency, 2),
-                        "error": "stream timeout",
+                        "error": f"stream timeout after {_timeout_label(attempt_timeout)}",
+                        "attempt_timeout_s": round(attempt_timeout, 2),
+                        "query_speed": query_speed,
                     }
                 )
                 logger.warning(f"✗ Stream timeout on {score.provider}/{score.model_id}")
@@ -397,7 +478,7 @@ class ForgeRouter:
                 latency = (time.monotonic() - t_start) * 1000
                 async with self._lock:
                     score.record_failure(str(exc))
-                    if "quota" in str(exc).lower() or "rate" in str(exc).lower():
+                    if _is_quota_error(exc):
                         score.status = ProviderStatus.QUOTA
                 last_error = exc
                 attempts.append(
@@ -407,13 +488,13 @@ class ForgeRouter:
                         "status": "error",
                         "latency_ms": round(latency, 2),
                         "error": str(exc),
+                        "attempt_timeout_s": round(attempt_timeout, 2),
+                        "query_speed": query_speed,
                     }
                 )
                 logger.warning(f"✗ Stream error on {score.provider}/{score.model_id}: {exc}")
 
-        raise RuntimeError(
-            f"All models failed for task '{task_type}'. Last error: {last_error}"
-        )
+        raise RuntimeError(_route_error_message(task_type, last_error, attempts))
 
     # ── Ranking ───────────────────────────────────────────────────
 
@@ -492,8 +573,10 @@ class ForgeRouter:
         latency_w = affinity.get("latency_weight", 0.20)
         speed = min(1.0, 500.0 / max(score.latency_ms, 50))
         bonus += speed * latency_w * 0.1
+        if score.status == ProviderStatus.SLOW:
+            bonus -= 0.15
 
-        return min(1.0, base + bonus)
+        return max(0.0, min(1.0, base + bonus))
 
     # ── Introspection ─────────────────────────────────────────────
 
@@ -545,6 +628,8 @@ class ForgeRouter:
         final_model: str,
         final_latency_ms: float,
         total_started: float,
+        query_speed: str = "",
+        timeout_budget_s: float = 0.0,
     ) -> dict[str, Any]:
         attempted_providers = [f"{item['provider']}/{item['model']}" for item in attempts]
         failed_attempts = [item for item in attempts if item.get("status") != "success"]
@@ -558,6 +643,8 @@ class ForgeRouter:
             "provider_latency_ms": round(final_latency_ms, 2),
             "total_model_time_ms": round((time.monotonic() - total_started) * 1000, 2),
             "final_provider_used": f"{final_provider}/{final_model}",
+            "query_speed": query_speed,
+            "timeout_budget_s": round(timeout_budget_s, 2),
             "attempts": attempts,
         }
 

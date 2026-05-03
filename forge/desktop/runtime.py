@@ -874,12 +874,29 @@ def stream_prompt(
     finished_steps: set[str] = set()
     step_started_at: dict[str, float] = {}
     last_audit_mtime = 0.0
+    wait_status_marks = [
+        (3.0, "Finding best model..."),
+        (8.0, "Switching to faster provider..."),
+        (12.0, "Almost ready..."),
+    ]
+    emitted_wait_statuses: set[float] = set()
     _maybe_emit_next_step_started(plan, started_steps, finished_steps, events)
 
     while True:
         try:
             kind, payload = events.get(timeout=0.18)
         except Empty:
+            elapsed_s = time.monotonic() - started
+            for mark_s, message in wait_status_marks:
+                if mark_s not in emitted_wait_statuses and elapsed_s >= mark_s:
+                    emitted_wait_statuses.add(mark_s)
+                    yield {
+                        "type": "status",
+                        "stage": "routing",
+                        "text": message,
+                        "message": message,
+                        "elapsed_ms": round(elapsed_s * 1000, 2),
+                    }
             if not result_emitted:
                 last_audit_mtime = _emit_audit_step_events(
                     audit_log_path=Path(audit_log_path),

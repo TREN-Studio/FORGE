@@ -257,6 +257,7 @@ class ForgeSession:
             task_type=normalized_task_type,
             max_tokens=max_tokens,
             temperature=temperature,
+            timeout=timeout_for_prompt(prompt),
         ):
             kind = str(event.get("type") or "").strip().lower()
             if kind in {"start", "delta"}:
