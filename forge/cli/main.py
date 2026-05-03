@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import time
 import sys
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -73,12 +74,50 @@ def _get_session():
     return ForgeSession()
 
 
+def _is_writable_directory(path: Path) -> bool:
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        probe = path / ".forge-write-test"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink(missing_ok=True)
+        return True
+    except OSError:
+        return False
+
+
+def _fallback_workspace_root() -> Path:
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if local_app_data:
+        return Path(local_app_data) / "FORGE" / "workspace"
+    return Path.home() / ".forge" / "workspace"
+
+
+def _resolve_operator_workspace(workspace_root: str | Path | None = None) -> Path:
+    if workspace_root:
+        normalized = Path(workspace_root).expanduser().resolve()
+        if not _is_writable_directory(normalized):
+            raise typer.BadParameter(f"Workspace is not writable: {normalized}")
+        return normalized
+
+    env_root = os.environ.get("FORGE_WORKSPACE_ROOT")
+    candidates = []
+    if env_root:
+        candidates.append(Path(env_root).expanduser().resolve())
+    candidates.append(Path.cwd().resolve())
+    candidates.append(_fallback_workspace_root().resolve())
+
+    for candidate in candidates:
+        if _is_writable_directory(candidate):
+            return candidate
+
+    raise typer.BadParameter("No writable FORGE workspace found. Use --workspace to choose one.")
+
+
 def _get_operator(no_memory: bool = False, workspace_root: str | Path | None = None):
     from forge.brain.operator import ForgeOperator
     from forge.config.settings import OperatorSettings
 
-    normalized_workspace = Path(workspace_root).expanduser().resolve() if workspace_root else Path.cwd().resolve()
-    normalized_workspace.mkdir(parents=True, exist_ok=True)
+    normalized_workspace = _resolve_operator_workspace(workspace_root)
     settings = OperatorSettings(enable_memory=not no_memory, workspace_root=normalized_workspace)
     return ForgeOperator(settings=settings)
 
