@@ -138,7 +138,7 @@ def verify_windows_first_download_markup(html: str, route: str) -> None:
         "Includes demo",
         "Press Run Demo",
         "For Developers",
-        "pip install forge-agent==1.1.5",
+        "pip install forge-agent==1.1.7",
     ]
     for marker in required:
         if marker not in html:

@@ -2,680 +2,398 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>FORGE - Free Open Reasoning & Generation Engine</title>
-<meta name="description" content="Open-source desktop AI operator for Windows, macOS, and Linux. Connects to free models, routes intelligently, and runs locally.">
+<meta name="description" content="Download FORGE for Windows. A free open-source desktop AI operator that plans tasks, reads files, runs commands, and verifies results.">
 <meta property="og:title" content="FORGE - Free Open Reasoning & Generation Engine">
-<meta property="og:description" content="Open-source desktop AI operator for every major operating system. Free, local, multilingual, and built to execute.">
+<meta property="og:description" content="Windows desktop AI operator. No login required. Includes a local demo and a developer CLI.">
 <meta property="og:image" content="https://www.trenstudio.com/FORGE/forge_project_identity.svg">
 <link rel="icon" type="image/svg+xml" href="/FORGE/favicon.svg">
 <link rel="icon" type="image/png" sizes="32x32" href="/FORGE/favicon-32.png">
 <link rel="apple-touch-icon" sizes="192x192" href="/FORGE/favicon-192.png">
-<meta name="theme-color" content="#FF6B1A">
+<meta name="theme-color" content="#ff6418">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
 :root{
-  --bg:#070707;--s1:#0f0f0f;--s2:#161616;--b:#1f1f1f;
-  --forge:#FF6B1A;--ember:#FFAA3C;--glow:#FFD060;
-  --txt:#f2f0ec;--muted:#6b6b6b;--dim:#2a2a2a;
-  --r:8px;
+  --bg:#050505;
+  --bg-soft:#090909;
+  --panel:#101010;
+  --panel-2:#141414;
+  --border:#242424;
+  --border-hot:#5a230d;
+  --text:#f6f2ec;
+  --muted:#9a9690;
+  --dim:#69645f;
+  --hot:#ff6418;
+  --hot-2:#ff7a24;
+  --mono:"JetBrains Mono",Consolas,monospace;
+  --display:"Bebas Neue",Impact,sans-serif;
+  --body:"Inter",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --radius:8px;
 }
-*{margin:0;padding:0;box-sizing:border-box}
+*{box-sizing:border-box}
 html{scroll-behavior:smooth}
-body{background:var(--bg);color:var(--txt);font-family:'DM Sans',sans-serif;font-size:16px;line-height:1.65;overflow-x:hidden}
-
-/* ── SCROLLBAR ── */
-::-webkit-scrollbar{width:4px}
-::-webkit-scrollbar-track{background:var(--bg)}
-::-webkit-scrollbar-thumb{background:var(--forge);border-radius:2px}
-
-/* ── NAV ── */
-nav{position:fixed;top:0;left:0;right:0;z-index:100;padding:0 40px;height:60px;display:flex;align-items:center;justify-content:space-between;background:rgba(7,7,7,.85);backdrop-filter:blur(12px);border-bottom:1px solid var(--b)}
-.nav-logo{font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:4px;color:var(--forge);text-decoration:none}
-.nav-logo span{color:var(--txt)}
-.nav-links{display:flex;gap:28px;align-items:center}
-.nav-links a{color:var(--muted);text-decoration:none;font-size:13px;letter-spacing:.5px;transition:color .2s}
-.nav-links a:hover{color:var(--txt)}
-.nav-cta{background:var(--forge);color:#000!important;padding:8px 20px;border-radius:var(--r);font-weight:500;font-size:13px!important;letter-spacing:.5px;transition:background .2s,transform .15s!important}
-.nav-cta:hover{background:var(--ember);transform:translateY(-1px)!important}
-
-/* ── HERO ── */
-.hero{position:relative;min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:80px 20px 60px;overflow:hidden}
-canvas#fire{position:absolute;bottom:0;left:0;width:100%;height:55%;pointer-events:none;opacity:.7}
-.hero-inner{position:relative;z-index:2}
-.hero-badge{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--b);border-radius:40px;padding:6px 16px;font-size:12px;color:var(--muted);letter-spacing:1px;margin-bottom:32px;background:var(--s1)}
-.hero-badge span{width:6px;height:6px;background:var(--forge);border-radius:50%;animation:pulse 1.5s ease-in-out infinite}
-@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.7)}}
-h1{font-family:'Bebas Neue',sans-serif;font-size:clamp(90px,18vw,180px);letter-spacing:8px;line-height:.92;color:var(--txt);text-shadow:0 0 80px rgba(255,107,26,.25)}
-h1 em{color:var(--forge);font-style:normal;text-shadow:0 0 40px rgba(255,107,26,.6)}
-.hero-sub{font-size:clamp(15px,2vw,19px);color:var(--muted);max-width:560px;margin:28px auto 0;font-weight:300;line-height:1.7}
-.hero-sub strong{color:var(--txt);font-weight:500}
-.hero-actions{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-top:44px}
-.btn-primary{display:inline-flex;align-items:center;gap:8px;background:var(--forge);color:#000;font-family:'DM Sans',sans-serif;font-weight:600;font-size:14px;padding:14px 32px;border-radius:var(--r);text-decoration:none;letter-spacing:.3px;transition:all .2s}
-.btn-primary:hover{background:var(--ember);transform:translateY(-2px);box-shadow:0 8px 32px rgba(255,107,26,.35)}
-.btn-secondary{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--b);color:var(--txt);font-family:'DM Sans',sans-serif;font-size:14px;padding:14px 28px;border-radius:var(--r);text-decoration:none;transition:all .2s;background:var(--s1)}
-.btn-secondary:hover{border-color:var(--forge);color:var(--forge)}
-.install-cmd{margin-top:32px;display:inline-flex;align-items:center;gap:12px;background:var(--s1);border:1px solid var(--b);border-radius:var(--r);padding:12px 20px;font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--ember)}
-.install-cmd .prefix{color:var(--muted)}
-.copy-btn{background:none;border:none;cursor:pointer;color:var(--muted);transition:color .2s;padding:2px;font-size:13px}
-.copy-btn:hover{color:var(--forge)}
-.hero-stats{display:flex;gap:48px;justify-content:center;margin-top:64px;padding-top:40px;border-top:1px solid var(--b)}
-.stat{text-align:center}
-.stat-n{font-family:'Bebas Neue',sans-serif;font-size:42px;color:var(--forge);letter-spacing:2px;line-height:1}
-.stat-l{font-size:12px;color:var(--muted);letter-spacing:1px;margin-top:4px;text-transform:uppercase}
-
-/* ── MARQUEE ── */
-.marquee-section{padding:24px 0;border-top:1px solid var(--b);border-bottom:1px solid var(--b);overflow:hidden;background:var(--s1)}
-.marquee-track{display:flex;gap:0;animation:scroll 28s linear infinite}
-.marquee-track:hover{animation-play-state:paused}
-.marquee-item{display:flex;align-items:center;gap:10px;padding:0 28px;white-space:nowrap;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted);letter-spacing:.5px;border-right:1px solid var(--b)}
-.marquee-item:hover{color:var(--forge)}
-.marquee-dot{width:5px;height:5px;background:var(--forge);border-radius:50%;opacity:.6}
-@keyframes scroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
-
-/* ── SECTION COMMON ── */
-section{padding:100px 40px;max-width:1100px;margin:0 auto}
-.section-label{font-size:11px;letter-spacing:3px;color:var(--forge);text-transform:uppercase;margin-bottom:16px;font-family:'JetBrains Mono',monospace}
-.section-title{font-family:'Bebas Neue',sans-serif;font-size:clamp(44px,6vw,72px);letter-spacing:3px;line-height:1.05;margin-bottom:16px}
-.section-desc{color:var(--muted);max-width:520px;font-size:15px;line-height:1.75}
-
-/* ── WHY ── */
-.why-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:2px;margin-top:56px;border:1px solid var(--b);border-radius:12px;overflow:hidden}
-.why-card{background:var(--s1);padding:40px 32px;transition:background .2s;position:relative;overflow:hidden}
-.why-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--forge);transform:scaleX(0);transition:transform .3s;transform-origin:left}
-.why-card:hover::before{transform:scaleX(1)}
-.why-card:hover{background:var(--s2)}
-.why-icon{font-size:28px;margin-bottom:20px;display:block}
-.why-card h3{font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:2px;margin-bottom:10px;color:var(--txt)}
-.why-card p{font-size:14px;color:var(--muted);line-height:1.7}
-.why-card .tag{display:inline-block;margin-top:16px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--forge);border:1px solid rgba(255,107,26,.25);border-radius:4px;padding:3px 9px}
-
-/* ── VS TABLE ── */
-.vs-wrap{margin-top:56px;border:1px solid var(--b);border-radius:12px;overflow:hidden}
-.vs-table{width:100%;border-collapse:collapse;font-size:14px}
-.vs-table th{background:var(--s2);padding:16px 24px;text-align:left;font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:1px;color:var(--muted);border-bottom:1px solid var(--b)}
-.vs-table th.forge-col{color:var(--forge)}
-.vs-table td{padding:15px 24px;border-bottom:1px solid var(--b);color:var(--muted)}
-.vs-table tr:last-child td{border-bottom:none}
-.vs-table tr:hover td{background:var(--s2)}
-.vs-table .feat{color:var(--txt);font-weight:500}
-.yes{color:#4ade80}
-.no{color:#ef4444}
-.part{color:var(--ember)}
-
-/* ── ARCH ── */
-.arch-flow{display:flex;flex-direction:column;align-items:center;gap:0;margin-top:56px}
-.arch-node{width:100%;max-width:640px;background:var(--s1);border:1px solid var(--b);border-radius:10px;padding:20px 28px;display:flex;align-items:center;justify-content:space-between;transition:border-color .2s}
-.arch-node:hover{border-color:var(--forge)}
-.arch-node-left h4{font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:2px;color:var(--txt)}
-.arch-node-left p{font-size:12px;color:var(--muted);margin-top:3px;font-family:'JetBrains Mono',monospace}
-.arch-node-right{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--forge);border:1px solid rgba(255,107,26,.2);border-radius:4px;padding:4px 10px;white-space:nowrap}
-.arch-arrow{width:2px;height:28px;background:var(--b);position:relative;align-self:center}
-.arch-arrow::after{content:'▼';position:absolute;bottom:-10px;left:50%;transform:translateX(-50%);color:var(--forge);font-size:10px}
-.arch-models{width:100%;max-width:640px;display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin:0}
-.arch-model{background:var(--s2);border:1px solid var(--b);border-radius:6px;padding:8px;text-align:center;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);transition:all .2s;cursor:default}
-.arch-model:hover{border-color:var(--ember);color:var(--ember)}
-
-/* ── DOWNLOADS ── */
-.download-shell{margin-top:56px;border:1px solid var(--b);border-radius:18px;padding:34px;background:radial-gradient(circle at top left, rgba(255,107,26,.16), transparent 32%),linear-gradient(135deg, rgba(255,255,255,.02), rgba(255,255,255,0)),var(--s1);position:relative;overflow:hidden}
-.download-shell::after{content:'';position:absolute;right:-10%;bottom:-40%;width:360px;height:360px;background:radial-gradient(circle, rgba(255,170,60,.16), transparent 65%);pointer-events:none}
-.download-top{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(280px,.75fr);gap:24px;align-items:end}
-.download-side{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
-.download-kpi{border:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.025);border-radius:12px;padding:16px}
-.download-kpi strong{display:block;font-family:'Bebas Neue',sans-serif;font-size:34px;letter-spacing:2px;color:var(--forge);line-height:1}
-.download-kpi span{display:block;font-size:11px;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);margin-top:6px}
-.hero-download{display:flex;flex-direction:column;align-items:center;gap:14px;margin-top:42px}
-.hero-download .btn-primary{font-size:18px;padding:18px 44px;box-shadow:0 14px 44px rgba(255,107,26,.26)}
-.hero-note{font-size:13px;color:var(--muted);letter-spacing:.4px}
-.hero-mini-links{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
-.hero-mini-links a{font-size:12px;color:var(--txt);border:1px solid var(--b);background:var(--s1);border-radius:var(--r);padding:9px 15px;text-decoration:none;transition:border-color .2s,color .2s}
-.hero-mini-links a:hover{border-color:var(--forge);color:var(--forge)}
-.trust-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:22px}
-.trust-pill{border:1px solid rgba(255,107,26,.28);background:rgba(255,107,26,.07);border-radius:999px;padding:7px 12px;font-size:12px;color:var(--txt)}
-.windows-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:28px}
-.windows-card{display:flex;flex-direction:column;gap:14px;min-height:210px;padding:26px;border-radius:14px;border:1px solid rgba(255,107,26,.35);background:linear-gradient(135deg,rgba(255,107,26,.10),rgba(255,255,255,.02));text-decoration:none;color:var(--txt);transition:transform .2s,border-color .2s,background .2s}
-.windows-card:hover{transform:translateY(-3px);border-color:rgba(255,107,26,.75);background:linear-gradient(135deg,rgba(255,107,26,.15),rgba(255,255,255,.03))}
-.windows-card.primary{border-color:var(--forge);box-shadow:0 18px 44px rgba(255,107,26,.14)}
-.windows-card h3{font-family:'Bebas Neue',sans-serif;font-size:34px;letter-spacing:2px;line-height:1;color:var(--txt)}
-.windows-card p{font-size:14px;color:var(--muted);line-height:1.65;flex:1}
-.quick-start-grid,.developer-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:28px}
-.quick-card{border:1px solid var(--b);background:rgba(255,255,255,.02);border-radius:14px;padding:22px}
-.quick-card strong{display:block;font-family:'Bebas Neue',sans-serif;font-size:28px;letter-spacing:2px;color:var(--forge);line-height:1;margin-bottom:10px}
-.quick-card h3{font-size:16px;line-height:1.35;margin-bottom:8px}
-.quick-card p{font-size:13px;color:var(--muted);line-height:1.65}
-.download-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-top:28px}
-.platform-card{display:flex;flex-direction:column;gap:16px;min-height:220px;padding:22px;border-radius:14px;border:1px solid var(--b);background:rgba(255,255,255,.02);text-decoration:none;color:var(--txt);transition:transform .2s,border-color .2s,background .2s}
-.platform-card:hover{transform:translateY(-3px);border-color:rgba(255,107,26,.55);background:rgba(255,255,255,.035)}
-.platform-card.disabled{cursor:default}
-.platform-card.disabled:hover{transform:none;border-color:var(--b);background:rgba(255,255,255,.02)}
-.platform-build{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--forge)}
-.platform-os{font-family:'Bebas Neue',sans-serif;font-size:34px;letter-spacing:2px;line-height:1;color:var(--txt)}
-.platform-desc{font-size:13px;color:var(--muted);line-height:1.7;flex:1}
-.platform-meta{display:flex;justify-content:space-between;align-items:center;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.8px;color:var(--muted);padding-top:12px;border-top:1px solid rgba(255,255,255,.06)}
-.platform-link{display:inline-flex;align-items:center;justify-content:space-between;gap:10px;font-size:12px;font-weight:600;letter-spacing:.3px;color:var(--txt)}
-.platform-link span{color:var(--forge)}
-.download-note{margin-top:20px;padding-top:18px;border-top:1px solid rgba(255,255,255,.06);display:flex;justify-content:space-between;gap:18px;flex-wrap:wrap}
-.download-note p{font-size:12px;color:var(--muted);max-width:520px}
-.download-note strong{color:var(--txt)}
-
-/* ── INSTALL ── */
-.install-block{background:var(--s1);border:1px solid var(--b);border-radius:12px;padding:40px;margin-top:56px;font-family:'JetBrains Mono',monospace}
-.install-block .comment{color:var(--muted);font-size:13px;margin-bottom:8px}
-.install-block .cmd{font-size:14px;color:var(--ember);line-height:2}
-.install-block .cmd .p{color:var(--muted)}
-.install-block .cmd .kw{color:var(--forge)}
-.install-block .cmd .str{color:#7ee787}
-.install-step{display:flex;gap:16px;margin-top:28px;padding-top:28px;border-top:1px solid var(--b)}
-.step-num{font-family:'Bebas Neue',sans-serif;font-size:32px;color:var(--forge);min-width:32px;letter-spacing:1px}
-.step-body h4{font-size:14px;font-weight:600;color:var(--txt);margin-bottom:4px;font-family:'DM Sans',sans-serif}
-.step-body p{font-size:12px;color:var(--muted)}
-
-/* ── FOOTER ── */
-footer{border-top:1px solid var(--b);padding:40px;display:flex;align-items:center;justify-content:space-between;flex-wrap:gap}
-.footer-brand{font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:4px;color:var(--forge)}
-.footer-brand span{color:var(--muted)}
-.footer-right{font-size:12px;color:var(--muted)}
-.footer-right a{color:var(--muted);text-decoration:none}
-.footer-right a:hover{color:var(--forge)}
-
-/* ── GLOW DIVIDER ── */
-.glow-bar{width:100%;height:1px;background:linear-gradient(90deg,transparent,var(--forge),transparent);opacity:.4;margin:0}
-
-/* ── RESPONSIVE ── */
-@media(max-width:640px){
-  nav{padding:0 20px}
+body{
+  margin:0;
+  background:radial-gradient(circle at 50% 0%,rgba(255,100,24,.11),transparent 26rem),var(--bg);
+  color:var(--text);
+  font-family:var(--body);
+  font-size:16px;
+  line-height:1.65;
+  letter-spacing:0;
+}
+a{color:inherit;text-decoration:none}
+button{font:inherit}
+.nav{
+  position:sticky;
+  top:0;
+  z-index:10;
+  height:64px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:0 clamp(18px,4vw,52px);
+  background:rgba(5,5,5,.86);
+  border-bottom:1px solid var(--border);
+  backdrop-filter:blur(18px);
+}
+.brand{display:flex;align-items:center;gap:12px;font-weight:700}
+.brand-mark{
+  width:31px;height:31px;border-radius:8px;background:var(--hot);
+  display:grid;place-items:center;color:#fff;font-family:var(--display);font-size:22px;line-height:1;
+}
+.brand-text{font-size:14px;letter-spacing:.08em}
+.nav-links{display:flex;align-items:center;gap:26px}
+.nav-links a{color:var(--muted);font-size:13px;font-weight:600}
+.nav-links a:hover{color:var(--text)}
+.nav-cta{border:1px solid var(--border);border-radius:8px;padding:9px 14px;color:var(--text)!important;background:#111}
+.shell{width:min(100%,1040px);margin:0 auto;padding:0 28px}
+.hero{padding:82px 0 62px;text-align:center}
+.wordmark{
+  margin:0 auto 26px;
+  font-family:var(--display);
+  font-size:clamp(92px,18vw,188px);
+  line-height:.78;
+  letter-spacing:.035em;
+  color:var(--text);
+  text-shadow:0 0 54px rgba(255,100,24,.18);
+}
+.wordmark span{color:var(--hot)}
+.hero h1{
+  margin:0 auto 16px;
+  max-width:780px;
+  font-size:clamp(30px,5vw,58px);
+  line-height:1.02;
+  letter-spacing:-.02em;
+}
+.hero-copy{
+  margin:0 auto;
+  max-width:680px;
+  color:var(--muted);
+  font-size:17px;
+}
+.hero-copy strong{color:var(--text)}
+.primary-download{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:12px;
+  width:min(100%,480px);
+  min-height:56px;
+  margin:34px auto 0;
+  border-radius:8px;
+  background:var(--hot);
+  color:#fff;
+  font-weight:800;
+  box-shadow:0 18px 50px rgba(255,100,24,.2);
+  transition:transform .18s ease,background .18s ease;
+}
+.primary-download:hover{transform:translateY(-2px);background:var(--hot-2)}
+.hero-meta{margin:14px 0 0;color:var(--dim);font-size:13px}
+.hero-links{display:grid;grid-template-columns:1fr 1fr;gap:8px;width:min(100%,480px);margin:16px auto 0}
+.secondary-link{
+  min-height:40px;
+  border:1px solid var(--border);
+  border-radius:8px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:9px;
+  background:#101010;
+  color:var(--text);
+  font-size:14px;
+  font-weight:700;
+}
+.secondary-link:hover{border-color:var(--border-hot);color:var(--hot)}
+.install-box{
+  width:min(100%,480px);
+  margin:16px auto 0;
+  padding:14px 16px;
+  border:1px solid var(--border);
+  border-radius:8px;
+  background:#101010;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+}
+.cmd{min-width:0;display:flex;align-items:center;gap:8px;color:#d9d5cf;font-family:var(--mono);font-size:13px;white-space:nowrap;overflow:auto}
+.cmd b{color:var(--hot);font-weight:700}
+.copy{
+  border:1px solid #3a3a3a;
+  border-radius:8px;
+  color:#fff;
+  background:#151515;
+  padding:8px 16px;
+  cursor:pointer;
+  font-weight:700;
+}
+.copy:hover{border-color:var(--hot);color:var(--hot)}
+.stats{
+  margin:62px auto 0;
+  padding-top:34px;
+  border-top:1px solid var(--border);
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:20px;
+  max-width:640px;
+}
+.stat strong{display:block;color:var(--hot);font-size:30px;line-height:1;font-weight:900}
+.stat span{display:block;color:var(--dim);font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;margin-top:7px}
+section{padding:72px 0;border-top:1px solid #171717;scroll-margin-top:86px}
+.section-kicker{font-family:var(--mono);font-size:11px;font-weight:800;letter-spacing:.16em;color:var(--hot);text-transform:uppercase}
+.section-head{margin:10px 0 0;font-size:clamp(28px,4vw,42px);line-height:1.08;letter-spacing:-.03em}
+.section-copy{margin:12px 0 0;max-width:620px;color:var(--muted)}
+.download-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-top:34px}
+.download-card,.step-card,.dev-card{
+  border:1px solid var(--border);
+  border-radius:8px;
+  background:linear-gradient(180deg,#111,#0b0b0b);
+  padding:24px;
+}
+.download-card.primary{border-color:var(--border-hot);background:linear-gradient(180deg,rgba(255,100,24,.09),#0d0d0d)}
+.card-label{font-family:var(--mono);font-size:10px;font-weight:800;letter-spacing:.16em;color:var(--hot);text-transform:uppercase}
+.card-title{margin:10px 0 8px;font-size:20px;line-height:1.2}
+.card-copy{margin:0;color:var(--muted);font-size:14px}
+.card-meta{display:flex;justify-content:space-between;gap:14px;margin:24px 0 12px;color:var(--dim);font-family:var(--mono);font-size:12px}
+.card-action{color:var(--hot);font-weight:800;font-size:14px}
+.disabled{opacity:.46;pointer-events:none}
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:34px}
+.step-no{font-family:var(--mono);font-size:11px;font-weight:800;color:var(--hot)}
+.step-card h3{font-size:17px;margin:10px 0 8px}
+.step-card p{margin:0;color:var(--muted);font-size:14px}
+.dev-grid{display:grid;grid-template-columns:1.2fr .8fr .8fr;gap:14px;margin-top:34px}
+.dev-card code{display:block;margin-top:18px;color:#d8d3cb;font-family:var(--mono);font-size:13px;overflow:auto}
+.footer{
+  border-top:1px solid var(--border);
+  padding:28px clamp(18px,4vw,52px);
+  color:var(--dim);
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:18px;
+  font-size:13px;
+}
+.footer a{color:var(--muted)}
+.footer a:hover{color:var(--hot)}
+.icon{width:16px;height:16px;display:inline-block;vertical-align:-3px}
+@media (max-width:780px){
+  .nav{height:auto;min-height:62px}
   .nav-links a:not(.nav-cta){display:none}
-  .nav-links{gap:0}
-  section{padding:72px 20px}
-  h1{font-size:clamp(72px,24vw,108px);letter-spacing:4px}
-  .install-cmd{max-width:100%;font-size:11px;padding:10px 12px;gap:8px}
-  #cmd-text{overflow-wrap:anywhere}
-  .hero-stats{gap:28px}
-  .stat-n{font-size:32px}
-  .download-grid{grid-template-columns:1fr}
-  .windows-options,.quick-start-grid,.developer-grid{grid-template-columns:1fr}
-  .download-top{grid-template-columns:1fr}
-  .download-side{grid-template-columns:1fr 1fr}
-  .arch-models{grid-template-columns:repeat(3,1fr)}
-  .vs-table th:nth-child(2),.vs-table td:nth-child(2){display:none}
+  .shell{padding:0 18px}
+  .hero{padding-top:58px}
+  .wordmark{font-size:clamp(76px,24vw,116px);letter-spacing:.02em}
+  .hero h1{font-size:34px}
+  .hero-copy{font-size:15px}
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .download-grid,.steps,.dev-grid{grid-template-columns:1fr}
+  .hero-links{grid-template-columns:1fr}
+  .footer{flex-direction:column;align-items:flex-start}
 }
-
-@media(max-width:980px){
-  .download-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .windows-options,.quick-start-grid,.developer-grid{grid-template-columns:1fr}
-  .download-top{grid-template-columns:1fr}
+@media (max-width:420px){
+  .wordmark{font-size:68px}
+  .install-box{align-items:stretch;flex-direction:column}
+  .copy{width:100%}
 }
-
-/* ── FADE IN ANIMATION ── */
-.fade-in{opacity:0;transform:translateY(24px);transition:opacity .7s ease,transform .7s ease}
-.fade-in.visible{opacity:1;transform:translateY(0)}
 </style>
 </head>
 <body>
-
-<!-- NAV -->
-<nav>
-  <a href="#" class="nav-logo">F<span>ORGE</span></a>
+<nav class="nav">
+  <a class="brand" href="/FORGE/" aria-label="FORGE home">
+    <span class="brand-mark">F</span>
+    <span class="brand-text">FORGE</span>
+  </a>
   <div class="nav-links">
     <a href="#downloads">Downloads</a>
-    <a href="#why">Why</a>
-    <a href="#arch">Architecture</a>
-    <a href="#install">Install</a>
-    <a href="https://github.com/TREN-Studio/FORGE" class="nav-cta" target="_blank">GitHub</a>
+    <a href="#quick-start">Quick Start</a>
+    <a href="#developers">Developers</a>
+    <a class="nav-cta" href="https://github.com/TREN-Studio/FORGE" target="_blank" rel="noopener">GitHub</a>
   </div>
 </nav>
 
-<!-- HERO -->
-<div class="hero">
-  <canvas id="fire"></canvas>
-  <div class="hero-inner">
-    <div class="hero-badge"><span></span>FORGE v1.1.5 · WINDOWS DESKTOP READY</div>
-    <h1>F<em>O</em>RGE</h1>
-    <p class="hero-sub">
-      Open-source desktop AI operator for <strong>Windows</strong>.<br>
-      Download, open FORGE, and try the built-in demo without an account.<br>
-      <strong>No login. Ready in seconds.</strong>
-    </p>
-    <div class="hero-download">
-      <a class="btn-primary" href="https://github.com/TREN-Studio/FORGE/releases/download/v1.1.5/FORGE-Setup-1.1.5.exe" data-release-asset="FORGE-Setup-1.1.5.exe">Download FORGE for Windows</a>
-      <div class="hero-note">No login. Ready in seconds.</div>
-      <div class="install-cmd" aria-label="Developer install command">
-        <span class="prefix">$</span>
-        <span id="cmd-text">pip install forge-agent==1.1.5</span>
-        <button class="copy-btn" type="button" onclick="copyCmd()" aria-label="Copy install command">Copy</button>
-      </div>
-      <div class="hero-mini-links">
-        <a href="https://github.com/TREN-Studio/FORGE/releases/download/v1.1.5/FORGE-Windows-Portable-1.1.5.zip" data-release-asset="FORGE-Windows-Portable-1.1.5.zip">Portable (.zip)</a>
-        <a href="https://github.com/TREN-Studio/FORGE/releases/download/v1.1.5/FORGE-Setup-1.1.5.exe" data-release-asset="FORGE-Setup-1.1.5.exe">Installer (.exe)</a>
-      </div>
-    </div>
-    <div class="trust-row" style="justify-content:center">
-      <span class="trust-pill">No login required</span>
-      <span class="trust-pill">Works instantly</span>
-      <span class="trust-pill">Includes demo</span>
-    </div>
-    <div class="hero-stats">
-      <div class="stat"><div class="stat-n">1</div><div class="stat-l">Windows Click</div></div>
-      <div class="stat"><div class="stat-n">500K+</div><div class="stat-l">Models Available</div></div>
-      <div class="stat"><div class="stat-n">$0</div><div class="stat-l">Forever Cost</div></div>
-      <div class="stat"><div class="stat-n">∞</div><div class="stat-l">Self-Evolving</div></div>
-    </div>
-  </div>
-</div>
+<main>
+  <header class="hero shell">
+    <div class="wordmark" aria-label="FORGE">F<span>O</span>RGE</div>
+    <div class="section-kicker">FORGE v1.1.5 - WINDOWS DESKTOP READY</div>
+    <h1>FORGE v1.1.5 for Windows</h1>
+    <p class="hero-copy">FORGE connects to <strong>500K+ free models</strong>, plans multi-step tasks, reads your files, runs commands, and verifies results on your machine. <strong>No subscription. No lock-in.</strong></p>
 
-<!-- DOWNLOADS -->
-<section id="downloads" class="fade-in" style="padding-top:0">
-  <div class="download-shell">
-    <div class="download-top">
-      <div>
-        <div class="section-label">Windows Download <span id="release-version">v1.1.5</span></div>
-        <div class="section-title">Download FORGE for Windows</div>
-        <p class="section-desc">The fastest public path is the Windows desktop build. Download it, open FORGE, and run the built-in demo without creating an account.</p>
-        <div class="trust-row">
-          <span class="trust-pill">No login required</span>
-          <span class="trust-pill">Works instantly</span>
-          <span class="trust-pill">Includes demo</span>
-        </div>
-      </div>
-      <div class="download-side">
-        <div class="download-kpi"><strong>Win</strong><span>Recommended</span></div>
-        <div class="download-kpi"><strong>v1.1.5</strong><span>Current Version</span></div>
-        <div class="download-kpi"><strong>$0</strong><span>License Cost</span></div>
-        <div class="download-kpi"><strong>Demo</strong><span>Included</span></div>
-      </div>
-    </div>
-    <div class="windows-options">
-      <a class="windows-card primary" href="https://github.com/TREN-Studio/FORGE/releases/download/v1.1.5/FORGE-Setup-1.1.5.exe" data-release-asset="FORGE-Setup-1.1.5.exe">
-        <div class="platform-build">Windows Download (Recommended)</div>
-        <h3>Installer (.exe)</h3>
-        <p>Best for most users. Installs FORGE Desktop, adds shortcuts, and starts the first-run flow with guest mode and Run Demo available.</p>
-        <div class="platform-meta"><span>FORGE-Setup-1.1.5.exe</span><span data-release-size-for="FORGE-Setup-1.1.5.exe">36 MB</span></div>
-        <div class="platform-link">Download Installer <span>-></span></div>
+    <a class="primary-download" href="https://github.com/TREN-Studio/FORGE/releases/download/v1.1.5/FORGE-Setup-1.1.5.exe" data-release-asset="FORGE-Setup-1.1.5.exe">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3v11m0 0 4-4m-4 4-4-4M5 17v3h14v-3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Download FORGE for Windows
+    </a>
+    <div class="hero-meta">No login required &middot; Works instantly &middot; Includes demo &middot; Windows desktop v1.1.5 &middot; 36 MB</div>
+
+    <div class="hero-links">
+      <a class="secondary-link" href="https://github.com/TREN-Studio/FORGE/releases/download/v1.1.5/FORGE-Windows-Portable-1.1.5.zip" data-release-asset="FORGE-Windows-Portable-1.1.5.zip">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3v11m0 0 4-4m-4 4-4-4M5 17v3h14v-3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Portable (.zip)
       </a>
-      <a class="windows-card" href="https://github.com/TREN-Studio/FORGE/releases/download/v1.1.5/FORGE-Windows-Portable-1.1.5.zip" data-release-asset="FORGE-Windows-Portable-1.1.5.zip">
-        <div class="platform-build">Portable Option</div>
-        <h3>Portable (.zip)</h3>
-        <p>Use this when you prefer no installer. Unzip, open FORGE-Desktop.exe, and run the local demo from the desktop interface.</p>
-        <div class="platform-meta"><span>Portable ZIP</span><span data-release-size-for="FORGE-Windows-Portable-1.1.5.zip">35 MB</span></div>
-        <div class="platform-link">Download Portable <span>-></span></div>
+      <a class="secondary-link" href="https://github.com/TREN-Studio/FORGE/releases/download/v1.1.5/FORGE-Source-v1.1.5.zip" data-release-asset="FORGE-Source-v1.1.5.zip">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M16 18 22 12l-6-6M8 6 2 12l6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Source
       </a>
     </div>
-    <div class="download-note">
-      <p><strong>Canonical release:</strong> <a id="release-url" href="https://github.com/TREN-Studio/FORGE/releases/tag/v1.1.5" target="_blank" rel="noopener" style="color:var(--ember)">GitHub Release v1.1.5</a> is the version authority. Site mirrors, when present, must match the same release assets byte-for-byte.</p>
-      <p><strong>Windows first:</strong> PyPI, source, and GitHub links are still available below for developers.</p>
-    </div>
-  </div>
-</section>
 
-<!-- QUICK START -->
-<section id="quick-start" class="fade-in" style="padding-top:0">
-  <div class="section-label">Quick Start</div>
-  <div class="section-title">Try FORGE in One Minute</div>
-  <div class="quick-start-grid">
-    <div class="quick-card"><strong>01</strong><h3>Download the app</h3><p>Use the Windows installer or portable zip above.</p></div>
-    <div class="quick-card"><strong>02</strong><h3>Open FORGE</h3><p>Guest mode is available immediately. Login is optional for sync and private features.</p></div>
-    <div class="quick-card"><strong>03</strong><h3>Press Run Demo</h3><p>FORGE creates a real artifact so you can see the agent work before setup.</p></div>
-  </div>
-</section>
+    <div class="install-box" aria-label="Developer install command">
+      <div class="cmd"><b>$</b><span id="cmd-text">pip install forge-agent==1.1.7</span></div>
+      <button class="copy" type="button" onclick="copyCmd()">Copy</button>
+    </div>
 
-<!-- DEVELOPERS -->
-<section id="developers" class="fade-in" style="padding-top:0">
-  <div class="section-label">For Developers</div>
-  <div class="section-title">CLI, Source, and Release Record</div>
-  <p class="section-desc">These paths are for developers, packagers, and reviewers. The primary user path remains Windows Desktop.</p>
-  <div class="developer-grid">
-    <a class="platform-card" href="https://pypi.org/project/forge-agent/1.1.5/" target="_blank" rel="noopener">
-      <div class="platform-build">Python Package</div>
-      <div class="platform-os">PyPI</div>
-      <div class="platform-desc">Install the CLI and agent runtime with <code style="color:var(--ember);font-size:12px">pip install forge-agent==1.1.5</code>.</div>
-      <div class="platform-meta"><span>Package</span><span>1.1.5</span></div>
-      <div class="platform-link">Open PyPI <span>-></span></div>
-    </a>
-    <a class="platform-card" href="https://github.com/TREN-Studio/FORGE/releases/download/v1.1.5/FORGE-Source-v1.1.5.zip" data-release-asset="FORGE-Source-v1.1.5.zip" target="_blank" rel="noopener">
-      <div class="platform-build">Source Archive</div>
-      <div class="platform-os">Source</div>
-      <div class="platform-desc">Release source archive for contributors and packagers who want to inspect or rebuild FORGE.</div>
-      <div class="platform-meta"><span>ZIP</span><span data-release-size-for="FORGE-Source-v1.1.5.zip">GitHub asset</span></div>
-      <div class="platform-link">Download Source <span>-></span></div>
-    </a>
-    <a class="platform-card" href="https://github.com/TREN-Studio/FORGE/releases/tag/v1.1.5" target="_blank" rel="noopener">
-      <div class="platform-build">Release Record</div>
-      <div class="platform-os">GitHub</div>
-      <div class="platform-desc">View the canonical release, notes, hashes, and all attached assets for FORGE v1.1.5.</div>
-      <div class="platform-meta"><span>Release</span><span>v1.1.5</span></div>
-      <div class="platform-link">View Release <span>-></span></div>
-    </a>
-  </div>
-</section>
+    <div class="stats" aria-label="FORGE stats">
+      <div class="stat"><strong>500K+</strong><span>Models</span></div>
+      <div class="stat"><strong>20+</strong><span>Providers</span></div>
+      <div class="stat"><strong>$0</strong><span>Forever</span></div>
+      <div class="stat"><strong>MIT</strong><span>License</span></div>
+    </div>
+  </header>
 
-<!-- MODELS MARQUEE -->
-<div class="marquee-section">
-  <div class="marquee-track" id="marquee">
-    <div class="marquee-item"><span class="marquee-dot"></span>Groq LLaMA 3.3 70B</div>
-    <div class="marquee-item"><span class="marquee-dot"></span>Gemini 2.0 Flash</div>
-    <div class="marquee-item"><span class="marquee-dot"></span>DeepSeek R1</div>
-    <div class="marquee-item"><span class="marquee-dot"></span>Mistral Large</div>
-    <div class="marquee-item"><span class="marquee-dot"></span>Qwen 2.5 72B</div>
-    <div class="marquee-item"><span class="marquee-dot"></span>Ollama Local</div>
-    <div class="marquee-item"><span class="marquee-dot"></span>HuggingFace 500K+</div>
-    <div class="marquee-item"><span class="marquee-dot"></span>Together AI</div>
-    <div class="marquee-item"><span class="marquee-dot"></span>OpenRouter</div>
-    <div class="marquee-item"><span class="marquee-dot"></span>Nvidia NIM</div>
-    <div class="marquee-item"><span class="marquee-dot"></span>Codestral</div>
-    <div class="marquee-item"><span class="marquee-dot"></span>Gemma 2 27B</div>
-    <div class="marquee-item"><span class="marquee-dot"></span>Phi-4</div>
-    <div class="marquee-item"><span class="marquee-dot"></span>Command R+</div>
-    <div class="marquee-item"><span class="marquee-dot"></span>WizardCoder</div>
-    <!-- duplicate for seamless loop -->
-    <div class="marquee-item"><span class="marquee-dot"></span>Groq LLaMA 3.3 70B</div>
-    <div class="marquee-item"><span class="marquee-dot"></span>Gemini 2.0 Flash</div>
-    <div class="marquee-item"><span class="marquee-dot"></span>DeepSeek R1</div>
-    <div class="marquee-item"><span class="marquee-dot"></span>Mistral Large</div>
-    <div class="marquee-item"><span class="marquee-dot"></span>Qwen 2.5 72B</div>
-    <div class="marquee-item"><span class="marquee-dot"></span>Ollama Local</div>
-    <div class="marquee-item"><span class="marquee-dot"></span>HuggingFace 500K+</div>
-    <div class="marquee-item"><span class="marquee-dot"></span>Together AI</div>
-    <div class="marquee-item"><span class="marquee-dot"></span>OpenRouter</div>
-    <div class="marquee-item"><span class="marquee-dot"></span>Nvidia NIM</div>
-    <div class="marquee-item"><span class="marquee-dot"></span>Codestral</div>
-    <div class="marquee-item"><span class="marquee-dot"></span>Gemma 2 27B</div>
-    <div class="marquee-item"><span class="marquee-dot"></span>Phi-4</div>
-    <div class="marquee-item"><span class="marquee-dot"></span>Command R+</div>
-    <div class="marquee-item"><span class="marquee-dot"></span>WizardCoder</div>
-  </div>
-</div>
-<div class="glow-bar"></div>
+  <section id="downloads" class="shell">
+    <div class="section-kicker">Downloads</div>
+    <h2 class="section-head">Get FORGE</h2>
+    <p class="section-copy">Windows Desktop is the recommended path. No account or API key is needed to run the built-in demo.</p>
 
-<!-- WHY FORGE -->
-<section id="why" class="fade-in">
-  <div class="section-label">Why FORGE</div>
-  <div class="section-title">Forged Different</div>
-  <p class="section-desc">Not another wrapper. FORGE is the only agent that truly owns its intelligence — no vendor lock-in, no bills, no ceiling.</p>
-  <div class="why-grid">
-    <div class="why-card">
-      <span class="why-icon">🔥</span>
-      <h3>Smart Selector</h3>
-      <p>Real-time benchmark of every available model. Each task gets routed to the best performing free model at that exact moment — speed, accuracy, quota — all weighed automatically.</p>
-      <span class="tag">Model Intelligence Scoring</span>
-    </div>
-    <div class="why-card">
-      <span class="why-icon">♾️</span>
-      <h3>Quota Guardian</h3>
-      <p>Tracks free tier limits across 20+ providers simultaneously. When one quota hits zero, FORGE seamlessly rotates to the next. Zero downtime. Zero interruption. Zero cost.</p>
-      <span class="tag">Self-Healing APIs</span>
-    </div>
-    <div class="why-card">
-      <span class="why-icon">🧬</span>
-      <h3>Self-Discovery</h3>
-      <p>Every 24 hours, FORGE crawls HuggingFace, OpenRouter, and every known provider to find newly released free models. It adds them, benchmarks them, and uses them — without you touching anything.</p>
-      <span class="tag">Auto-Evolution Engine</span>
-    </div>
-    <div class="why-card">
-      <span class="why-icon">🧠</span>
-      <h3>Persistent Memory</h3>
-      <p>Not just conversation history. FORGE builds a knowledge graph about you, your projects, your preferences — growing smarter with every interaction. Across sessions. Across tasks.</p>
-      <span class="tag">Memory Graph</span>
-    </div>
-    <div class="why-card">
-      <span class="why-icon">⚡</span>
-      <h3>True Agent Mode</h3>
-      <p>Writes and executes code. Searches the web. Manages files. Plans multi-step tasks end-to-end. Not a chatbot with tools — a real autonomous agent with full system access.</p>
-      <span class="tag">Full Autonomy</span>
-    </div>
-    <div class="why-card">
-      <span class="why-icon">🌍</span>
-      <h3>Open Forever</h3>
-      <p>MIT licensed. No cloud dependency. Runs 100% on your machine. The community adds providers, plugins, and improvements daily. No company can ever shut it down or charge for it.</p>
-      <span class="tag">MIT License</span>
-    </div>
-  </div>
-</section>
+    <div class="download-grid">
+      <a class="download-card primary" href="https://github.com/TREN-Studio/FORGE/releases/download/v1.1.5/FORGE-Setup-1.1.5.exe" data-release-asset="FORGE-Setup-1.1.5.exe">
+        <div class="card-label">Windows Download (Recommended)</div>
+        <h3 class="card-title">Installer (.exe)</h3>
+        <p class="card-copy">Install FORGE Desktop with Start Menu shortcut. Guest mode and Run Demo work without any account or API key.</p>
+        <div class="card-meta"><span>FORGE-Setup-1.1.5.exe</span><span data-release-size-for="FORGE-Setup-1.1.5.exe">36 MB</span></div>
+        <span class="card-action">Download Installer -></span>
+      </a>
 
-<!-- VS TABLE -->
-<section class="fade-in" style="padding-top:0">
-  <div class="section-label">Comparison</div>
-  <div class="section-title">FORGE vs The World</div>
-  <div class="vs-wrap">
-    <table class="vs-table">
-      <thead>
-        <tr>
-          <th>Feature</th>
-          <th class="forge-col">FORGE</th>
-          <th>OpenClaw</th>
-          <th>AutoGPT</th>
-          <th>ChatGPT</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr><td class="feat">100% Free Forever</td><td class="yes">✓</td><td class="no">✗</td><td class="no">✗</td><td class="no">✗</td></tr>
-        <tr><td class="feat">Self-Evolving Models</td><td class="yes">✓</td><td class="no">✗</td><td class="no">✗</td><td class="no">✗</td></tr>
-        <tr><td class="feat">Smart Model Selector</td><td class="yes">✓</td><td class="part">~</td><td class="no">✗</td><td class="no">✗</td></tr>
-        <tr><td class="feat">Quota Auto-Rotation</td><td class="yes">✓</td><td class="no">✗</td><td class="no">✗</td><td class="no">✗</td></tr>
-        <tr><td class="feat">Persistent Memory Graph</td><td class="yes">✓</td><td class="part">~</td><td class="part">~</td><td class="no">✗</td></tr>
-        <tr><td class="feat">Local / No Cloud Required</td><td class="yes">✓</td><td class="part">~</td><td class="no">✗</td><td class="no">✗</td></tr>
-        <tr><td class="feat">Open Source (MIT)</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">✗</td></tr>
-        <tr><td class="feat">20+ Free Providers</td><td class="yes">✓</td><td class="no">✗</td><td class="no">✗</td><td class="no">✗</td></tr>
-      </tbody>
-    </table>
-  </div>
-</section>
+      <a class="download-card" href="https://github.com/TREN-Studio/FORGE/releases/download/v1.1.5/FORGE-Windows-Portable-1.1.5.zip" data-release-asset="FORGE-Windows-Portable-1.1.5.zip">
+        <div class="card-label">Windows - No Install</div>
+        <h3 class="card-title">Portable (.zip)</h3>
+        <p class="card-copy">Unzip and run FORGE-Desktop.exe directly. No installation required. Works from any folder including USB drives.</p>
+        <div class="card-meta"><span>FORGE-Windows-Portable-1.1.5.zip</span><span data-release-size-for="FORGE-Windows-Portable-1.1.5.zip">35 MB</span></div>
+        <span class="card-action">Download Portable -></span>
+      </a>
 
-<!-- ARCHITECTURE -->
-<section id="arch" class="fade-in">
-  <div class="section-label">Architecture</div>
-  <div class="section-title">How It Works</div>
-  <p class="section-desc">Five layers. Every decision automated. Every model free. Every failure handled.</p>
-  <div class="arch-flow">
-    <div class="arch-node">
-      <div class="arch-node-left">
-        <h4>User / Task Input</h4>
-        <p>text · code · files · images · voice</p>
+      <div class="download-card disabled">
+        <div class="card-label">Coming Soon</div>
+        <h3 class="card-title">macOS</h3>
+        <p class="card-copy">Native macOS app is in validation. Use the Python package or source for now.</p>
+        <div class="card-meta"><span>Not available yet</span><span>-</span></div>
+        <span class="card-action">View on GitHub -></span>
       </div>
-      <div class="arch-node-right">Input Layer</div>
-    </div>
-    <div class="arch-arrow"></div>
-    <div class="arch-node" style="border-color:rgba(255,107,26,.3)">
-      <div class="arch-node-left">
-        <h4>Smart Selector Engine</h4>
-        <p>rates models in real-time: accuracy · speed · quota</p>
-      </div>
-      <div class="arch-node-right" style="color:var(--ember)">Core Intelligence</div>
-    </div>
-    <div class="arch-arrow"></div>
-    <div class="arch-models">
-      <div class="arch-model">Groq</div>
-      <div class="arch-model">Gemini</div>
-      <div class="arch-model">DeepSeek</div>
-      <div class="arch-model">Mistral</div>
-      <div class="arch-model">+20</div>
-    </div>
-    <div class="arch-arrow"></div>
-    <div class="arch-node">
-      <div class="arch-node-left">
-        <h4>Agent Core</h4>
-        <p>code · web · files · multi-step planning</p>
-      </div>
-      <div class="arch-node-right">Execution</div>
-    </div>
-    <div class="arch-arrow"></div>
-    <div class="arch-node">
-      <div class="arch-node-left">
-        <h4>Quota Guardian + Self-Discovery</h4>
-        <p>24h auto-rotation · finds new models daily</p>
-      </div>
-      <div class="arch-node-right" style="color:#4ade80">Self-Healing</div>
-    </div>
-  </div>
-</section>
 
-<!-- INSTALL -->
-<section id="install" class="fade-in">
-  <div class="section-label">Developer CLI</div>
-  <div class="section-title">Install from PyPI</div>
-  <div class="install-block">
-    <div class="comment"># Install FORGE 1.1.5</div>
-    <div class="cmd"><span class="p">$ </span><span class="kw">pip install</span> forge-agent==1.1.5</div>
-    <div class="comment" style="margin-top:16px"># Confirm the installed version</div>
-    <div class="cmd"><span class="p">$ </span><span class="kw">forge</span> --version</div>
-    <div class="comment" style="margin-top:16px"># Inspect providers and run a real task</div>
-    <div class="cmd"><span class="p">$ </span><span class="kw">forge</span> status</div>
-    <div class="cmd"><span class="p">$ </span><span class="kw">forge</span> discover</div>
-    <div class="cmd"><span class="p">$ </span><span class="kw">forge</span> operate <span class="str">"your task here"</span></div>
-    <div class="install-step">
-      <div class="step-num">01</div>
-      <div class="step-body"><h4>Install Python 3.10+</h4><p>This is the developer path. Most users should download the Windows desktop app above.</p></div>
+      <div class="download-card disabled">
+        <div class="card-label">Coming Soon</div>
+        <h3 class="card-title">Linux</h3>
+        <p class="card-copy">Linux packages are in progress. Use the Python package for CLI access on any platform.</p>
+        <div class="card-meta"><span>Not available yet</span><span>-</span></div>
+        <span class="card-action">View on GitHub -></span>
+      </div>
     </div>
-    <div class="install-step">
-      <div class="step-num">02</div>
-      <div class="step-body"><h4>Run <code style="color:var(--ember);font-size:12px">pip install forge-agent==1.1.5</code></h4><p>All CLI package dependencies install automatically from PyPI.</p></div>
-    </div>
-    <div class="install-step">
-      <div class="step-num">03</div>
-      <div class="step-body"><h4>Check status, then operate</h4><p>Use <code style="color:var(--ember);font-size:12px">forge status</code>, <code style="color:var(--ember);font-size:12px">forge discover</code>, and <code style="color:var(--ember);font-size:12px">forge operate "..."</code> with a concrete task.</p></div>
-    </div>
-  </div>
-</section>
+    <p class="section-copy" style="margin-top:22px"><strong style="color:var(--text)">Canonical release:</strong> <a id="release-url" href="https://github.com/TREN-Studio/FORGE/releases/tag/v1.1.5" target="_blank" rel="noopener" style="color:var(--hot)">GitHub Release v1.1.5</a>. The downloads page reads <code>/FORGE/release-manifest.json</code> and must match the published release assets.</p>
+  </section>
 
-<!-- FOOTER -->
-<div class="glow-bar"></div>
-<footer style="padding:40px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px;border-top:1px solid var(--b)">
-  <div>
-    <div class="footer-brand">FORGE <span>by TREN Studio</span></div>
-    <div style="font-size:12px;color:var(--muted);margin-top:6px">Free Open Reasoning & Generation Engine</div>
-  </div>
-  <div style="font-size:12px;color:var(--muted);display:flex;gap:24px">
-    <a href="https://github.com/TREN-Studio/FORGE" style="color:var(--muted);text-decoration:none" onmouseover="this.style.color='#FF6B1A'" onmouseout="this.style.color='#6b6b6b'">GitHub</a>
-    <a href="https://www.trenstudio.com" style="color:var(--muted);text-decoration:none" onmouseover="this.style.color='#FF6B1A'" onmouseout="this.style.color='#6b6b6b'">TREN Studio</a>
-    <span>MIT License</span>
-  </div>
+  <section id="quick-start" class="shell">
+    <div class="section-kicker">Quick Start</div>
+    <h2 class="section-head">Running in 60 seconds</h2>
+    <div class="steps">
+      <div class="step-card">
+        <div class="step-no">01</div>
+        <h3>Download and open</h3>
+        <p>Run the Windows installer or unzip the portable build. No Python needed for Desktop.</p>
+      </div>
+      <div class="step-card">
+        <div class="step-no">02</div>
+        <h3>Press Run Demo</h3>
+        <p>FORGE reads demo_input.md, creates action_items.md, and streams each execution step live.</p>
+      </div>
+      <div class="step-card">
+        <div class="step-no">03</div>
+        <h3>Give a real task</h3>
+        <p>Try: "Analyze this folder and write a report" or "Create a Python script and run it."</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="developers" class="shell">
+    <div class="section-kicker">For Developers</div>
+    <h2 class="section-head">CLI, source, and automation</h2>
+    <p class="section-copy">Use the Python package for terminal workflows, CI testing, and agent development. The current CLI hotfix is v1.1.7.</p>
+    <div class="dev-grid">
+      <a class="dev-card" href="https://pypi.org/project/forge-agent/1.1.7/" target="_blank" rel="noopener">
+        <div class="card-label">PyPI</div>
+        <h3 class="card-title">Install CLI</h3>
+        <p class="card-copy">Developer install path for FORGE operator commands.</p>
+        <code>$ pip install forge-agent==1.1.7</code>
+      </a>
+      <a class="dev-card" href="https://github.com/TREN-Studio/FORGE" target="_blank" rel="noopener">
+        <div class="card-label">Open Source</div>
+        <h3 class="card-title">GitHub</h3>
+        <p class="card-copy">Read code, track releases, and inspect issues.</p>
+      </a>
+      <a class="dev-card" href="https://github.com/TREN-Studio/FORGE/releases/tag/v1.1.5" target="_blank" rel="noopener">
+        <div class="card-label">Release</div>
+        <h3 class="card-title">Assets</h3>
+        <p class="card-copy">View checksums, release notes, and canonical Windows downloads.</p>
+      </a>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div>FORGE by TREN Studio. Founded by Larbi Aboudi.</div>
+  <div><a href="https://github.com/TREN-Studio/FORGE" target="_blank" rel="noopener">GitHub</a> &middot; <a href="https://pypi.org/project/forge-agent/1.1.7/" target="_blank" rel="noopener">PyPI</a> &middot; <a href="/FORGE/portal/?from=download">Portal</a></div>
 </footer>
 
-<!-- FIRE CANVAS -->
 <script>
-const canvas = document.getElementById('fire');
-const ctx = canvas.getContext('2d');
-let W, H, particles = [];
-
-function resize() {
-  W = canvas.width = canvas.offsetWidth;
-  H = canvas.height = canvas.offsetHeight;
-}
-
-class Particle {
-  constructor() { this.reset(); }
-  reset() {
-    this.x = Math.random() * W;
-    this.y = H + Math.random() * 20;
-    this.vx = (Math.random() - 0.5) * 1.2;
-    this.vy = -(Math.random() * 2.5 + 1);
-    this.life = Math.random() * 0.6 + 0.4;
-    this.maxLife = this.life;
-    this.size = Math.random() * 4 + 1;
-  }
-  update() {
-    this.x += this.vx;
-    this.y += this.vy;
-    this.vx += (Math.random() - 0.5) * 0.15;
-    this.life -= 0.012;
-    if (this.life <= 0) this.reset();
-  }
-  draw() {
-    const t = this.life / this.maxLife;
-    const r = t > 0.6 ? 255 : Math.floor(255 * (t / 0.6));
-    const g = t > 0.4 ? Math.floor(170 * ((t - 0.4) / 0.6)) : 0;
-    ctx.globalAlpha = t * 0.55;
-    ctx.fillStyle = `rgb(${r},${g},0)`;
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, this.size * t, 0, Math.PI * 2);
-    ctx.fill();
-  }
-}
-
-function init() {
-  resize();
-  particles = Array.from({length: 160}, () => {
-    const p = new Particle();
-    p.y = Math.random() * H;
-    p.life = Math.random() * p.maxLife;
-    return p;
+const CLI_COMMAND = 'pip install forge-agent==1.1.7';
+function copyCmd(){
+  navigator.clipboard.writeText(CLI_COMMAND).then(() => {
+    const button = document.querySelector('.copy');
+    if (!button) return;
+    const old = button.textContent;
+    button.textContent = 'Copied';
+    setTimeout(() => button.textContent = old, 1200);
   });
 }
-
-function loop() {
-  ctx.clearRect(0, 0, W, H);
-  particles.forEach(p => { p.update(); p.draw(); });
-  ctx.globalAlpha = 1;
-  requestAnimationFrame(loop);
+function formatBytes(size){
+  if (!size) return '';
+  const mb = Number(size) / 1024 / 1024;
+  return `${Math.round(mb)} MB`;
 }
-
-window.addEventListener('resize', () => { resize(); });
-init(); loop();
-
-// RELEASE MANIFEST
-function formatBytes(bytes) {
-  if (!Number.isFinite(bytes) || bytes <= 0) return 'GitHub asset';
-  const units = ['B', 'KB', 'MB', 'GB'];
-  let size = bytes;
-  let unit = 0;
-  while (size >= 1024 && unit < units.length - 1) {
-    size /= 1024;
-    unit += 1;
-  }
-  return `${size >= 10 || unit === 0 ? size.toFixed(0) : size.toFixed(1)} ${units[unit]}`;
-}
-
-function applyReleaseManifest(manifest) {
-  const assets = new Map((manifest.assets || []).map(asset => [asset.name, asset]));
-  const releaseVersion = document.getElementById('release-version');
-  if (releaseVersion && manifest.release_tag) releaseVersion.textContent = manifest.release_tag;
-
-  const releaseUrl = document.getElementById('release-url');
-  if (releaseUrl && manifest.release_url) {
-    releaseUrl.href = manifest.release_url;
-    releaseUrl.textContent = `GitHub Release ${manifest.release_tag || manifest.version || ''}`.trim();
-  }
-
-  document.querySelectorAll('[data-release-asset]').forEach(element => {
-    const name = element.getAttribute('data-release-asset');
-    const asset = assets.get(name);
-    if (!asset || !asset.canonical_url) return;
-    const downloadUrl = asset.mirror_url || asset.canonical_url;
-    element.setAttribute('href', downloadUrl);
-    element.setAttribute('data-canonical-url', asset.canonical_url);
-    element.setAttribute('target', '_blank');
-    element.setAttribute('rel', 'noopener');
-    if (asset.sha256) {
-      const source = asset.mirror_url ? 'Official mirror verified against GitHub Release' : 'GitHub Release asset';
-      element.setAttribute('title', `${source} · SHA256 ${asset.sha256}`);
+fetch('/FORGE/release-manifest.json', {cache:'no-store'})
+  .then(r => r.ok ? r.json() : null)
+  .then(manifest => {
+    if (!manifest || !Array.isArray(manifest.assets)) return;
+    for (const asset of manifest.assets) {
+      if (!asset || !asset.name) continue;
+      document.querySelectorAll(`[data-release-asset="${asset.name}"]`).forEach(link => {
+        if (asset.canonical_url) link.href = asset.canonical_url;
+      });
+      document.querySelectorAll(`[data-release-size-for="${asset.name}"]`).forEach(node => {
+        node.textContent = formatBytes(asset.size) || node.textContent;
+      });
     }
-  });
-
-  document.querySelectorAll('[data-release-size-for]').forEach(element => {
-    const asset = assets.get(element.getAttribute('data-release-size-for'));
-    if (asset) element.textContent = formatBytes(Number(asset.size));
-  });
-}
-
-fetch('/FORGE/release-manifest.json', { cache: 'no-store' })
-  .then(response => response.ok ? response.json() : Promise.reject(new Error(`manifest ${response.status}`)))
-  .then(applyReleaseManifest)
-  .catch(error => console.warn('FORGE release manifest unavailable; using built-in GitHub links.', error));
-
-// COPY CMD
-function copyCmd() {
-  navigator.clipboard.writeText('pip install forge-agent==1.1.5');
-  const btn = document.querySelector('.copy-btn');
-  if (!btn) return;
-  btn.style.color = '#4ade80';
-  setTimeout(() => btn.style.color = '', 1500);
-}
-
-// FADE IN OBSERVER
-const obs = new IntersectionObserver(entries => {
-  entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('visible'); obs.unobserve(e.target); } });
-}, {threshold: 0.12});
-document.querySelectorAll('.fade-in').forEach(el => obs.observe(el));
+  })
+  .catch(() => {});
 </script>
 </body>
 </html>
