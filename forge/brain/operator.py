@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from forge.brain.composer import ResponseComposer
@@ -91,6 +92,16 @@ class ForgeOperator:
             plan,
             resume_mission_id=resume_mission_id,
         )
+
+        if self._asks_identity(request.strip().lower()):
+            return self._conversation_result(
+                request=request,
+                intent=intent,
+                routing=routing,
+                mission_id=mission_id,
+                audit_log_path=audit_log_path,
+                resumed_from_step=resume_state.resumed_from_step if resume_state else None,
+            )
 
         if intent.primary_intent == IntentKind.CONVERSATION and not routing.selected_skills:
             return self._conversation_result(
@@ -371,6 +382,16 @@ class ForgeOperator:
 
     @staticmethod
     def _asks_identity(text: str) -> bool:
+        tokens = [token for token in re.split(r"[^a-z0-9\u0600-\u06ff]+", text.lower()) if token]
+        token_set = set(tokens)
+        asks_who = bool(token_set & {"who", "whos", "whose", "ho", "من"})
+        target_is_forge = bool(token_set & {"you", "u", "your", "forge", "فورج", "ك"})
+        creator_word = any(
+            token.startswith(("creat", "made", "built", "develop", "found", "own", "صنع", "طور", "بنا", "مؤسس"))
+            for token in tokens
+        )
+        if asks_who and target_is_forge and creator_word:
+            return True
         identity_phrases = (
             "who made you",
             "who built you",
