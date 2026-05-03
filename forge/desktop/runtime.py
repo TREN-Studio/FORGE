@@ -54,9 +54,7 @@ _DEMO_OUTPUT = """# Action Items
 
 Source: demo_input.md
 """
-_DEMO_PROMPT = f"""Read demo_input.md first, then create action_items.md with this content:
-```markdown
-{_DEMO_OUTPUT}```"""
+_DEMO_PROMPT = "FORGE_LOCAL_DEMO_RUN demo_input.md action_items.md"
 _VISIBLE_WORD_LIMIT = 180
 _VISIBLE_BLOCKED_MARKERS = (
     "mission_trace",
@@ -211,17 +209,26 @@ def prepare_demo_workspace() -> dict[str, Any]:
 
 def _is_local_demo_prompt(prompt: str, workspace_root: Path) -> bool:
     normalized = prompt.strip().lower()
-    return (
+    has_demo_references = (
         "demo_input.md" in normalized
         and "action_items.md" in normalized
-        and "tighten checkout copy before release" in normalized
-        and (workspace_root / "demo_input.md").exists()
+    )
+    return (
+        ("forge_local_demo_run" in normalized and has_demo_references)
+        or (
+            has_demo_references
+            and (workspace_root / "demo_input.md").exists()
+            and "tighten checkout copy before release" in normalized
+        )
     )
 
 
 def _stream_local_demo(workspace_root: Path, started: float):
+    workspace_root.mkdir(parents=True, exist_ok=True)
     input_path = workspace_root / "demo_input.md"
     output_path = workspace_root / "action_items.md"
+    if not input_path.exists():
+        input_path.write_text(_DEMO_INPUT, encoding="utf-8")
     steps = [
         {
             "step_id": "demo-read",
@@ -397,8 +404,34 @@ def operate_prompt(
         set_workspace_root(normalized_workspace_root)
 
     if _is_local_demo_prompt(prompt, normalized_workspace_root):
-        yield from _stream_local_demo(normalized_workspace_root, started=time.monotonic())
-        return
+        normalized_workspace_root.mkdir(parents=True, exist_ok=True)
+        input_path = normalized_workspace_root / "demo_input.md"
+        output_path = normalized_workspace_root / "action_items.md"
+        if not input_path.exists():
+            input_path.write_text(_DEMO_INPUT, encoding="utf-8")
+        output_path.write_text(_DEMO_OUTPUT, encoding="utf-8")
+        answer = (
+            "Demo complete. I read demo_input.md and created action_items.md in your workspace. "
+            "Open the file to see the extracted action items."
+        )
+        return {
+            "objective": "Run local FORGE demo",
+            "user_response": answer,
+            "answer": answer,
+            "result": answer,
+            "validation_status": CompletionState.FINISHED.value,
+            "artifacts_count": 1,
+            "step_results": [
+                {"output": {"artifact_path": str(input_path)}, "status": "completed"},
+                {"output": {"artifact_path": str(output_path)}, "status": "completed"},
+            ],
+            "technical_details": {
+                "mode": "local_demo",
+                "input_path": str(input_path),
+                "output_path": str(output_path),
+            },
+            "workspace_root": str(normalized_workspace_root),
+        }
 
     operator = ForgeOperator(
         settings=OperatorSettings(
@@ -439,6 +472,10 @@ def stream_prompt(
     normalized_workspace_root = _normalize_workspace_root(workspace_root)
     if workspace_root is not None:
         set_workspace_root(normalized_workspace_root)
+
+    if _is_local_demo_prompt(prompt, normalized_workspace_root):
+        yield from _stream_local_demo(normalized_workspace_root, started=time.monotonic())
+        return
 
     operator = ForgeOperator(
         settings=OperatorSettings(
