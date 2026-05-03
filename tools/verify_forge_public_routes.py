@@ -13,6 +13,7 @@ from html.parser import HTMLParser
 ROOT = Path(__file__).resolve().parents[1]
 GITHUB_API = "https://api.github.com/repos/TREN-Studio/FORGE"
 EXPECTED_GOOGLE_BRIDGE_URL = "https://www.trenstudio.com/forge-auth/google-bridge/"
+EXPECTED_GOOGLE_CLIENT_ID = "1014783821384-pt514o3kfur9b4vfih6svm9k1ljutbmd.apps.googleusercontent.com"
 
 
 class TitleParser(HTMLParser):
@@ -227,6 +228,9 @@ def verify_portal_health_google_bridge(payload: dict[str, Any]) -> None:
     google_oauth = payload.get("google_oauth")
     if not isinstance(google_oauth, dict):
         raise ValueError("Portal health response is missing google_oauth.")
+    client_id = str(google_oauth.get("client_id", "")).strip()
+    if client_id != EXPECTED_GOOGLE_CLIENT_ID:
+        raise ValueError(f"Portal health Google client_id {client_id!r} != {EXPECTED_GOOGLE_CLIENT_ID!r}")
     bridge_url = str(google_oauth.get("bridge_url", "")).strip()
     if "postgeniuspro.com" in bridge_url.lower():
         raise ValueError(f"Portal health still points Google bridge at legacy domain: {bridge_url}")

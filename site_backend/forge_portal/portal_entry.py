@@ -18,6 +18,7 @@ except ModuleNotFoundError:
     from api import PortalConfig, handle_request
     from store import PortalStateStore
 
+DEFAULT_GOOGLE_CLIENT_ID = "1014783821384-pt514o3kfur9b4vfih6svm9k1ljutbmd.apps.googleusercontent.com"
 DEFAULT_GOOGLE_BRIDGE_URL = "https://www.trenstudio.com/forge-auth/google-bridge/"
 
 
@@ -60,7 +61,10 @@ def main() -> int:
                 auth_session_days=int(os.environ.get("FORGE_PORTAL_SESSION_DAYS", "30")),
                 app_base_url=os.environ.get("FORGE_PORTAL_APP_BASE_URL", "https://www.trenstudio.com/FORGE/portal"),
                 debug_auth_tokens=os.environ.get("FORGE_PORTAL_DEBUG_AUTH_TOKENS", "0") == "1",
-                google_client_id=os.environ.get("FORGE_GOOGLE_CLIENT_ID", runtime_config.get("FORGE_GOOGLE_CLIENT_ID", "")),
+                google_client_id=os.environ.get(
+                    "FORGE_GOOGLE_CLIENT_ID",
+                    runtime_config.get("FORGE_GOOGLE_CLIENT_ID", DEFAULT_GOOGLE_CLIENT_ID),
+                ),
                 google_client_secret=os.environ.get("FORGE_GOOGLE_CLIENT_SECRET", runtime_config.get("FORGE_GOOGLE_CLIENT_SECRET", "")),
                 google_authorize_url=os.environ.get("FORGE_GOOGLE_AUTHORIZE_URL", "https://accounts.google.com/o/oauth2/v2/auth"),
                 google_token_url=os.environ.get("FORGE_GOOGLE_TOKEN_URL", "https://oauth2.googleapis.com/token"),

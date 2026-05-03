@@ -101,8 +101,19 @@ PROVIDER_FIELDS: dict[str, list[str]] = {
     "ollama": ["api_key"],
 }
 ALLOWED_SECRET_FIELDS = {"api_key", "account_id", "organization", "project", "global_key", "email"}
+DEFAULT_GOOGLE_CLIENT_ID = "1014783821384-pt514o3kfur9b4vfih6svm9k1ljutbmd.apps.googleusercontent.com"
+LEGACY_GOOGLE_CLIENT_IDS = (
+    "877623556231-20c2f7ts5u9kolvsmr4nd949q0tf2vhv.apps.googleusercontent.com",
+)
 DEFAULT_GOOGLE_BRIDGE_URL = "https://www.trenstudio.com/forge-auth/google-bridge/"
 LEGACY_GOOGLE_BRIDGE_HOSTS = ("postgeniuspro.com",)
+
+
+def normalize_google_client_id(value: str | None) -> str:
+    client_id = (value or "").strip()
+    if client_id in LEGACY_GOOGLE_CLIENT_IDS:
+        return DEFAULT_GOOGLE_CLIENT_ID
+    return client_id
 
 
 def normalize_google_bridge_url(value: str | None) -> str:
@@ -129,6 +140,7 @@ class PortalConfig:
     google_bridge_url: str = DEFAULT_GOOGLE_BRIDGE_URL
 
     def __post_init__(self) -> None:
+        self.google_client_id = normalize_google_client_id(self.google_client_id)
         self.google_bridge_url = normalize_google_bridge_url(self.google_bridge_url)
 
     @property

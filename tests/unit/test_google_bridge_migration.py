@@ -5,6 +5,7 @@ from pathlib import Path
 
 from site_backend.forge_portal.api import (
     DEFAULT_GOOGLE_BRIDGE_URL,
+    DEFAULT_GOOGLE_CLIENT_ID,
     PortalConfig,
     _google_bridge_location,
 )
@@ -26,6 +27,14 @@ class GoogleBridgeMigrationTests(unittest.TestCase):
 
         self.assertEqual(config.google_bridge_url, "https://www.trenstudio.com/forge-auth/google-bridge/")
         self.assertEqual(config.google_oauth_mode, "bridge_id_token")
+
+    def test_legacy_google_client_id_is_replaced(self) -> None:
+        config = PortalConfig(
+            state_root=Path("."),
+            google_client_id="877623556231-20c2f7ts5u9kolvsmr4nd949q0tf2vhv.apps.googleusercontent.com",
+        )
+
+        self.assertEqual(config.google_client_id, DEFAULT_GOOGLE_CLIENT_ID)
 
     def test_new_bridge_file_has_no_legacy_domain(self) -> None:
         bridge_path = Path(__file__).resolve().parents[2] / "site_external" / "forge_auth" / "google-bridge" / "index.php"
