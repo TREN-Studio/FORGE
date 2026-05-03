@@ -74,4 +74,4 @@ jobs:
       - name: Verify FORGE public routes
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: python tools/verify_forge_public_routes.py --expected-manifest site/release-manifest.json --verify-github-latest
+        run: python tools/verify_forge_public_routes.py

@@ -14,6 +14,8 @@ ROOT = Path(__file__).resolve().parents[1]
 GITHUB_API = "https://api.github.com/repos/TREN-Studio/FORGE"
 EXPECTED_GOOGLE_BRIDGE_URL = "https://www.trenstudio.com/forge-auth/google-bridge/"
 EXPECTED_GOOGLE_CLIENT_ID = "1014783821384-pt514o3kfur9b4vfih6svm9k1ljutbmd.apps.googleusercontent.com"
+EXPECTED_VERSION = "1.1.8"
+EXPECTED_RELEASE_TAG = f"v{EXPECTED_VERSION}"
 
 
 class TitleParser(HTMLParser):
@@ -104,6 +106,10 @@ def verify_clean_title(html: str, expected: str, route: str) -> None:
 
 def verify_no_stale_public_markers(html: str, route: str) -> None:
     forbidden_markers = [
+        "v1.1.7",
+        "1.1.7",
+        "v1.1.5",
+        "1.1.5",
         "v1.1.4",
         "1.1.4",
         "v1.1.3",
@@ -118,6 +124,10 @@ def verify_no_stale_public_markers(html: str, route: str) -> None:
         "FORGE-Linux-Starter",
         "FORGE-Setup-1.1.4",
         "FORGE-Setup-1.1.3",
+        "FORGE-Setup-1.1.5",
+        "FORGE-Windows-Portable-1.1.5",
+        "FORGE-Source-v1.1.5",
+        "SHA256SUMS-1.1.5",
         "FORGE-Windows-Portable-1.1.4",
         "FORGE-Source-v1.1.4",
         "SHA256SUMS-1.1.4",
@@ -131,14 +141,14 @@ def verify_windows_first_download_markup(html: str, route: str) -> None:
     required = [
         "Download FORGE for Windows",
         "Windows Download (Recommended)",
-        "FORGE-Setup-1.1.5.exe",
-        "FORGE-Windows-Portable-1.1.5.zip",
+        f"FORGE-Setup-{EXPECTED_VERSION}.exe",
+        f"FORGE-Windows-Portable-{EXPECTED_VERSION}.zip",
         "No login required",
         "Works instantly",
         "Includes demo",
         "Press Run Demo",
         "For Developers",
-        "pip install forge-agent==1.1.7",
+        f"pip install forge-agent=={EXPECTED_VERSION}",
     ]
     for marker in required:
         if marker not in html:
@@ -167,10 +177,10 @@ def verify_windows_first_download_markup(html: str, route: str) -> None:
 def verify_project_root(html: str) -> None:
     verify_clean_title(html, "FORGE - Free Open Reasoning & Generation Engine", "/FORGE/")
     required_markers = [
-        "FORGE v1.1.5",
+        f"FORGE {EXPECTED_RELEASE_TAG}",
         "Windows Download",
         "Quick Start",
-        "GitHub Release v1.1.5",
+        f"GitHub Release {EXPECTED_RELEASE_TAG}",
         "/FORGE/favicon.svg",
     ]
     for marker in required_markers:
@@ -183,10 +193,10 @@ def verify_project_root(html: str) -> None:
 def verify_downloads_page(html: str) -> None:
     verify_clean_title(html, "FORGE - Free Open Reasoning & Generation Engine", "/FORGE/downloads/")
     required_markers = [
-        "FORGE v1.1.5",
+        f"FORGE {EXPECTED_RELEASE_TAG}",
         "Download FORGE for Windows",
         "Windows Download (Recommended)",
-        "GitHub Release v1.1.5",
+        f"GitHub Release {EXPECTED_RELEASE_TAG}",
         "/FORGE/release-manifest.json",
         "/FORGE/favicon.svg",
     ]

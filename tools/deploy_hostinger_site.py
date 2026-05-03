@@ -11,6 +11,13 @@ from pathlib import Path
 import paramiko
 
 
+SITE_DEPLOY_EXCLUDED_RELATIVE_PATHS = {
+    # Release manifests are produced by the release pipeline after canonical
+    # artifacts are built. Site deploys must not overwrite them with stale data.
+    "release-manifest.json",
+}
+
+
 @dataclass(slots=True)
 class DeployConfig:
     host: str
@@ -127,6 +134,7 @@ def iter_site_files(local_root: Path) -> list[Path]:
         if path.is_file()
         and "__pycache__" not in path.parts
         and path.suffix not in {".pyc", ".pyo"}
+        and path.relative_to(local_root).as_posix() not in SITE_DEPLOY_EXCLUDED_RELATIVE_PATHS
     )
 
 

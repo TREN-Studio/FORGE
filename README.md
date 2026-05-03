@@ -71,9 +71,17 @@ This makes new skills pluggable without rewriting the core brain.
 ## Install
 
 ```bash
-pip install forge-agent==1.1.7
-forge --version  # FORGE 1.1.7
+pip install forge-agent==1.1.8
+forge --version  # FORGE 1.1.8
 ```
+
+### What's New in v1.1.8
+
+- FORGE now truly executes: create, edit, and read real files.
+- Instant responses for simple questions avoid slow provider calls.
+- Identity and capability answers are guarded as FORGE: TREN Studio / Larbi Aboudi.
+- Smart routing now uses progressive timeouts for fast, normal, and complex tasks.
+- Desktop streaming shows progress while FORGE waits on slower routes.
 
 ## Quick Start
 
@@ -85,7 +93,7 @@ forge operate "Analyze this repository and save a summary file"
 forge operate "Read forge/brain/operator.py and explain the execution flow"
 ```
 
-Current Python package release: `1.1.7` on PyPI.
+Current Python package release: `1.1.8` on PyPI.
 
 ## Python API
 
@@ -118,11 +126,11 @@ Current foundation includes:
 
 ## Public Releases
 
-- Current public release line: `1.1.7`.
+- Current public release line: `1.1.8`.
 - The primary public user path is the Windows Desktop download from the official site and GitHub Release.
-- PyPI remains the developer CLI path: https://pypi.org/project/forge-agent/1.1.7/
-- GitHub's latest stable release must also resolve to `v1.1.7`.
-- The canonical public release record is the GitHub Release for the matching tag: https://github.com/TREN-Studio/FORGE/releases/tag/v1.1.7
+- PyPI remains the developer CLI path: https://pypi.org/project/forge-agent/1.1.8/
+- GitHub's latest stable release must also resolve to `v1.1.8`.
+- The canonical public release record is the GitHub Release for the matching tag: https://github.com/TREN-Studio/FORGE/releases/tag/v1.1.8
 - The PyPI publishing workflow in `.github/workflows/publish-pypi.yml` builds the wheel and source distribution, publishes to PyPI through Trusted Publisher, and attaches `dist/*` to the GitHub Release.
 - The Windows release workflow in `.github/workflows/release_forge_windows.yml` builds desktop installer and portable assets for the current release line.
 - The supported desktop build entrypoint is `python tools/build_windows_desktop.py`; that script is the source of truth for orchestration and invokes the portable `FORGE-Desktop.spec`.
@@ -169,9 +177,9 @@ GitHub Release is the canonical release record. PyPI is the recommended install 
 
 The current public download set is:
 
-- `https://pypi.org/project/forge-agent/1.1.7/`
-- `https://github.com/TREN-Studio/FORGE/releases/download/v1.1.7/forge_agent-1.1.7-py3-none-any.whl`
-- `https://github.com/TREN-Studio/FORGE/releases/download/v1.1.7/forge_agent-1.1.7.tar.gz`
+- `https://pypi.org/project/forge-agent/1.1.8/`
+- `https://github.com/TREN-Studio/FORGE/releases/download/v1.1.8/forge_agent-1.1.8-py3-none-any.whl`
+- `https://github.com/TREN-Studio/FORGE/releases/download/v1.1.8/forge_agent-1.1.8.tar.gz`
 
 No official-site binary mirror is published for the current release.
 

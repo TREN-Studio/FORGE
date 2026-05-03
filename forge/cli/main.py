@@ -138,6 +138,37 @@ def _resolve_operator_workspace(workspace_root: str | Path | None = None) -> Pat
     raise typer.BadParameter("No writable FORGE workspace found. Use --workspace to choose one.")
 
 
+def _resolve_explicit_prompt_workspace(prompt: str) -> Path | None:
+    from forge.desktop.runtime import resolve_path_from_prompt
+
+    return resolve_path_from_prompt(prompt)
+
+
+def _should_auto_confirm_prompt(prompt: str) -> bool:
+    from forge.desktop.runtime import _should_allow_real_changes_for_prompt
+
+    return _should_allow_real_changes_for_prompt(prompt)
+
+
+def _operator_run_policy(
+    request: str,
+    workspace: str | Path | None,
+    *,
+    confirm: bool,
+    allow_real_changes: bool,
+    dry_run: bool,
+) -> tuple[str | Path | None, bool]:
+    workspace_root: str | Path | None = workspace
+    explicit_workspace = _resolve_explicit_prompt_workspace(request)
+    if explicit_workspace is not None:
+        workspace_root = explicit_workspace
+
+    confirmed = confirm or allow_real_changes
+    if not dry_run and _should_auto_confirm_prompt(request):
+        confirmed = True
+    return workspace_root, confirmed
+
+
 def _get_operator(no_memory: bool = False, workspace_root: str | Path | None = None):
     from forge.brain.operator import ForgeOperator
     from forge.config.settings import OperatorSettings
@@ -346,7 +377,13 @@ def operate(
     request = (task or prompt or "").strip()
     if not request:
         raise typer.BadParameter("Provide a prompt argument or --task.")
-    confirmed = confirm or allow_real_changes
+    workspace_root, confirmed = _operator_run_policy(
+        request,
+        workspace,
+        confirm=confirm,
+        allow_real_changes=allow_real_changes,
+        dry_run=dry_run,
+    )
 
     if not raw:
         console.print("[bold #FF6B1A]FORGE[/bold #FF6B1A]")
@@ -360,7 +397,7 @@ def operate(
         return
 
     if raw:
-        operator = _get_operator(no_memory=no_memory, workspace_root=workspace)
+        operator = _get_operator(no_memory=no_memory, workspace_root=workspace_root)
         reply = operator.handle_as_text(
             request,
             confirmed=confirmed,
@@ -369,7 +406,7 @@ def operate(
         )
     else:
         with Live(Spinner("line", text="[dim]Planning and executing...[/dim]"), refresh_per_second=10, transient=True):
-            operator = _get_operator(no_memory=no_memory, workspace_root=workspace)
+            operator = _get_operator(no_memory=no_memory, workspace_root=workspace_root)
             reply = operator.handle_as_text(
                 request,
                 confirmed=confirmed,

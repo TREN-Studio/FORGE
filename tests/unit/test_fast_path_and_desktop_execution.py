@@ -6,6 +6,7 @@ from pathlib import Path
 
 from forge.cli.main import _instant_cli_response
 from forge.cli.main import _is_system_workspace_candidate
+from forge.cli.main import _operator_run_policy
 from forge.core.identity import FORGE_IDENTITY_RESPONSE, instant_response
 from forge.core.router import classify_query_speed, timeout_for_prompt
 from forge.core.session import ForgeSession
@@ -141,6 +142,30 @@ class FastPathAndDesktopExecutionTests(unittest.TestCase):
     def test_cli_does_not_use_system32_as_default_workspace(self) -> None:
         self.assertTrue(_is_system_workspace_candidate(Path(r"C:\Windows\System32")))
         self.assertFalse(_is_system_workspace_candidate(Path.home()))
+
+    def test_cli_auto_confirms_explicit_file_writes(self) -> None:
+        workspace_root, confirmed = _operator_run_policy(
+            "create release-note.txt on my desktop with hello",
+            None,
+            confirm=False,
+            allow_real_changes=False,
+            dry_run=False,
+        )
+
+        self.assertTrue(confirmed)
+        if (Path.home() / "Desktop").exists():
+            self.assertEqual(Path(workspace_root).resolve(), (Path.home() / "Desktop").resolve())
+
+    def test_cli_dry_run_prevents_auto_confirmation(self) -> None:
+        _, confirmed = _operator_run_policy(
+            "create release-note.txt with hello",
+            None,
+            confirm=False,
+            allow_real_changes=False,
+            dry_run=True,
+        )
+
+        self.assertFalse(confirmed)
 
     def test_provider_timeout_classification(self) -> None:
         self.assertEqual(classify_query_speed("hello there"), "fast_queries")
