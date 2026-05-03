@@ -168,7 +168,22 @@ button{font:inherit}
 .stat span{display:block;color:var(--dim);font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;margin-top:7px}
 section{padding:72px 0;border-top:1px solid #171717;scroll-margin-top:86px}
 .section-kicker{font-family:var(--mono);font-size:10px;font-weight:800;letter-spacing:.14em;color:var(--hot);text-transform:uppercase}
-.hero .section-kicker{margin-bottom:16px}
+.hero-version-badge{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  margin:0 auto 22px;
+  padding:5px 13px;
+  border:1px solid rgba(255,100,24,.42);
+  border-radius:999px;
+  background:rgba(255,100,24,.055);
+  color:var(--hot);
+  font-family:var(--mono);
+  font-size:10px;
+  font-weight:800;
+  letter-spacing:.1em;
+  text-transform:uppercase;
+}
 .section-head{margin:10px 0 0;font-size:clamp(28px,4vw,42px);line-height:1.08;letter-spacing:-.03em}
 .section-copy{margin:12px 0 0;max-width:620px;color:var(--muted)}
 .download-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-top:34px}
@@ -242,8 +257,8 @@ section{padding:72px 0;border-top:1px solid #171717;scroll-margin-top:86px}
 <main>
   <header class="hero shell">
     <h1 class="sr-only">Download FORGE</h1>
+    <div class="hero-version-badge">FORGE v1.1.5</div>
     <div class="wordmark" aria-label="FORGE">F<span>O</span>RGE</div>
-    <div class="section-kicker">FORGE v1.1.5 - WINDOWS DESKTOP READY</div>
     <p class="hero-copy">FORGE connects to <strong>500K+ free models</strong>, plans multi-step tasks, reads your files, runs commands, and verifies results on your machine. <strong>No subscription. No lock-in.</strong></p>
 
     <a class="primary-download" href="https://github.com/TREN-Studio/FORGE/releases/download/v1.1.5/FORGE-Setup-1.1.5.exe" data-release-asset="FORGE-Setup-1.1.5.exe">

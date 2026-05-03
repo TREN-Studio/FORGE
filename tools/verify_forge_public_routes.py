@@ -168,7 +168,6 @@ def verify_project_root(html: str) -> None:
     verify_clean_title(html, "FORGE - Free Open Reasoning & Generation Engine", "/FORGE/")
     required_markers = [
         "FORGE v1.1.5",
-        "WINDOWS DESKTOP READY",
         "Windows Download",
         "Quick Start",
         "GitHub Release v1.1.5",
@@ -184,7 +183,7 @@ def verify_project_root(html: str) -> None:
 def verify_downloads_page(html: str) -> None:
     verify_clean_title(html, "FORGE - Free Open Reasoning & Generation Engine", "/FORGE/downloads/")
     required_markers = [
-        "WINDOWS DESKTOP READY",
+        "FORGE v1.1.5",
         "Download FORGE for Windows",
         "Windows Download (Recommended)",
         "GitHub Release v1.1.5",
