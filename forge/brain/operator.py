@@ -79,6 +79,16 @@ class ForgeOperator:
             memory_context = memory_context_override
         else:
             memory_context = self.memory.build_context(request, self.settings.memory_recall_limit) if self.memory else ""
+
+        # Enrich memory context with Conversation DNA fingerprint so the
+        # intent resolver and planner always know what has been decided before,
+        # even if the underlying provider has changed since the last turn.
+        dna = getattr(self.session, "_dna", None)
+        if dna is not None:
+            dna_ctx = dna.get_context()
+            if dna_ctx:
+                memory_context = f"{memory_context}\n\n{dna_ctx}".strip() if memory_context else dna_ctx
+
         intent = self.intent_resolver.resolve(request, memory_context=memory_context)
         skills = self.registry.list()
         routing = self.skill_router.route(intent, skills)

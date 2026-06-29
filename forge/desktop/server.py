@@ -2807,6 +2807,20 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
                 log_exception("Workspace status endpoint failed", exc)
                 self._send_json({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
             return
+        if route == "/api/identity":
+            from forge.core.identity import FORGE_IDENTITY_RESPONSE
+            from forge import __version__ as _ver
+            self._send_json({
+                "identity": FORGE_IDENTITY_RESPONSE,
+                "product": "FORGE",
+                "full_name": "Free Open Reasoning & Generation Engine",
+                "version": _ver,
+                "license": "MIT",
+                "website": "https://www.trenstudio.com/FORGE",
+                "source": "forge.identity_guard",
+                "provider_call": False,
+            })
+            return
         if route == "/api/workers":
             self._send_json({"workers": MissionOrchestrator.worker_snapshot()})
             return

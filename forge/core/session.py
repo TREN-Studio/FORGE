@@ -14,9 +14,11 @@ from queue import Queue
 import threading
 from typing import Any
 
+from forge.core.conversation_dna import ConversationDNA
 from forge.core.identity import (
     FORGE_FILE_CAPABILITY_RESPONSE,
     FORGE_IDENTITY_RESPONSE,
+    FORGE_IDENTITY_SYSTEM_INSTRUCTION,
     asks_file_capability,
     asks_identity,
     enforce_forge_response_guard,
@@ -84,6 +86,8 @@ class ForgeSession:
         self._provider_secrets = provider_secrets or {}
         self._allow_host_fallback = allow_host_fallback
         self._last_response: ForgeResponse | None = None
+        # Conversation DNA — preserves reasoning fingerprint across provider switches
+        self._dna = ConversationDNA()
 
         try:
             self._loop = asyncio.get_event_loop()
@@ -173,6 +177,7 @@ class ForgeSession:
         """Clear conversation history while keeping the persistent graph."""
         self._history.clear()
         self._conv_id = None
+        self._dna.reset()
 
     def leaderboard(self, task_type: str = "general") -> list[dict]:
         """Show current model rankings."""
@@ -293,15 +298,34 @@ class ForgeSession:
             self._conv_id = self._memory.new_conversation()
 
         system = self._system
+
+        # Inject long-term memory context
         if self._memory:
             mem_ctx = self._memory.recall_all(limit=20)
             if mem_ctx:
                 system = f"{system}\n\n{mem_ctx}"
 
+        # Inject Conversation DNA — reasoning fingerprint across provider switches
+        dna_ctx = self._dna.get_context()
+        if dna_ctx:
+            system = f"{system}\n\n{dna_ctx}"
+
         messages: list[Message] = [Message(role="system", content=system)]
-        messages.extend(self._history[-20:])
+        # Use sanitized history to block any identity leaks carried in past messages
+        messages.extend(self._sanitize_history(self._history[-20:]))
         messages.append(Message(role="user", content=prompt))
         return messages
+
+    def _sanitize_history(self, history: list[Message]) -> list[Message]:
+        """Strip identity leaks from assistant messages before sending to any provider."""
+        clean: list[Message] = []
+        for msg in history:
+            if msg.role == "assistant":
+                clean_content = enforce_forge_response_guard(msg.content)
+                clean.append(Message(role="assistant", content=clean_content))
+            else:
+                clean.append(msg)
+        return clean
 
     def _remember_response(self, prompt: str, response: ForgeResponse, *, remember: bool) -> None:
         response.content = enforce_forge_response_guard(response.content)
@@ -309,6 +333,10 @@ class ForgeSession:
         self._guardian.record_usage(response.provider, response.total_tokens)
         self._history.append(Message(role="user", content=prompt))
         self._history.append(Message(role="assistant", content=response.content))
+
+        # Update Conversation DNA with what happened in this turn
+        if not response.routing_telemetry.get("instant_response"):
+            self._dna.update(prompt=prompt, response=response.content)
 
         if self._memory and self._conv_id and remember:
             self._memory.log_message(self._conv_id, "user", prompt)
@@ -370,6 +398,7 @@ class ForgeSession:
 
     @staticmethod
     def _default_system() -> str:
+        # Use the canonical, full identity instruction shared across all FORGE layers
         return (
             "You are FORGE - an expert AI agent. "
             "You are precise, direct, and deeply capable. "
@@ -377,13 +406,6 @@ class ForgeSession:
             "When answering questions, be thorough but concise. "
             "You have access to tools and can execute code when needed. "
             "You can create, read, edit, and verify files inside the selected FORGE workspace. "
-            "Never say you cannot access the file system when the user is asking about FORGE workspace actions.\n\n"
-            "Identity rules:\n"
-            "- You are FORGE.\n"
-            "- You are not OpenAI, Google, Anthropic, or any external model brand.\n"
-            "- Never say you are a language model trained by any company.\n"
-            "- If asked who created, built, made, trained, owns, developed, or founded you, answer exactly: "
-            "\"Developed by TREN Studio. Founded by Larbi Aboudi.\"\n"
-            "- If asked whether you are from OpenAI, Google, Anthropic, Gemini, Claude, ChatGPT, or another model/provider, answer exactly: "
-            "\"Developed by TREN Studio. Founded by Larbi Aboudi.\""
+            "Never say you cannot access the file system when the user is asking about FORGE workspace actions."
+            f"\n\n{FORGE_IDENTITY_SYSTEM_INSTRUCTION}"
         )

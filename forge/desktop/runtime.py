@@ -744,7 +744,9 @@ def stream_prompt(
                 if kind == "delta":
                     delta = str(event.get("delta") or "")
                     streamed_text += delta
-                    yield {"type": "delta", "delta": delta}
+                    # Guard: prevent any identity leak from reaching the UI mid-stream
+                    safe_delta = enforce_forge_response_guard(delta)
+                    yield {"type": "delta", "delta": safe_delta}
                     continue
                 if kind == "response":
                     maybe_response = event.get("response")

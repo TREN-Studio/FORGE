@@ -362,6 +362,30 @@ def ask(
 
 
 @cli.command()
+def identity(
+    raw: bool = typer.Option(False, "--raw", help="Print raw text only"),
+) -> None:
+    """
+    Print FORGE's identity instantly — no provider call, zero latency.
+
+    Works offline. Use this to confirm FORGE knows who it is
+    regardless of which model is currently selected.
+    """
+    from forge.core.identity import FORGE_IDENTITY_RESPONSE
+
+    msg = (
+        f"{FORGE_IDENTITY_RESPONSE}\n\n"
+        "FORGE is a Free Open Reasoning & Generation Engine.\n"
+        "MIT licensed. No cloud dependency. No cost. Forever."
+    )
+    if raw:
+        print(msg)
+    else:
+        console.print("[bold #FF6B1A]FORGE[/bold #FF6B1A]")
+        console.print(Panel(msg, border_style="#FF6B1A", padding=(0, 1)))
+
+
+@cli.command()
 def operate(
     prompt: Optional[str] = typer.Argument(None, help="Request for the operator brain"),
     task: Optional[str] = typer.Option(None, "--task", "-t", help="Request for the operator brain"),
