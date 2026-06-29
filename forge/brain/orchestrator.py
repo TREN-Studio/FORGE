@@ -131,8 +131,10 @@ class MissionOrchestrator:
         self._compact_prior_results = compact_prior_results
         self._extract_evidence = extract_evidence
         self._research_agent = ResearchAgent(session=session)
-        self._action_agent = ActionAgent()
+        self._action = ActionAgent()
         self._critic_agent = CriticAgent(session=session)
+        from forge.tools import create_default_registry
+        self._tool_registry = create_default_registry()
         MissionOrchestrator._ensure_cluster(audit_store.state_store, registry._settings if hasattr(registry, "_settings") else None)
         self._workers = MissionOrchestrator._shared_workers
         self._approval_engine = MissionOrchestrator._shared_approval_engine
@@ -214,6 +216,164 @@ class MissionOrchestrator:
 
             current_skill = self._registry.get(step.skill)
             if current_skill is None:
+                # Fallback: check if the step is a registered external tool
+                tool = self._tool_registry.get(step.skill)
+                if tool is not None:
+                    payload = self._build_step_payload(
+                        request=request,
+                        intent=intent,
+                        memory_context=memory_context,
+                        prior_results=prior_results,
+                        critique_memory=critique_memory,
+                        step=step,
+                    )
+                    
+                    # Check credentials (unless in mock/demo mode)
+                    if not self._tool_registry.has_credential(tool.name) and not (payload.get("mock") or payload.get("demo")):
+                        step_results.append(
+                            StepExecutionResult(
+                                step_id=step.id,
+                                skill=step.skill,
+                                tool=step.tool or step.skill,
+                                status=CompletionState.FAILED,
+                                output=None,
+                                validation_status=CompletionState.FAILED,
+                                validation_notes=[f"Tool '{tool.name}' requires authentication. Run: forge tools connect {tool.name}"],
+                                attempts=1,
+                                input_snapshot=self._input_snapshot(payload),
+                                trace=["Connection failed: credentials missing."],
+                                error="auth_required",
+                            )
+                        )
+                        mission_trace.append(f"{step.id}: tool '{tool.name}' is not connected.")
+                        mission_status = CompletionState.FAILED.value
+                        self._persist_progress(
+                            mission_id,
+                            audit_log_path,
+                            request,
+                            plan,
+                            mission_status,
+                            step_results,
+                            artifacts,
+                            mission_trace,
+                            resumed_from_step,
+                        )
+                        if step.stop_on_failure:
+                            mission_failed = True
+                            break
+                        continue
+
+                    # Execute the tool action safely in synchronous context
+                    def run_async(coro):
+                        import asyncio
+                        from concurrent.futures import ThreadPoolExecutor
+                        try:
+                            loop = asyncio.get_event_loop()
+                        except RuntimeError:
+                            loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(loop)
+                        if loop.is_running():
+                            with ThreadPoolExecutor(max_workers=1) as executor:
+                                return executor.submit(lambda: asyncio.run(coro)).result()
+                        else:
+                            return loop.run_until_complete(coro)
+
+                    try:
+                        step_trace = [f"Executing action '{step.action}' on tool '{tool.name}'..."]
+                        tool_result = run_async(tool.execute(step.action, payload))
+                        
+                        if tool_result.success:
+                            status = CompletionState.FINISHED
+                            output = {"output": tool_result.data, "action_taken": tool_result.action_taken}
+                            step_results.append(
+                                StepExecutionResult(
+                                    step_id=step.id,
+                                    skill=tool.name,
+                                    tool=step.tool or tool.name,
+                                    status=status,
+                                    output=output,
+                                    evidence=[f"tool:{tool.name}", f"action:{step.action}"],
+                                    validation_status=status,
+                                    validation_notes=["Tool executed successfully."],
+                                    attempts=1,
+                                    input_snapshot=self._input_snapshot(payload),
+                                    trace=step_trace + [f"Result: {tool_result.data}"],
+                                )
+                            )
+                            prior_results[tool.name] = output
+                            artifacts[step.id] = output
+                            mission_trace.append(f"{step.id}: completed via tool '{tool.name}'.")
+                            mission_status = CompletionState.FINISHED.value
+                        else:
+                            status = CompletionState.FAILED
+                            step_results.append(
+                                StepExecutionResult(
+                                    step_id=step.id,
+                                    skill=tool.name,
+                                    tool=step.tool or tool.name,
+                                    status=status,
+                                    output=None,
+                                    validation_status=status,
+                                    validation_notes=[tool_result.error or "Unknown error"],
+                                    attempts=1,
+                                    input_snapshot=self._input_snapshot(payload),
+                                    trace=step_trace + [f"Failed: {tool_result.error}"],
+                                    error=tool_result.error,
+                                )
+                            )
+                            mission_trace.append(f"{step.id}: failed via tool '{tool.name}'.")
+                            mission_status = CompletionState.FAILED.value
+                        
+                        self._persist_progress(
+                            mission_id,
+                            audit_log_path,
+                            request,
+                            plan,
+                            mission_status,
+                            step_results,
+                            artifacts,
+                            mission_trace,
+                            resumed_from_step,
+                        )
+                        if not tool_result.success and step.stop_on_failure:
+                            mission_failed = True
+                            break
+                        continue
+                    except Exception as exc:
+                        step_results.append(
+                            StepExecutionResult(
+                                step_id=step.id,
+                                skill=tool.name,
+                                tool=step.tool or tool.name,
+                                status=CompletionState.FAILED,
+                                output=None,
+                                validation_status=CompletionState.FAILED,
+                                validation_notes=[str(exc)],
+                                attempts=1,
+                                input_snapshot=self._input_snapshot(payload),
+                                trace=[f"Tool error: {exc}"],
+                                error=str(exc),
+                            )
+                        )
+                        mission_trace.append(f"{step.id}: crashed during tool '{tool.name}' execution.")
+                        mission_status = CompletionState.FAILED.value
+                        self._persist_progress(
+                            mission_id,
+                            audit_log_path,
+                            request,
+                            plan,
+                            mission_status,
+                            step_results,
+                            artifacts,
+                            mission_trace,
+                            resumed_from_step,
+                        )
+                        if step.stop_on_failure:
+                            mission_failed = True
+                            break
+                        continue
+
+                # Standard missing skill logic
                 step_results.append(
                     StepExecutionResult(
                         step_id=step.id,

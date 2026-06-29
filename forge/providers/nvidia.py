@@ -26,15 +26,15 @@ class NvidiaProvider(BaseProvider):
     def models(self) -> list[ModelSpec]:
         return [
             ModelSpec(
-                id="qwen/qwen3-coder-480b-a35b-instruct",
+                id="qwen/qwen-2.5-coder-32b-instruct",
                 provider="nvidia",
-                display_name="NVIDIA NIM Qwen3 Coder 480B A35B",
+                display_name="NVIDIA NIM Qwen 2.5 Coder 32B Instruct",
                 tier=ModelTier.ULTRA,
-                context_window=262_144,
+                context_window=32_768,
                 max_output_tokens=8_192,
                 supports_tools=True,
                 strong_at=[TaskType.CODE, TaskType.REASONING, TaskType.RESEARCH],
-                tags=["coding", "reasoning", "large-context"],
+                tags=["coding", "reasoning"],
             ),
             ModelSpec(
                 id="deepseek-ai/deepseek-v3.2",
