@@ -38,6 +38,9 @@ DESKTOP_HTML = """<!doctype html>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>FORGE Desktop</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;550;700&display=swap" rel="stylesheet">
   <style>
     :root {
       --bg: #060606;
@@ -58,7 +61,7 @@ DESKTOP_HTML = """<!doctype html>
     body {
       margin: 0;
       min-height: 100vh;
-      font-family: "Segoe UI", system-ui, sans-serif;
+      font-family: "Outfit", "Segoe UI", system-ui, sans-serif;
       color: var(--text);
       background:
         radial-gradient(circle at top left, rgba(255,107,26,0.16), transparent 28%),
@@ -572,9 +575,18 @@ DESKTOP_HTML = """<!doctype html>
 
     .operator-card {
       padding: 16px 18px;
-      border-radius: 18px;
-      border: 1px solid var(--line);
-      background: rgba(255,255,255,0.026);
+      border-radius: 20px;
+      border: 1px solid rgba(255,255,255,0.06);
+      background: rgba(255,255,255,0.02);
+      backdrop-filter: blur(12px);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+      transition: border-color 0.25s ease, transform 0.2s ease, box-shadow 0.25s ease;
+    }
+
+    .operator-card:hover {
+      border-color: rgba(255,107,26,0.35);
+      transform: translateY(-2px);
+      box-shadow: 0 12px 40px rgba(255,107,26,0.1);
     }
 
     .operator-card h3 {
@@ -612,10 +624,12 @@ DESKTOP_HTML = """<!doctype html>
     }
 
     .operator-panel {
-      padding: 18px;
-      border-radius: 20px;
-      border: 1px solid var(--line);
-      background: rgba(255,255,255,0.026);
+      padding: 20px;
+      border-radius: 24px;
+      border: 1px solid rgba(255,255,255,0.06);
+      background: rgba(255,255,255,0.015);
+      backdrop-filter: blur(16px);
+      box-shadow: 0 12px 40px rgba(0,0,0,0.25);
     }
 
     .operator-panel h3 {
@@ -1811,6 +1825,13 @@ DESKTOP_HTML = """<!doctype html>
       clearNode(liveSteps);
     }
 
+    function showOperatorDashboard(visible) {
+      const deck = document.querySelector(".operator-deck");
+      const grid = document.querySelector(".operator-grid");
+      if (deck) deck.style.display = visible ? "grid" : "none";
+      if (grid) grid.style.display = visible ? "grid" : "none";
+    }
+
     function setLiveStatus(text) {
       const clean = String(text || "").trim();
       if (!clean) return;
@@ -2092,6 +2113,9 @@ DESKTOP_HTML = """<!doctype html>
       renderDiagnostics(data);
       renderPlan(data.plan);
       renderSteps(data.step_results);
+      if (data.plan && data.plan.steps && data.plan.steps.length) {
+        showOperatorDashboard(true);
+      }
     }
 
     async function loadBootStatus() {
@@ -2308,6 +2332,10 @@ DESKTOP_HTML = """<!doctype html>
 
       stream.onmessage = (event) => {
         const data = JSON.parse(event.data || "{}");
+
+        if (data.type === "plan" || data.type === "plan_ready" || data.type.startsWith("step_") || data.type === "mission_completed") {
+          showOperatorDashboard(true);
+        }
 
         if (data.type === "start") {
           workspaceSubtitle.textContent = "Response path ready.";
@@ -2645,6 +2673,7 @@ DESKTOP_HTML = """<!doctype html>
       }
     });
     clearButton.addEventListener("click", () => {
+      showOperatorDashboard(false);
       closeActiveStream();
       chat.innerHTML = "";
       updateConversationLayout();
