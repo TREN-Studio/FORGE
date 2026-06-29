@@ -83,6 +83,28 @@ class GroqProvider(BaseProvider):
                 strong_at=[TaskType.GENERAL, TaskType.CREATIVE],
                 tags=["instruct", "fast"],
             ),
+            ModelSpec(
+                id="deepseek-r1-distill-llama-70b",
+                provider="groq",
+                display_name="DeepSeek R1 Distill LLaMA 70B (Groq)",
+                tier=ModelTier.ULTRA,
+                context_window=131_072,
+                max_output_tokens=8_192,
+                supports_tools=True,
+                strong_at=[TaskType.REASONING, TaskType.MATH, TaskType.CODE, TaskType.RESEARCH],
+                tags=["reasoning", "r1", "fast", "coding"],
+            ),
+            ModelSpec(
+                id="deepseek-r1-distill-qwen-32b",
+                provider="groq",
+                display_name="DeepSeek R1 Distill Qwen 32B (Groq)",
+                tier=ModelTier.ULTRA,
+                context_window=131_072,
+                max_output_tokens=8_192,
+                supports_tools=True,
+                strong_at=[TaskType.REASONING, TaskType.MATH, TaskType.CODE],
+                tags=["reasoning", "r1", "fast", "coding"],
+            ),
         ]
 
     @property

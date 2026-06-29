@@ -26,6 +26,8 @@ FREE_TIER_LIMITS: dict[str, dict] = {
             "llama-3.1-8b-instant",
             "mixtral-8x7b-32768",
             "gemma2-9b-it",
+            "deepseek-r1-distill-llama-70b",
+            "deepseek-r1-distill-qwen-32b",
         ],
     },
     "gemini": {
@@ -76,6 +78,9 @@ FREE_TIER_LIMITS: dict[str, dict] = {
             "qwen/qwen-2.5-72b-instruct:free",
             "mistralai/mistral-7b-instruct:free",
             "microsoft/phi-4:free",
+            "google/gemini-2.5-flash:free",
+            "microsoft/phi-3-medium-128k-instruct:free",
+            "openchat/openchat-7b:free",
         ],
     },
     "ollama": {
@@ -89,9 +94,9 @@ FREE_TIER_LIMITS: dict[str, dict] = {
         "requests_per_day": 1_000,
         "resets": "daily_utc_midnight",
         "free_models": [
-            "meta-llama/Meta-Llama-3.1-70B-Instruct",
+            "meta-llama/Llama-3.3-70B-Instruct",
+            "Qwen/Qwen2.5-Coder-32B-Instruct",
             "mistralai/Mistral-7B-Instruct-v0.3",
-            "Qwen/Qwen2.5-72B-Instruct",
         ],
     },
     "nvidia": {

@@ -24,6 +24,7 @@ _PROVIDER_IMPORTS: tuple[tuple[str, str, str], ...] = (
     ("cloudflare", "forge.providers.cloudflare", "CloudflareProvider"),
     ("anthropic", "forge.providers.anthropic", "AnthropicProvider"),
     ("openai", "forge.providers.openai", "OpenAIProvider"),
+    ("huggingface", "forge.providers.huggingface", "HuggingFaceProvider"),
 )
 
 SPEED_TIMEOUTS: dict[str, float] = {
