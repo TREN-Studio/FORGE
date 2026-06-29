@@ -47,11 +47,11 @@ class WorkerTaskExecutor:
     """Serializable task executor used by both local lanes and external worker hosts."""
 
     def __init__(self) -> None:
-        self._research = ResearchAgent()
-        self._action = ActionAgent()
-        self._critic = CriticAgent()
-        self._runtime = SkillRuntime()
         self._session = ForgeSession(memory=False)
+        self._research = ResearchAgent(session=self._session)
+        self._action = ActionAgent()
+        self._critic = CriticAgent(session=self._session)
+        self._runtime = SkillRuntime()
         self._registry_cache: dict[str, SkillRegistry] = {}
 
     def execute(self, task: WorkerTask, *, worker_id: str) -> WorkerTaskResult:
@@ -62,6 +62,8 @@ class WorkerTaskExecutor:
             output = self._execute_research(task)
         elif task.service_name == "council:critic":
             output = self._execute_critic(task)
+        elif task.service_name.startswith("agent:"):
+            output = self._execute_dynamic_agent(task)
         else:
             raise RuntimeError(f"Unsupported worker service: {task.service_name}")
         return WorkerTaskResult(
@@ -72,6 +74,31 @@ class WorkerTaskExecutor:
             output=output,
             worker_id=worker_id,
         )
+
+    def _execute_dynamic_agent(self, task: WorkerTask) -> Any:
+        from forge.brain.council import DynamicLLMAgent
+        from forge.brain.agent_factory import AgentFactory
+        
+        # Resolve dynamic spec properties
+        parts = task.service_name.split(":", 2)
+        role_id = parts[1] if len(parts) > 1 else "generalist"
+        
+        # Build instructions
+        from forge.brain.agent_factory import SPECIALIZED_ROLES
+        role_data = SPECIALIZED_ROLES.get(role_id, SPECIALIZED_ROLES["generalist"])
+        
+        agent = DynamicLLMAgent(
+            role_name=role_data["role_name"],
+            description=role_data["description"],
+            instructions=[
+                f"You are the {role_data['role_name']}.",
+                f"Description: {role_data['description']}",
+            ],
+            session=self._session,
+        )
+        prompt = task.payload.get("prompt") or task.payload.get("request") or "execute task"
+        context = task.payload.get("context") or {}
+        return agent.execute_task(prompt, context)
 
     def _execute_action(self, task: WorkerTask) -> Any:
         if task.operation == "dispatch_notes":

@@ -60,6 +60,7 @@ class ForgeOperator:
             self.audit_store,
             compact_prior_results=self._compact_prior_results,
             extract_evidence=self._extract_evidence,
+            session=self.session,
         )
         self.composer = ResponseComposer()
 

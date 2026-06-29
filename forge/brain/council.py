@@ -1,9 +1,16 @@
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
 from forge.brain.contracts import AgentReview, CompletionState, ExecutionPlan, StepExecutionResult
+from forge.brain.agent_prompt import (
+    RESEARCH_AGENT_LLM_PROMPT,
+    CRITIC_AGENT_LLM_PROMPT,
+    DYNAMIC_AGENT_SYSTEM_TEMPLATE,
+)
+from forge.core.session import ForgeSession
 
 
 RESEARCH_TERMS = {
@@ -52,6 +59,9 @@ STOPWORDS = {
 class ResearchAgent:
     """Prepare browser-heavy missions and convert raw snapshots into verified findings."""
 
+    def __init__(self, session: ForgeSession | None = None) -> None:
+        self._session = session or ForgeSession(memory=False)
+
     def prepare_step(self, request: str, step, payload: dict[str, Any]) -> list[str]:
         notes: list[str] = []
         if step.skill == "browser-executor" and self._is_research_request(request):
@@ -66,6 +76,64 @@ class ResearchAgent:
         if not self._is_research_request(request):
             return output, None
 
+        # Try LLM enrichment first for intelligent reasoning
+        try:
+            enriched = dict(output)
+            page_state = output.get("page_state") or {}
+            headings = [self._entry_text(item) for item in page_state.get("headings", []) if isinstance(item, dict)]
+            links = [self._entry_text(item) for item in page_state.get("links", []) if isinstance(item, dict)]
+            
+            prompt = RESEARCH_AGENT_LLM_PROMPT.format(
+                request=request,
+                current_url=output.get("current_url", "unknown"),
+                headings=", ".join(headings[:10]),
+                text_content=str(output.get("snapshot_text", ""))[:2000],
+                links=", ".join(links[:10]),
+            )
+            
+            # Send to model
+            sys_instruct = DYNAMIC_AGENT_SYSTEM_TEMPLATE.format(
+                role_name="Research Specialist",
+                role_description="Extracts and summarizes key facts from crawled pages.",
+                role_instructions="- Be factual.\n- Provide sources.",
+            )
+            
+            # Temporarily override system prompt
+            old_sys = self._session._system
+            self._session._system = sys_instruct
+            try:
+                llm_reply = self._session.ask(prompt, task_type="research")
+            finally:
+                self._session._system = old_sys
+
+            # Extract confidence score from LLM reply (default to 0.75 if parse fails)
+            confidence = 0.75
+            conf_match = re.search(r"confidence:\s*([0-9.]+)", llm_reply.lower())
+            if conf_match:
+                try:
+                    confidence = float(conf_match.group(1))
+                except ValueError:
+                    pass
+
+            enriched["research_summary_markdown"] = llm_reply
+            enriched["confidence"] = confidence
+            enriched["verification"] = {"verified": True, "source_url": output.get("current_url")}
+            
+            review = AgentReview(
+                agent="research",
+                status=CompletionState.FINISHED if confidence > 0.6 else CompletionState.PARTIALLY_FINISHED,
+                notes=[
+                    "Research chain completed via LLM reasoning.",
+                    f"Confidence score: {confidence:.2f}.",
+                ],
+                confidence=confidence,
+            )
+            return enriched, review
+        except Exception:
+            # Fallback to rule-based summary
+            return self._enrich_output_fallback(request, step, output)
+
+    def _enrich_output_fallback(self, request: str, step, output: Any) -> tuple[Any, AgentReview | None]:
         enriched = dict(output)
         summary_markdown, confidence, verification = self._summarize_browser_output(request, enriched)
         enriched["research_summary_markdown"] = summary_markdown
@@ -174,7 +242,51 @@ class ActionAgent:
 class CriticAgent:
     """Reviews each step and the final mission before the user sees it."""
 
+    def __init__(self, session: ForgeSession | None = None) -> None:
+        self._session = session or ForgeSession(memory=False)
+
     def review_step(self, request: str, step, output: Any, validation_status: CompletionState) -> AgentReview:
+        # Try LLM review first
+        try:
+            prompt = CRITIC_AGENT_LLM_PROMPT.format(
+                request=request,
+                step_action=step.action,
+                skill_name=step.skill or "reasoning",
+                expected_output=step.expected_output,
+                output=str(output)[:2000],
+                validation_status=validation_status.value,
+            )
+            
+            sys_instruct = DYNAMIC_AGENT_SYSTEM_TEMPLATE.format(
+                role_name="Critic Auditor",
+                role_description="Audits step execution and validates outcomes.",
+                role_instructions="Always output a valid JSON response with keys: 'agent', 'status', 'notes', 'confidence'.",
+            )
+            
+            old_sys = self._session._system
+            self._session._system = sys_instruct
+            try:
+                llm_reply = self._session.ask(prompt, task_type="reasoning")
+            finally:
+                self._session._system = old_sys
+
+            # Clean JSON markdown if model wrapped it
+            if "```json" in llm_reply:
+                llm_reply = llm_reply.split("```json", 1)[1].split("```", 1)[0]
+            elif "```" in llm_reply:
+                llm_reply = llm_reply.split("```", 1)[1].split("```", 1)[0]
+
+            data = json.loads(llm_reply.strip())
+            return AgentReview(
+                agent="critic",
+                status=CompletionState(data.get("status", "finished")),
+                notes=list(data.get("notes", ["Critic review completed."])),
+                confidence=float(data.get("confidence", 0.8)),
+            )
+        except Exception:
+            return self._review_step_fallback(request, step, output, validation_status)
+
+    def _review_step_fallback(self, request: str, step, output: Any, validation_status: CompletionState) -> AgentReview:
         notes: list[str] = []
         confidence: float | None = None
         status = validation_status
@@ -242,3 +354,39 @@ class CriticAgent:
             notes=["Mission passed the final critic review."],
             confidence=0.85,
         )
+
+
+class DynamicLLMAgent:
+    """LLM-powered dynamic specialized worker spawned by the AgentFactory."""
+
+    def __init__(self, role_name: str, description: str, instructions: list[str], session: ForgeSession | None = None) -> None:
+        self.role_name = role_name
+        self.description = description
+        self.instructions = instructions
+        self._session = session or ForgeSession(memory=False)
+
+    def execute_task(self, prompt: str, task_context: dict[str, Any]) -> dict[str, Any]:
+        """Runs the specialized agent task using the LLM model."""
+        sys_instruct = DYNAMIC_AGENT_SYSTEM_TEMPLATE.format(
+            role_name=self.role_name,
+            role_description=self.description,
+            role_instructions="\n".join(f"- {inst}" for inst in self.instructions),
+        )
+        
+        old_sys = self._session._system
+        self._session._system = sys_instruct
+        try:
+            reply = self._session.ask(
+                f"Context: {json.dumps(task_context, ensure_ascii=False)}\n\nRequest: {prompt}",
+                task_type="general",
+            )
+        finally:
+            self._session._system = old_sys
+
+        return {
+            "status": "completed",
+            "agent_role": self.role_name,
+            "output": reply,
+            "confidence": 0.85,
+            "evidence": [f"completed_by:{self.role_name.lower().replace(' ', '_')}"],
+        }

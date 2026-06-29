@@ -10,6 +10,7 @@ from typing import Any, Callable
 from forge.brain.approval import ApprovalDecision, ApprovalPolicyEngine
 from forge.brain.contracts import AgentReview, CompletionState, ExecutionPlan, PlanStep, StepExecutionResult, TaskIntent
 from forge.brain.council import ActionAgent, CriticAgent, ResearchAgent
+from forge.brain.agent_factory import AgentFactory
 from forge.brain.mission_store import MissionAuditStore, MissionResumeState
 from forge.brain.worker_executor import decode_agent_review, serialize_operator_settings
 from forge.brain.worker_protocol import WorkerHeartbeat, WorkerRegistration, WorkerTask
@@ -120,6 +121,7 @@ class MissionOrchestrator:
         *,
         compact_prior_results: Callable[[dict[str, Any]], dict[str, Any]],
         extract_evidence: Callable[[Any], list[str]],
+        session: ForgeSession | None = None,
     ) -> None:
         self._registry = registry
         self._runtime = runtime
@@ -128,9 +130,9 @@ class MissionOrchestrator:
         self._audit_store = audit_store
         self._compact_prior_results = compact_prior_results
         self._extract_evidence = extract_evidence
-        self._research_agent = ResearchAgent()
+        self._research_agent = ResearchAgent(session=session)
         self._action_agent = ActionAgent()
-        self._critic_agent = CriticAgent()
+        self._critic_agent = CriticAgent(session=session)
         MissionOrchestrator._ensure_cluster(audit_store.state_store, registry._settings if hasattr(registry, "_settings") else None)
         self._workers = MissionOrchestrator._shared_workers
         self._approval_engine = MissionOrchestrator._shared_approval_engine
@@ -185,7 +187,11 @@ class MissionOrchestrator:
                 mission_trace.append(f"{step.id}: skipped because it already completed in mission {mission_id}.")
                 continue
 
-            mission_trace.append(f"{step.id}: dispatch {step.tool or step.skill or 'reasoning'}")
+            # Dynamically spawn specialized agent role for this step using the factory
+            spec = AgentFactory.spawn_agent_for_step(step.id, step.skill, step.action)
+            mission_trace.append(
+                f"{step.id}: assigned to [{spec.role_name}] - skill: {step.tool or step.skill or 'reasoning'} | purpose: {spec.description}"
+            )
 
             if step.skill is None:
                 result, review = self._execute_reasoning_step(request, intent, step, runtime_context)

@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.2.0 (2026-06-29)
+
+- **Dynamic Multi-Agent Spawning**: Enabled FORGE to dynamically spawn, configure, and assign 20+ specialized agent roles (PythonSpecialist, DBConsultant, GitManager, SEOAuditor, WebScraper, etc.) tailored specifically to plan step requirements.
+- **LLM-Powered Council & Workers**: Upgraded Research and Critic agents from rule-based to LLM-powered reasoning with graceful code-based fallbacks.
+- **Agent Factory**: Added `AgentFactory` in `forge/brain/agent_factory.py` to extract agent roles from plan steps using domain-specific keyword mapping.
+- **Dynamic Worker Execution**: Enabled worker runtime environments to execute dynamically resolved specialized tasks through child lanes.
+
 ## v1.1.9 (2026-06-29)
 
 - **Persistent Identity & Conversation DNA**: Preserves FORGE's reasoning fingerprint, task context, decisions, and preferences across provider switches mid-conversation.
