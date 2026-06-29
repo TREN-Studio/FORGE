@@ -104,10 +104,25 @@ class MemoryGraph:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(self._path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
+        self._fts_supported = True
         self._init_schema()
 
     def _init_schema(self) -> None:
         self._conn.executescript(_SCHEMA)
+        try:
+            self._conn.execute(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS observations_fts USING fts5("
+                "content, entity_id, observation_id"
+                ");"
+            )
+            # Sync existing observations into FTS5 if any are missing
+            self._conn.execute(
+                "INSERT INTO observations_fts (content, entity_id, observation_id) "
+                "SELECT content, entity_id, id FROM observations "
+                "WHERE id NOT IN (SELECT observation_id FROM observations_fts)"
+            )
+        except sqlite3.OperationalError:
+            self._fts_supported = False
         self._conn.commit()
 
     # ── Entity CRUD ───────────────────────────────────────────────
@@ -180,10 +195,17 @@ class MemoryGraph:
         mem.remember("project:forge", "Python project, MIT license")
         """
         entity_id = self._ensure_entity(subject)
-        self._conn.execute(
+        cursor = self._conn.cursor()
+        cursor.execute(
             "INSERT INTO observations (entity_id,content,source,confidence,created_at) VALUES(?,?,?,?,?)",
             (entity_id, content, source, confidence, time.time()),
         )
+        obs_id = cursor.lastrowid
+        if self._fts_supported and obs_id:
+            cursor.execute(
+                "INSERT INTO observations_fts (content, entity_id, observation_id) VALUES(?,?,?)",
+                (content, entity_id, obs_id)
+            )
         self._conn.commit()
 
     def recall(
@@ -202,6 +224,8 @@ class MemoryGraph:
         entity_id = self._find_entity(subject)
         if entity_id is None and query:
             rows = self._search_observations(query, limit)
+        elif entity_id and query:
+            rows = self._search_observations(query, limit, entity_id=entity_id)
         elif entity_id:
             rows = self._conn.execute(
                 """SELECT o.content, o.source, o.confidence, o.created_at, e.name
@@ -334,17 +358,55 @@ class MemoryGraph:
         ).fetchone()
         return row[0] if row else None
 
-    def _search_observations(self, query: str, limit: int) -> list:
-        words = [w for w in query.lower().split() if len(w) > 3]
+    def _search_observations(self, query: str, limit: int, entity_id: str | None = None) -> list:
+        # Clean query for FTS5 syntax
+        clean_query = query.replace('"', '').replace("'", "").strip()
+        words = [w for w in clean_query.split() if len(w) > 2]
         if not words:
             return []
-        like = f"%{words[0]}%"
+            
+        if self._fts_supported:
+            try:
+                # Format query as 'word1* AND word2* AND word3*' for prefix search matching
+                fts_query = " AND ".join(f"{w}*" for w in words)
+                if entity_id:
+                    return self._conn.execute(
+                        """SELECT o.content, o.source, o.confidence, o.created_at, e.name
+                           FROM observations_fts fts
+                           JOIN observations o ON o.id = fts.observation_id
+                           JOIN entities e ON e.id = o.entity_id
+                           WHERE fts.observations_fts MATCH ? AND o.entity_id = ?
+                           ORDER BY rank LIMIT ?""",
+                        (fts_query, entity_id, limit),
+                    ).fetchall()
+                else:
+                    return self._conn.execute(
+                        """SELECT o.content, o.source, o.confidence, o.created_at, e.name
+                           FROM observations_fts fts
+                           JOIN observations o ON o.id = fts.observation_id
+                           JOIN entities e ON e.id = o.entity_id
+                           WHERE fts.observations_fts MATCH ?
+                           ORDER BY rank LIMIT ?""",
+                        (fts_query, limit),
+                    ).fetchall()
+            except sqlite3.OperationalError:
+                # If MATCH syntax error, proceed to fallback search
+                pass
+
+        # Fallback multi-LIKE search (matches ALL words of length > 2)
+        conditions = " AND ".join("lower(o.content) LIKE ?" for _ in words)
+        if entity_id:
+            conditions += " AND o.entity_id = ?"
+            params = [f"%{w.lower()}%" for w in words] + [entity_id, limit]
+        else:
+            params = [f"%{w.lower()}%" for w in words] + [limit]
+
         return self._conn.execute(
-            """SELECT o.content, o.source, o.confidence, o.created_at, e.name
+            f"""SELECT o.content, o.source, o.confidence, o.created_at, e.name
                FROM observations o JOIN entities e ON e.id=o.entity_id
-               WHERE lower(o.content) LIKE ?
+               WHERE {conditions}
                ORDER BY o.created_at DESC LIMIT ?""",
-            (like, limit),
+            params,
         ).fetchall()
 
     def close(self) -> None:
