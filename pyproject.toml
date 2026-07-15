@@ -37,6 +37,7 @@ dependencies = [
 
 [project.optional-dependencies]
 tools = ["playwright>=1.44", "beautifulsoup4>=4.12", "duckduckgo-search>=6.2"]
+research = ["pytrends>=4.9", "beautifulsoup4>=4.12", "lxml>=5.0"]
 dev   = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.4", "mypy>=1.10"]
 
 [project.scripts]
