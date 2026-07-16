@@ -10,6 +10,9 @@
   - Falls back gracefully if one source fails.
 - **Optional `research` extras**: `pip install forge-agent[research]` for pytrends + lxml dependencies.
 
+### Changed
+- **Site downloads page** updated from v1.1.8 → v1.5.1.
+
 ## v1.5.0 (2026-06-29)
 
 ### Added
