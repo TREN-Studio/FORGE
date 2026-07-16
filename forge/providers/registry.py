@@ -33,7 +33,7 @@ SPEED_TIMEOUTS: dict[str, float] = {
     "complex": 30.0,
 }
 
-MAX_PROGRESSIVE_ATTEMPTS = 3
+MAX_PROGRESSIVE_ATTEMPTS = 8
 PROGRESSIVE_TIMEOUT_WEIGHTS: tuple[float, ...] = (0.5, 0.3, 0.2)
 
 _COMPLEX_PATTERNS = (

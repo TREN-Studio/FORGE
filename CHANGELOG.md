@@ -12,6 +12,9 @@
 
 ### Changed
 - **Site downloads page** updated from v1.1.8 → v1.5.1.
+- **Groq provider**: Updated model list — added Qwen 3 32B, LLaMA 4 Scout; removed deprecated models (DeepSeek R1, Mixtral, Gemma 2).
+- **OpenRouter provider**: Removed deprecated `:free` suffix from model IDs.
+- **Router resilience**: Increased progressive attempt limit from 3 → 8 for better fallback coverage.
 
 ## v1.5.0 (2026-06-29)
 
