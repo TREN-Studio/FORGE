@@ -10,9 +10,12 @@ import re
 import threading
 import time
 from typing import Any
+import mimetypes
+import uuid
 
 from forge import __version__
 from forge.brain.contracts import CompletionState, ExecutionPlan, IntentKind, OperatorResult, TaskIntent
+from forge.core.models import TaskType
 from forge.brain.identity import enforce_forge_response_guard
 from forge.brain.operator import ForgeOperator
 from forge.config.settings import OperatorSettings
@@ -81,6 +84,60 @@ _VISIBLE_BLOCKED_MARKERS = (
     "together",
     "cloudflare",
 )
+
+
+_IMAGE_MIME_PREFIXES = ("image/",)
+
+
+def _attachments_dir() -> Path:
+    d = _default_state_directory() / "attachments"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def save_uploaded_attachment(filename: str, data: bytes) -> dict[str, Any]:
+    ext = Path(filename).suffix.lower()
+    mime, _ = mimetypes.guess_type(filename)
+    mime = mime or "application/octet-stream"
+    is_image = mime.startswith(_IMAGE_MIME_PREFIXES)
+    attachment_id = uuid.uuid4().hex[:12]
+    stored_name = f"{attachment_id}{ext}"
+    stored_path = _attachments_dir() / stored_name
+    stored_path.write_bytes(data)
+    return {
+        "attachment_id": attachment_id,
+        "filename": filename,
+        "stored_path": str(stored_path),
+        "mime_type": mime,
+        "is_image": is_image,
+        "size_bytes": len(data),
+    }
+
+
+def get_attachment_path(attachment_id: str) -> Path | None:
+    for candidate in _attachments_dir().glob(f"{attachment_id}*"):
+        return candidate
+    return None
+
+
+def build_attachment_context(attachment_ids: list[str]) -> str:
+    if not attachment_ids:
+        return ""
+    parts = []
+    for aid in attachment_ids:
+        path = get_attachment_path(aid)
+        if not path:
+            continue
+        if path.suffix.lower() in {".png", ".jpg", ".jpeg", ".gif", ".webp"}:
+            parts.append(f"[Attached image: {path.name} — saved to workspace, not analyzed yet.]")
+            continue
+        if path.suffix.lower() in {".txt", ".md", ".csv", ".json"}:
+            try:
+                content = path.read_text(encoding="utf-8", errors="replace")[:8000]
+                parts.append(f"[Attached file: {path.name}]\n{content}")
+            except Exception:
+                parts.append(f"[Attached file: {path.name} — could not be read.]")
+    return "\n\n".join(parts)
 
 
 def _default_state_directory() -> Path:
@@ -437,18 +494,28 @@ def _stream_local_demo(workspace_root: Path, started: float):
     yield _done_event(result, footer=footer)
 
 
+def _count_local_keys() -> int:
+    keydir = Path.home() / ".forge" / "keys"
+    if not keydir.is_dir():
+        return 0
+    return sum(1 for f in keydir.iterdir() if f.is_file() and not f.name.startswith("."))
+
+
 def boot_status() -> DesktopBootStatus:
     session = ForgeSession(memory=False)
     status = session._router.status()
     providers = status.get("providers", 0)
     models_online = status.get("models_online", 0)
     workspace = get_workspace_status()
+    local_keys = _count_local_keys()
     provider_setup = _provider_setup_snapshot({})
     summary = (
         f"FORGE v{__version__} booted with {providers} provider(s) "
         f"and {models_online} live model(s). Active workspace: {workspace['workspace_root']}."
     )
-    if provider_setup["needs_provider_setup"]:
+    if local_keys:
+        summary += f" {local_keys} local key(s) found."
+    if provider_setup["needs_provider_setup"] and not local_keys:
         summary += " Provider setup is needed: no saved cloud provider and Ollama is not running."
     return DesktopBootStatus(
         providers=providers,
@@ -467,6 +534,7 @@ def run_prompt(
     workspace_root: str | Path | None = None,
     confirmed: bool = False,
     dry_run: bool = False,
+    attachment_ids: list[str] | None = None,
 ) -> str:
     prompt = prompt.strip()
     if not prompt:
@@ -476,6 +544,7 @@ def run_prompt(
         confirmed=confirmed,
         dry_run=dry_run,
         workspace_root=workspace_root,
+        attachment_ids=attachment_ids,
     )["answer"]
 
 
@@ -485,10 +554,15 @@ def operate_prompt(
     dry_run: bool = False,
     workspace_root: str | Path | None = None,
     provider_secrets: dict[str, dict[str, str]] | None = None,
+    attachment_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     prompt = prompt.strip()
     if not prompt:
         raise ValueError("Prompt is empty.")
+
+    attachment_context = build_attachment_context(attachment_ids or [])
+    if attachment_context:
+        prompt = f"{prompt}\n\n{attachment_context}"
 
     base_workspace_root = _normalize_workspace_root(workspace_root)
     normalized_workspace_root = _resolve_workspace_for_prompt(prompt, base_workspace_root)
@@ -555,18 +629,67 @@ def stream_prompt(
     dry_run: bool = False,
     workspace_root: str | Path | None = None,
     provider_secrets: dict[str, dict[str, str]] | None = None,
+    attachment_ids: list[str] | None = None,
+    mode: str = "build",
 ):
     prompt = prompt.strip()
     if not prompt:
         raise ValueError("Prompt is empty.")
 
+    attachment_context = build_attachment_context(attachment_ids or [])
+    if attachment_context:
+        prompt = f"{prompt}\n\n{attachment_context}"
+
     yield {
         "type": "status",
         "stage": "intent",
-        "text": "Analyzing your request...",
-        "message": "Analyzing your request...",
+        "text": "Analyzing your request..." if mode != "chat" else "Chatting...",
+        "message": "Analyzing your request..." if mode != "chat" else "Chatting...",
         "elapsed_ms": 0,
     }
+
+    # ── Chat Mode: bypass planner, skill router, executor ──
+    if mode == "chat":
+        yield {"type": "intent_analyzing", "stage": "intent", "text": "Chatting...", "message": "Chatting..."}
+        base_workspace_root = _normalize_workspace_root(workspace_root)
+        normalized_workspace_root = _resolve_workspace_for_prompt(prompt, base_workspace_root)
+        operator = ForgeOperator(
+            settings=OperatorSettings(enable_memory=False, workspace_root=normalized_workspace_root),
+            provider_secrets=provider_secrets,
+        )
+        started = time.monotonic()
+        try:
+            streamed_text = ""
+            for event in operator.session.stream_response(prompt, task_type=TaskType.GENERAL, remember=False):
+                kind = str(event.get("type") or "").strip().lower()
+                if kind == "start":
+                    yield {"type": "provider_selected", "message": "Response path ready."}
+                    continue
+                if kind == "delta":
+                    delta = str(event.get("delta") or "")
+                    streamed_text += delta
+                    safe_delta = enforce_forge_response_guard(delta)
+                    yield {"type": "delta", "delta": safe_delta}
+                    continue
+                if kind == "response":
+                    maybe_response = event.get("response")
+                    if maybe_response is not None:
+                        response = maybe_response
+            payload = _serialize_conversation_response(
+                answer=streamed_text,
+                intent=TaskIntent(raw_request=prompt, objective="", task_type=TaskType.GENERAL, primary_intent=IntentKind.CONVERSATION),
+                response=response,
+                workspace_root=normalized_workspace_root,
+            )
+            footer = _stream_footer(payload, elapsed_ms=(time.monotonic() - started) * 1000)
+            payload["stream_footer"] = footer
+            yield {"type": "user_response", "content": payload.get("user_response") or streamed_text, "has_details": False}
+            yield {"type": "technical_details", "content": {}, "hidden": True}
+            yield _done_event(payload, footer=footer)
+        except Exception as exc:
+            yield {"type": "error", "error": str(exc)}
+        return
+
     yield {
         "type": "intent_analyzing",
         "stage": "intent",
@@ -830,6 +953,33 @@ def stream_prompt(
         "structured_steps": plan_steps,
         "elapsed_ms": round((time.monotonic() - started) * 1000, 2),
     }
+
+    # ── Plan Mode: stop after plan, don't execute ──
+    if mode == "plan":
+        payload = {
+            "answer": _plan_summary(plan),
+            "user_response": _plan_summary(plan),
+            "result": _plan_summary(plan),
+            "workspace_root": str(normalized_workspace_root),
+            "approach": "Plan ready for your review.",
+        }
+        yield {
+            "type": "plan_preview",
+            "plan": plan_payload,
+            "steps": plan_steps,
+            "message": "Plan ready. Awaiting your review.",
+        }
+        footer = _stream_footer(payload, elapsed_ms=(time.monotonic() - started) * 1000)
+        payload["stream_footer"] = footer
+        yield {
+            "type": "user_response",
+            "content": _plan_summary(plan),
+            "has_details": False,
+        }
+        yield {"type": "technical_details", "content": {}, "hidden": True}
+        yield _done_event(payload, footer=footer)
+        return
+
     yield {
         "type": "provider_selected",
         "message": "Execution path ready.",
@@ -1394,11 +1544,14 @@ def boot_status_for_user(provider_secrets: dict[str, dict[str, str]] | None = No
     providers = status.get("providers", 0)
     models_online = status.get("models_online", 0)
     workspace = get_workspace_status()
+    local_keys = _count_local_keys()
     summary = (
         f"FORGE v{__version__} booted with {providers} provider(s) "
         f"and {models_online} live model(s). Active workspace: {workspace['workspace_root']}."
     )
-    if provider_setup["needs_provider_setup"]:
+    if local_keys:
+        summary += f" {local_keys} local key(s) found."
+    if provider_setup["needs_provider_setup"] and not local_keys:
         summary += " Provider setup is needed: no saved cloud provider and Ollama is not running."
     return DesktopBootStatus(
         providers=providers,
@@ -1412,14 +1565,15 @@ def boot_status_for_user(provider_secrets: dict[str, dict[str, str]] | None = No
 
 def _provider_setup_snapshot(provider_secrets: dict[str, dict[str, str]]) -> dict[str, Any]:
     saved_provider_count = sum(1 for payload in provider_secrets.values() if payload)
+    local_keys = _count_local_keys()
     ollama = _probe_ollama()
-    needs_provider_setup = saved_provider_count == 0 and not ollama["running"]
+    needs_provider_setup = saved_provider_count == 0 and local_keys == 0 and not ollama["running"]
     return {
         "needs_provider_setup": needs_provider_setup,
         "saved_provider_count": saved_provider_count,
         "cloud_provider_ready": saved_provider_count > 0,
         "ollama": ollama,
-        "recommended": "groq" if needs_provider_setup else "",
+        "recommended": "local_keys" if local_keys else ("groq" if needs_provider_setup else ""),
         "options": [
             {
                 "id": "groq",

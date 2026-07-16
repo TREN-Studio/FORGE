@@ -247,6 +247,19 @@ DESKTOP_HTML = """<!doctype html>
       accent-color: var(--accent);
     }
 
+    .mode-selector {
+      display: flex; gap: 4px; background: rgba(255,255,255,0.04);
+      padding: 4px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);
+    }
+    .mode-selector input[type="radio"] { display: none; }
+    .mode-selector label {
+      padding: 4px 12px; font-size: 12px; color: var(--muted);
+      border-radius: 6px; cursor: pointer; transition: 0.2s; user-select: none;
+    }
+    .mode-selector input:checked + label {
+      background: var(--accent-soft); color: #fff;
+    }
+
     .toggle-stack {
       display: grid;
       gap: 12px;
@@ -773,6 +786,16 @@ DESKTOP_HTML = """<!doctype html>
       animation: forge-blink 0.9s steps(1) infinite;
     }
 
+    .forge-code-block {
+      background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px; padding: 12px 14px; margin: 8px 0; overflow-x: auto;
+      font: 13px/1.5 'JetBrains Mono',Consolas,monospace;
+    }
+    .forge-inline-code {
+      background: rgba(255,255,255,0.08); padding: 2px 6px; border-radius: 6px;
+      font: 12px/1 'JetBrains Mono',Consolas,monospace;
+    }
+
     @keyframes forge-blink {
       0%, 48% { opacity: 1; }
       49%, 100% { opacity: 0; }
@@ -793,6 +816,25 @@ DESKTOP_HTML = """<!doctype html>
       gap: 14px;
       align-items: end;
     }
+    .attach-row {
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+      grid-column: 1 / -1;
+    }
+    .attach-button {
+      min-height: 34px; width: 34px; padding: 0; border-radius: 10px;
+      background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08);
+      color: var(--muted); display: flex; align-items: center; justify-content: center;
+      cursor: pointer; transition: border-color 0.2s,color 0.2s;
+    }
+    .attach-button:hover { border-color: var(--accent-soft); color: var(--accent-soft); }
+    .attach-preview { display: flex; gap: 6px; flex-wrap: wrap; }
+    .attach-chip {
+      display: flex; align-items: center; gap: 6px; padding: 5px 9px;
+      border-radius: 10px; background: rgba(255,107,26,0.1);
+      border: 1px solid rgba(255,107,26,0.25); font-size: 12px; color: var(--text);
+    }
+    .attach-chip img { width: 22px; height: 22px; object-fit: cover; border-radius: 4px; }
+    .attach-chip .remove { cursor: pointer; color: var(--danger,#ff7171); font-weight: 700; margin-left: 4px; }
 
     textarea {
       width: 100%;
@@ -1135,13 +1177,17 @@ DESKTOP_HTML = """<!doctype html>
       </section>
 
       <section class="card">
-        <h3>Execution Mode</h3>
-        <label class="mode-toggle">
-          <input id="operator-mode" type="checkbox" checked disabled>
-          <span>Agent Mode Locked</span>
-        </label>
+        <h3>Mode</h3>
+        <div class="mode-selector">
+          <input type="radio" id="mode-chat" name="forge-mode" value="chat">
+          <label for="mode-chat">Chat</label>
+          <input type="radio" id="mode-plan" name="forge-mode" value="plan">
+          <label for="mode-plan">Plan</label>
+          <input type="radio" id="mode-build" name="forge-mode" value="build" checked>
+          <label for="mode-build">Build</label>
+        </div>
         <p class="footnote">
-          FORGE replies like a real assistant by default, then switches into verified execution mode only when your request actually needs tools.
+          Chat: direct conversation, no planning. Plan: view the plan before execution. Build: full autonomous execution.
         </p>
       </section>
 
@@ -1316,6 +1362,13 @@ DESKTOP_HTML = """<!doctype html>
             <div id="live-steps" class="live-steps"></div>
           </div>
           <div class="composer-grid">
+            <div class="attach-row">
+              <button id="attach-btn" type="button" class="attach-button" title="Attach file or image">
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+              </button>
+              <input id="attach-input" type="file" accept="image/*,.pdf,.txt,.md,.csv,.json" multiple style="display:none">
+              <div id="attach-preview" class="attach-preview"></div>
+            </div>
             <textarea id="prompt" placeholder="Message FORGE..."></textarea>
             <div class="actions">
               <button id="send" type="button">Send</button>
@@ -1339,7 +1392,7 @@ DESKTOP_HTML = """<!doctype html>
     const sidebarScrim = document.getElementById("sidebar-scrim");
     const notes = document.getElementById("notes");
     const workerServices = document.getElementById("worker-services");
-    const operatorMode = document.getElementById("operator-mode");
+    const modeRadios = document.querySelectorAll('input[name="forge-mode"]');
     const workspaceName = document.getElementById("workspace-name");
     const workspacePath = document.getElementById("workspace-path");
     const workspaceSummary = document.getElementById("workspace-summary");
@@ -1377,6 +1430,75 @@ DESKTOP_HTML = """<!doctype html>
     const demoTask = document.getElementById("demo-task");
     const runDemoTaskButton = document.getElementById("run-demo-task");
     const demoTaskStatus = document.getElementById("demo-task-status");
+
+    let pendingAttachments = [];
+    const attachBtn = document.getElementById("attach-btn");
+    const attachInput = document.getElementById("attach-input");
+    const attachPreview = document.getElementById("attach-preview");
+
+    attachBtn.addEventListener("click", () => attachInput.click());
+
+    attachInput.addEventListener("change", async () => {
+      const files = Array.from(attachInput.files || []);
+      for (const file of files) {
+        await uploadAttachment(file);
+      }
+      attachInput.value = "";
+    });
+
+    async function uploadAttachment(file) {
+      const chip = document.createElement("div");
+      chip.className = "attach-chip";
+      chip.textContent = "Uploading " + file.name + "...";
+      attachPreview.appendChild(chip);
+
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+        const response = await fetch("/api/upload", { method: "POST", body: formData });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Upload failed.");
+
+        pendingAttachments.push(data);
+        chip.innerHTML = "";
+        if (data.is_image) {
+          const img = document.createElement("img");
+          img.src = URL.createObjectURL(file);
+          chip.appendChild(img);
+        }
+        const label = document.createElement("span");
+        label.textContent = data.filename;
+        const remove = document.createElement("span");
+        remove.className = "remove";
+        remove.textContent = "\u00d7";
+        remove.addEventListener("click", () => {
+          pendingAttachments = pendingAttachments.filter(a => a.attachment_id !== data.attachment_id);
+          chip.remove();
+        });
+        chip.appendChild(label);
+        chip.appendChild(remove);
+      } catch (error) {
+        chip.textContent = "Failed: " + file.name;
+        chip.style.borderColor = "rgba(255,113,113,0.4)";
+      }
+    }
+
+    promptBox.addEventListener("paste", async (event) => {
+      const items = Array.from(event.clipboardData?.items || []);
+      const imageItem = items.find(i => i.type.startsWith("image/"));
+      if (imageItem) {
+        event.preventDefault();
+        const file = imageItem.getAsFile();
+        if (file) await uploadAttachment(file);
+      }
+    });
+
+    document.querySelector(".composer").addEventListener("dragover", (e) => e.preventDefault());
+    document.querySelector(".composer").addEventListener("drop", async (e) => {
+      e.preventDefault();
+      const files = Array.from(e.dataTransfer?.files || []);
+      for (const file of files) await uploadAttachment(file);
+    });
     const accountSummary = document.getElementById("account-summary");
     const authLoggedOut = document.getElementById("auth-logged-out");
     const authLoggedIn = document.getElementById("auth-logged-in");
@@ -1799,17 +1921,60 @@ DESKTOP_HTML = """<!doctype html>
       return article;
     }
 
+    function renderMarkdownLite(text) {
+      const container = document.createElement("div");
+      const codeBlockRegex = /```(\\w*)\\n([\\s\\S]*?)```/g;
+      let lastIndex = 0, match;
+      while ((match = codeBlockRegex.exec(text)) !== null) {
+        if (match.index > lastIndex) {
+          appendInlineText(container, text.slice(lastIndex, match.index));
+        }
+        const pre = document.createElement("pre");
+        pre.className = "forge-code-block";
+        const code = document.createElement("code");
+        if (match[1]) code.className = "lang-" + match[1];
+        code.textContent = match[2];
+        pre.appendChild(code);
+        container.appendChild(pre);
+        lastIndex = match.index + match[0].length;
+      }
+      if (lastIndex < text.length) {
+        appendInlineText(container, text.slice(lastIndex));
+      }
+      return container;
+    }
+
+    function appendInlineText(container, text) {
+      const lines = text.split("\n");
+      lines.forEach((line, i) => {
+        const parts = line.split(/(`[^`]+`)/g);
+        parts.forEach(part => {
+          if (part.startsWith("`") && part.endsWith("`") && part.length > 1) {
+            const code = document.createElement("code");
+            code.className = "forge-inline-code";
+            code.textContent = part.slice(1, -1);
+            container.appendChild(code);
+          } else if (part) {
+            container.appendChild(document.createTextNode(part));
+          }
+        });
+        if (i < lines.length - 1) container.appendChild(document.createElement("br"));
+      });
+    }
+
     function setBubbleText(article, text, streaming) {
       const body = article._body;
       clearNode(body);
-      body.appendChild(document.createTextNode(text || ""));
-      article.classList.toggle("streaming", !!streaming);
       if (streaming) {
+        body.appendChild(document.createTextNode(text || ""));
         const cursor = document.createElement("span");
         cursor.className = "cursor";
         cursor.textContent = "|";
         body.appendChild(cursor);
+      } else {
+        body.appendChild(renderMarkdownLite(text || ""));
       }
+      article.classList.toggle("streaming", !!streaming);
     }
 
     function setBubbleFooter(article, text) {
@@ -2285,12 +2450,18 @@ DESKTOP_HTML = """<!doctype html>
       let streamFinished = false;
       const liveEvents = [];
 
+      const attachmentIds = pendingAttachments.map(a => a.attachment_id).join(",");
+      const selectedMode = document.querySelector('input[name="forge-mode"]:checked')?.value || "build";
       const params = new URLSearchParams({
         prompt,
         confirmed: confirmMode.checked ? "true" : "false",
         dry_run: dryRunMode.checked ? "true" : "false",
         workspace_root: workspacePath.value.trim(),
+        attachment_ids: attachmentIds,
+        mode: selectedMode,
       });
+      pendingAttachments = [];
+      attachPreview.innerHTML = "";
 
       const stream = new EventSource("/api/stream?" + params.toString());
       activeStream = stream;
@@ -2788,6 +2959,9 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
             confirmed = str(query.get("confirmed", ["false"])[0]).strip().lower() in {"1", "true", "yes", "on"}
             dry_run = str(query.get("dry_run", ["false"])[0]).strip().lower() in {"1", "true", "yes", "on"}
             workspace_root = str(query.get("workspace_root", [""])[0]).strip() or None
+            attachment_ids_raw = str(query.get("attachment_ids", [""])[0]).strip()
+            attachment_ids = [a for a in attachment_ids_raw.split(",") if a] if attachment_ids_raw else None
+            mode = str(query.get("mode", ["build"])[0]).strip() or "build"
             try:
                 self._start_sse()
                 for event in stream_prompt(
@@ -2796,6 +2970,8 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
                     dry_run=dry_run,
                     workspace_root=workspace_root,
                     provider_secrets=self._runtime_provider_secrets(),
+                    attachment_ids=attachment_ids,
+                    mode=mode,
                 ):
                     if event.get("type") == "done" and isinstance(event.get("payload"), dict):
                         if user is not None:
@@ -3120,6 +3296,7 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
                     dry_run=bool(payload.get("dry_run")),
                     workspace_root=payload.get("workspace_root"),
                     provider_secrets=self._runtime_provider_secrets(),
+                    attachment_ids=payload.get("attachment_ids"),
                 )
             except Exception as exc:
                 self._send_json({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
@@ -3129,7 +3306,49 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
             self._send_json(result)
             return
 
-        self._send_json({"error": "Not found."}, status=HTTPStatus.NOT_FOUND)
+        if route == "/api/upload":
+            user = self._current_user()
+            content_length = int(self.headers.get("Content-Length", "0"))
+            content_type = self.headers.get("Content-Type", "")
+
+            if "multipart/form-data" not in content_type:
+                self._send_json({"error": "Expected multipart/form-data."}, status=HTTPStatus.BAD_REQUEST)
+                return
+
+            import cgi
+            from io import BytesIO
+
+            environ = {"REQUEST_METHOD": "POST", "CONTENT_TYPE": content_type}
+            try:
+                form = cgi.FieldStorage(
+                    fp=BytesIO(self.rfile.read(content_length)),
+                    environ=environ,
+                    headers=self.headers,
+                )
+            except Exception as exc:
+                self._send_json({"error": f"Failed to parse upload: {exc}"}, status=HTTPStatus.BAD_REQUEST)
+                return
+
+            if "file" not in form:
+                self._send_json({"error": "No file field in upload."}, status=HTTPStatus.BAD_REQUEST)
+                return
+
+            uploaded = form["file"]
+            filename = Path(uploaded.filename or "upload.bin").name
+            data = uploaded.file.read()
+
+            if len(data) > 10 * 1024 * 1024:
+                self._send_json({"error": "File too large (max 10MB)."}, status=HTTPStatus.BAD_REQUEST)
+                return
+
+            try:
+                result = save_uploaded_attachment(filename, data)
+            except Exception as exc:
+                self._send_json({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+                return
+
+            self._send_json(result)
+            return
 
     def log_message(self, format: str, *args) -> None:  # noqa: A003
         return

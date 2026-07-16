@@ -68,10 +68,14 @@ def main(
     return None
 
 
-def _get_session():
+def _get_session(workspace_root: str | Path | None = None):
     from forge.core.session import ForgeSession
 
-    return ForgeSession()
+    _bootstrap_keys(quiet=True)
+    ws = None
+    if workspace_root:
+        ws = Path(workspace_root).expanduser().resolve()
+    return ForgeSession(workspace_root=ws)
 
 
 def _instant_cli_response(prompt: str) -> str | None:
@@ -225,6 +229,37 @@ def _format_leaderboard(rows: list[dict]) -> Table:
     return table
 
 
+def _bootstrap_keys(quiet: bool = False) -> int:
+    """Check local key directory and env vars — reports what's already available."""
+    keydir = Path.home() / ".forge" / "keys"
+    keydir.mkdir(parents=True, exist_ok=True)
+    count = 0
+    for f in keydir.iterdir():
+        if f.is_file() and not f.name.startswith("."):
+            count += 1
+    if not quiet and count:
+        console.print(f"[dim]{count} local keys available[/dim]")
+    return count
+
+
+@cli.command()
+def init(
+    workspace: Optional[str] = typer.Option(
+        None, "--workspace", "-w", help="Path to initialize as FORGE workspace"
+    ),
+):
+    """Initialize a FORGE workspace."""
+    ws = Path(workspace).expanduser().resolve() if workspace else Path.cwd().resolve()
+    ws.mkdir(parents=True, exist_ok=True)
+
+    config_dir = ws / ".forge"
+    config_dir.mkdir(parents=True, exist_ok=True)
+
+    key_count = _bootstrap_keys()
+    console.print(f"[bold #FF6B1A]FORGE[/bold #FF6B1A] workspace initialized at [bold]{ws}[/bold]")
+    console.print(f"[dim]Run [bold]forge start -w {ws}[/bold] to begin working[/dim]")
+
+
 @cli.command()
 def start(
     task: Optional[str] = typer.Option(
@@ -234,16 +269,24 @@ def start(
         help="Task type: general|code|math|research|creative|reasoning|fast",
     ),
     no_memory: bool = typer.Option(False, "--no-memory", help="Disable persistent memory"),
+    workspace: Optional[str] = typer.Option(
+        None,
+        "--workspace",
+        "-w",
+        help="Workspace root directory for this session",
+    ),
 ):
     """Start an interactive FORGE session."""
     _print_banner()
 
     with Live(Spinner("line", text="[dim]Booting FORGE...[/dim]"), refresh_per_second=10, transient=True):
-        session = _get_session()
+        session = _get_session(workspace_root=workspace)
 
     task_type = task or "general"
     status_rows = session.leaderboard(task_type)
-    console.print(f"[dim]Ready: {len(status_rows)} models  |  /exit  |  /status  |  /quota  |  /memory[/dim]\n")
+    ws = session.workspace_root
+    console.print(f"[dim]Ready: {len(status_rows)} models  |  /exit  |  /status  |  /quota  |  /memory[/dim]")
+    console.print(f"[dim]Workspace: [bold]{ws}[/bold]  |  /workspace <path> to change[/dim]\n")
     console.print(Rule(style="dim"))
 
     while True:
@@ -301,6 +344,22 @@ def start(
                     border_style="#FF6B1A",
                 )
             )
+            continue
+        if command.startswith("/workspace"):
+            parts = user_input.strip().split(None, 1)
+            if len(parts) == 1:
+                console.print(Panel(
+                    f"[bold]Current workspace:[/bold] {session.workspace_root}\n"
+                    f"[dim]Use [bold]/workspace <path>[/bold] to change[/dim]",
+                    title="Workspace", border_style="#FF6B1A", padding=(0, 1)
+                ))
+                continue
+            new_ws = parts[1].strip()
+            new_path = Path(new_ws).expanduser().resolve()
+            if not new_path.exists():
+                new_path.mkdir(parents=True, exist_ok=True)
+            session.set_workspace(new_path)
+            console.print(f"[dim]Workspace set to: [bold]{session.workspace_root}[/bold][/dim]")
             continue
 
         instant = _instant_cli_response(user_input)

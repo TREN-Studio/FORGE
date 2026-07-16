@@ -75,8 +75,10 @@ class ForgeSession:
         db_path: Path | None = None,
         provider_secrets: dict[str, dict[str, str]] | None = None,
         allow_host_fallback: bool = True,
+        workspace_root: Path | None = None,
     ) -> None:
         self._router = ForgeRouter()
+        self._workspace_root = workspace_root.resolve() if workspace_root else Path.cwd().resolve()
         self._guardian = QuotaGuardian(self._router)
         self._discovery = SelfDiscoveryEngine(self._router)
         self._memory = MemoryGraph(db_path) if memory else None
@@ -172,6 +174,16 @@ class ForgeSession:
                 break
             if isinstance(item, dict):
                 yield item
+
+    @property
+    def workspace_root(self) -> Path:
+        return self._workspace_root
+
+    def set_workspace(self, path: Path) -> None:
+        resolved = path.expanduser().resolve()
+        if not resolved.exists():
+            resolved.mkdir(parents=True, exist_ok=True)
+        self._workspace_root = resolved
 
     def reset(self) -> None:
         """Clear conversation history while keeping the persistent graph."""

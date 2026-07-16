@@ -79,6 +79,14 @@ TEXT_EXTENSIONS = {
     ".yml",
 }
 
+BINARY_EXTENSIONS = {
+    ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".ico", ".svg",
+    ".pdf", ".zip", ".rar", ".7z", ".tar", ".gz",
+    ".exe", ".dll", ".so", ".pyc", ".pyd",
+    ".mp3", ".mp4", ".avi", ".mov", ".wav",
+    ".db", ".sqlite", ".sqlite3",
+}
+
 MAX_SCAN_FILE_BYTES = 300_000
 
 
@@ -106,6 +114,9 @@ class WorkspaceTools:
             lines.append(f"{relative.as_posix()}{suffix}")
         return lines
 
+    def _is_binary(self, path: Path) -> bool:
+        return path.suffix.lower() in BINARY_EXTENSIONS
+
     def key_files(self) -> list[str]:
         patterns = [
             "README.md",
@@ -123,6 +134,8 @@ class WorkspaceTools:
         for path in sorted(self.workspace_root.rglob("*")):
             if self._should_skip(path) or not path.is_file():
                 continue
+            if self._is_binary(path):
+                continue
             relative = path.relative_to(self.workspace_root).as_posix()
             if any(fnmatch.fnmatch(path.name, pattern) for pattern in patterns):
                 found.append(relative)
@@ -134,12 +147,16 @@ class WorkspaceTools:
         path = self._resolve_inside_workspace(relative_path)
         if not path.is_file():
             raise FileNotFoundError(relative_path)
+        if self._is_binary(path):
+            return ""
         return path.read_text(encoding="utf-8", errors="ignore")[:max_chars]
 
     def read_full_text(self, relative_path: str, max_chars: int = 120_000) -> str:
         path = self._resolve_inside_workspace(relative_path)
         if not path.is_file():
             raise FileNotFoundError(relative_path)
+        if self._is_binary(path):
+            return ""
         return path.read_text(encoding="utf-8", errors="ignore")[:max_chars]
 
     def read_excerpt(
@@ -152,6 +169,8 @@ class WorkspaceTools:
         path = self._resolve_inside_workspace(relative_path)
         if not path.is_file():
             raise FileNotFoundError(relative_path)
+        if self._is_binary(path):
+            return {"path": relative_path, "error": "Binary file - content not readable as text"}
 
         lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
         start = max(1, start_line)
@@ -229,6 +248,8 @@ class WorkspaceTools:
         existed = target.exists()
         if existed and not target.is_file():
             raise IsADirectoryError(relative_path)
+        if existed and self._is_binary(target):
+            raise ValueError(f"Cannot edit binary file: {relative_path}")
 
         before = target.read_text(encoding="utf-8", errors="ignore") if existed else ""
         after = self._render_text_edit(
