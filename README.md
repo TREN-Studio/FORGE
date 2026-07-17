@@ -93,8 +93,8 @@ This makes new skills pluggable without rewriting the core brain.
 ## Install
 
 ```bash
-pip install forge-agent==1.5.1
-forge --version  # FORGE 1.5.1
+pip install forge-agent==1.5.2
+forge --version  # FORGE 1.5.2
 ```
 
 ### What's New in v1.5.1
@@ -120,7 +120,7 @@ Inside a session:
 /workspace ~/Documents            # Switch to a different folder
 ```
 
-Current CLI package release: `1.5.1` on PyPI.
+Current CLI package release: `1.5.2` on PyPI.
 
 ## Python API
 
@@ -153,11 +153,11 @@ Current foundation includes:
 
 ## Public Releases
 
-- Current public release line: `1.5.1`.
+- Current public release line: `1.5.2`.
 - The primary public user path is the Windows Desktop download from the official site and GitHub Release.
-- PyPI remains the developer CLI path: https://pypi.org/project/forge-agent/1.5.1/
-- GitHub's latest stable release must also resolve to `v1.5.1`.
-- The canonical public release record is the GitHub Release for the matching tag: https://github.com/TREN-Studio/FORGE/releases/tag/v1.5.1
+- PyPI remains the developer CLI path: https://pypi.org/project/forge-agent/1.5.2/
+- GitHub's latest stable release must also resolve to `v1.5.2`.
+- The canonical public release record is the GitHub Release for the matching tag: https://github.com/TREN-Studio/FORGE/releases/tag/v1.5.2
 - The PyPI publishing workflow in `.github/workflows/publish-pypi.yml` builds the wheel and source distribution, publishes to PyPI through Trusted Publisher, and attaches `dist/*` to the GitHub Release.
 - The Windows release workflow in `.github/workflows/release_forge_windows.yml` builds desktop installer and portable assets for the current release line.
 - The supported desktop build entrypoint is `python tools/build_windows_desktop.py`; that script is the source of truth for orchestration and invokes the portable `FORGE-Desktop.spec`.
@@ -204,9 +204,9 @@ GitHub Release is the canonical release record. PyPI is the recommended install 
 
 The current public download set is:
 
-- `https://pypi.org/project/forge-agent/1.5.1/`
-- `https://github.com/TREN-Studio/FORGE/releases/download/v1.5.1/forge_agent-1.5.1-py3-none-any.whl`
-- `https://github.com/TREN-Studio/FORGE/releases/download/v1.5.1/forge_agent-1.5.1.tar.gz`
+- `https://pypi.org/project/forge-agent/1.5.2/`
+- https://pypi.org/project/forge-agent/1.5.2/ (PyPI)
+- https://github.com/TREN-Studio/FORGE/releases/tag/v1.5.2 (GitHub Release)
 
 No official-site binary mirror is published for the current release.
 
