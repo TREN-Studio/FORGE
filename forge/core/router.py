@@ -260,12 +260,13 @@ class ForgeRouter:
         require_vision: bool = False,
         timeout: float      = 45.0,
         max_attempts: int | None = None,
+        model_hint: str | None = None,
     ) -> ForgeResponse:
         """
         Pick the best available model and call it.
         Falls back through the ranked list until one succeeds.
         """
-        ranked = self._rank(task_type, require_vision)
+        ranked = self._rank(task_type, require_vision, model_hint)
         if not ranked:
             raise RuntimeError("No models available. Run `forge add-key` to add a provider.")
 
@@ -376,8 +377,9 @@ class ForgeRouter:
         require_vision: bool = False,
         timeout: float = 45.0,
         max_attempts: int | None = None,
+        model_hint: str | None = None,
     ):
-        ranked = self._rank(task_type, require_vision)
+        ranked = self._rank(task_type, require_vision, model_hint)
         if not ranked:
             raise RuntimeError("No models available. Run `forge add-key` to add a provider.")
 
@@ -502,6 +504,7 @@ class ForgeRouter:
         self,
         task_type: TaskType,
         require_vision: bool = False,
+        model_hint: str | None = None,
     ) -> list[tuple[str, ModelScore]]:
         """
         Produce a ranked list of (key, ModelScore) for a given task.
@@ -539,7 +542,14 @@ class ForgeRouter:
             candidates.append((key, score, adjusted))
 
         candidates.sort(key=lambda x: x[2], reverse=True)
-        return [(k, s) for k, s, _ in candidates]
+        ranked = [(k, s) for k, s, _ in candidates]
+        if model_hint:
+            hint_key = model_hint.replace("/", "::")
+            for idx, (k, s) in enumerate(ranked):
+                if k == hint_key or s.model_id == model_hint:
+                    ranked.insert(0, ranked.pop(idx))
+                    break
+        return ranked
 
     def _adjusted_score(
         self,

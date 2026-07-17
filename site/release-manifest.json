@@ -1,7 +1,7 @@
 {
   "assets": [
     {
-      "canonical_url": "https://github.com/TREN-Studio/FORGE/releases/download/v1.5.1/FORGE-Desktop.exe",
+      "canonical_url": "https://github.com/TREN-Studio/FORGE/releases/download/v1.5.2/FORGE-Desktop.exe",
       "kind": "executable",
       "label": "Windows Desktop Executable",
       "mirror_url": null,
@@ -11,41 +11,41 @@
       "size": null
     },
     {
-      "canonical_url": "https://github.com/TREN-Studio/FORGE/releases/download/v1.5.1/FORGE-Setup-1.5.1.exe",
+      "canonical_url": "https://github.com/TREN-Studio/FORGE/releases/download/v1.5.2/FORGE-Setup-1.5.2.exe",
       "kind": "installer",
       "label": "Windows Installer",
       "mirror_url": null,
-      "name": "FORGE-Setup-1.5.1.exe",
+      "name": "FORGE-Setup-1.5.2.exe",
       "platform": "windows",
       "sha256": null,
       "size": null
     },
     {
-      "canonical_url": "https://github.com/TREN-Studio/FORGE/releases/download/v1.5.1/FORGE-Windows-Portable-1.5.1.zip",
+      "canonical_url": "https://github.com/TREN-Studio/FORGE/releases/download/v1.5.2/FORGE-Windows-Portable-1.5.2.zip",
       "kind": "portable",
       "label": "Windows Portable ZIP",
       "mirror_url": null,
-      "name": "FORGE-Windows-Portable-1.5.1.zip",
+      "name": "FORGE-Windows-Portable-1.5.2.zip",
       "platform": "windows",
       "sha256": null,
       "size": null
     },
     {
-      "canonical_url": "https://github.com/TREN-Studio/FORGE/releases/download/v1.5.1/FORGE-Source-v1.5.1.zip",
+      "canonical_url": "https://github.com/TREN-Studio/FORGE/releases/download/v1.5.2/FORGE-Source-v1.5.2.zip",
       "kind": "source",
       "label": "Source Archive",
       "mirror_url": null,
-      "name": "FORGE-Source-v1.5.1.zip",
+      "name": "FORGE-Source-v1.5.2.zip",
       "platform": "all",
       "sha256": null,
       "size": null
     },
     {
-      "canonical_url": "https://github.com/TREN-Studio/FORGE/releases/download/v1.5.1/SHA256SUMS-1.5.1.txt",
+      "canonical_url": "https://github.com/TREN-Studio/FORGE/releases/download/v1.5.2/SHA256SUMS-1.5.2.txt",
       "kind": "checksums",
       "label": "SHA256 Checksums",
       "mirror_url": null,
-      "name": "SHA256SUMS-1.5.1.txt",
+      "name": "SHA256SUMS-1.5.2.txt",
       "platform": "all",
       "sha256": null,
       "size": null
@@ -60,8 +60,8 @@
       "status": "disabled"
     }
   },
-  "release_tag": "v1.5.1",
-  "release_url": "https://github.com/TREN-Studio/FORGE/releases/tag/v1.5.1",
+  "release_tag": "v1.5.2",
+  "release_url": "https://github.com/TREN-Studio/FORGE/releases/tag/v1.5.2",
   "schema_version": 1,
-  "version": "1.5.1"
+  "version": "1.5.2"
 }

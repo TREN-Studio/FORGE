@@ -30,27 +30,30 @@ class TestModelExpansion(unittest.TestCase):
         classes = [cls.__name__ for cls in iter_provider_classes()]
         self.assertIn("HuggingFaceProvider", classes)
 
-    def test_groq_has_deepseek_distills(self) -> None:
+    def test_groq_has_llama_and_qwen_models(self) -> None:
         provider = GroqProvider()
         models = {m.id: m for m in provider.models}
         
-        self.assertIn("deepseek-r1-distill-llama-70b", models)
-        self.assertIn("deepseek-r1-distill-qwen-32b", models)
+        self.assertIn("llama-3.3-70b-versatile", models)
+        self.assertIn("qwen/qwen3-32b", models)
+        self.assertIn("meta-llama/llama-4-scout-17b-16e-instruct", models)
         
-        llama = models["deepseek-r1-distill-llama-70b"]
+        llama = models["llama-3.3-70b-versatile"]
         self.assertEqual(llama.tier, ModelTier.ULTRA)
-        self.assertIn(TaskType.REASONING, llama.strong_at)
+        self.assertIn(TaskType.CODE, llama.strong_at)
+        self.assertTrue(llama.free)
 
     def test_openrouter_has_expanded_free_models(self) -> None:
         provider = OpenRouterProvider()
         models = {m.id: m for m in provider.models}
         
-        self.assertIn("google/gemini-2.5-flash:free", models)
-        self.assertIn("microsoft/phi-3-medium-128k-instruct:free", models)
-        self.assertIn("openchat/openchat-7b:free", models)
+        self.assertIn("google/gemini-2.5-flash", models)
+        self.assertIn("microsoft/phi-3-medium-128k-instruct", models)
+        self.assertIn("openchat/openchat-7b", models)
+        self.assertIn("deepseek/deepseek-r1", models)
         
-        gemini = models["google/gemini-2.5-flash:free"]
-        self.assertIn("free", gemini.tags)
+        gemini = models["google/gemini-2.5-flash"]
+        self.assertTrue(gemini.free)
         self.assertEqual(gemini.context_window, 1_048_576)
 
     def test_huggingface_provider_models(self) -> None:

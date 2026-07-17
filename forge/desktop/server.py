@@ -1192,6 +1192,16 @@ DESKTOP_HTML = """<!doctype html>
       </section>
 
       <section class="card">
+        <h3>Model</h3>
+        <select id="model-select" class="text-field">
+          <option value="">Auto (best ranked)</option>
+        </select>
+        <p class="footnote">
+          Pick a specific model for every request. Auto lets FORGE select the best option.
+        </p>
+      </section>
+
+      <section class="card">
         <h3>Workspace</h3>
         <div class="status-line">
           <span class="status-key">Active Root</span>
@@ -2305,6 +2315,23 @@ DESKTOP_HTML = """<!doctype html>
       }
     }
 
+    async function loadModels() {
+      try {
+        const response = await fetch("/api/models");
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Models load failed.");
+        const select = document.getElementById("model-select");
+        data.models.forEach(m => {
+          const opt = document.createElement("option");
+          opt.value = m.id;
+          opt.textContent = m.display_name + " (" + m.provider + ")";
+          select.appendChild(opt);
+        });
+      } catch (error) {
+        appendNote("Model list unavailable: " + error.message);
+      }
+    }
+
     async function loadWorkspace() {
       try {
         const response = await fetch("/api/workspace");
@@ -2459,6 +2486,7 @@ DESKTOP_HTML = """<!doctype html>
         workspace_root: workspacePath.value.trim(),
         attachment_ids: attachmentIds,
         mode: selectedMode,
+        model_hint: document.getElementById("model-select").value,
       });
       pendingAttachments = [];
       attachPreview.innerHTML = "";
@@ -2889,10 +2917,10 @@ DESKTOP_HTML = """<!doctype html>
     loadAuth()
       .then(async () => {
         if (currentUser) {
-          await Promise.all([loadBootStatus(), loadWorkspace(), loadProviderKeys(), loadWorkerTelemetry(), loadAdmin()]);
+          await Promise.all([loadBootStatus(), loadWorkspace(), loadProviderKeys(), loadWorkerTelemetry(), loadAdmin(), loadModels()]);
         } else {
           setAuthStatus("Guest mode active. Sign in only for sync and private features.");
-          await Promise.all([loadBootStatus(), loadWorkspace(), loadWorkerTelemetry()]);
+          await Promise.all([loadBootStatus(), loadWorkspace(), loadWorkerTelemetry(), loadModels()]);
         }
       })
       .catch((error) => {
@@ -2962,6 +2990,7 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
             attachment_ids_raw = str(query.get("attachment_ids", [""])[0]).strip()
             attachment_ids = [a for a in attachment_ids_raw.split(",") if a] if attachment_ids_raw else None
             mode = str(query.get("mode", ["build"])[0]).strip() or "build"
+            model_hint = str(query.get("model_hint", [""])[0]).strip() or None
             try:
                 self._start_sse()
                 for event in stream_prompt(
@@ -2972,6 +3001,7 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
                     provider_secrets=self._runtime_provider_secrets(),
                     attachment_ids=attachment_ids,
                     mode=mode,
+                    model_hint=model_hint,
                 ):
                     if event.get("type") == "done" and isinstance(event.get("payload"), dict):
                         if user is not None:
@@ -3004,6 +3034,28 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
                 "provider_setup": status.provider_setup,
             }
             self._send_json(payload)
+            return
+        if route == "/api/models":
+            try:
+                from forge.providers.registry import iter_provider_classes
+                models: list[dict] = []
+                for cls in iter_provider_classes():
+                    try:
+                        for spec in cls().list_models():
+                            if spec.free:
+                                models.append({
+                                    "id": spec.id,
+                                    "provider": spec.provider,
+                                    "display_name": spec.display_name,
+                                    "tier": str(spec.tier.value),
+                                    "context_window": spec.context_window,
+                                    "supports_vision": spec.supports_vision,
+                                })
+                    except Exception:
+                        pass
+                self._send_json({"models": models})
+            except Exception as exc:
+                self._send_json({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
             return
         if route == "/api/workspace":
             try:

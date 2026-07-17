@@ -631,6 +631,7 @@ def stream_prompt(
     provider_secrets: dict[str, dict[str, str]] | None = None,
     attachment_ids: list[str] | None = None,
     mode: str = "build",
+    model_hint: str | None = None,
 ):
     prompt = prompt.strip()
     if not prompt:
@@ -660,7 +661,7 @@ def stream_prompt(
         started = time.monotonic()
         try:
             streamed_text = ""
-            for event in operator.session.stream_response(prompt, task_type=TaskType.GENERAL, remember=False):
+            for event in operator.session.stream_response(prompt, task_type=TaskType.GENERAL, remember=False, model_hint=model_hint):
                 kind = str(event.get("type") or "").strip().lower()
                 if kind == "start":
                     yield {"type": "provider_selected", "message": "Response path ready."}

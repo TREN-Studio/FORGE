@@ -145,6 +145,7 @@ class ForgeSession:
         max_tokens: int = 2048,
         temperature: float = 0.7,
         remember: bool = True,
+        model_hint: str | None = None,
     ):
         sentinel = object()
         queue: Queue[object] = Queue()
@@ -158,6 +159,7 @@ class ForgeSession:
                         max_tokens,
                         temperature,
                         remember,
+                        model_hint=model_hint,
                     ):
                         queue.put(event)
                 except Exception as exc:
@@ -256,6 +258,7 @@ class ForgeSession:
         max_tokens: int,
         temperature: float,
         remember: bool,
+        model_hint: str | None = None,
     ):
         normalized_task_type = self._normalize_task_type(task_type)
         instant = instant_response(prompt)
@@ -275,6 +278,7 @@ class ForgeSession:
             max_tokens=max_tokens,
             temperature=temperature,
             timeout=timeout_for_prompt(prompt),
+            model_hint=model_hint,
         ):
             kind = str(event.get("type") or "").strip().lower()
             if kind in {"start", "delta"}:
