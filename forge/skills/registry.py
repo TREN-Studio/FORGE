@@ -1,16 +1,15 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import json
 import os
-from pathlib import Path
 import re
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from forge.config.settings import OperatorSettings
 from forge.skills.contracts import SkillDefinition, SkillSource
 from forge.skills.loader import SkillLoader
-
 
 GATED_ENV_VAR = "FORGE_GATED"
 GATED_TRUE_VALUES = {"1", "true", "yes", "on"}

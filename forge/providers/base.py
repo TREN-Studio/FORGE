@@ -11,13 +11,13 @@ import os
 import re
 import time
 from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any, AsyncIterator, ClassVar
+from typing import Any, ClassVar
 
 import httpx
 
 from forge.core.models import ForgeResponse, Message, ModelSpec
-
 
 SECRET_TOKEN_PATTERNS: dict[str, tuple[str, ...]] = {
     "api_key": (

@@ -5,7 +5,6 @@ import re
 from forge.tools.workspace import WorkspaceTools
 from forge.validation.json_validator import ensure_valid_json_text
 
-
 FILE_HINTS = ("/", "\\", ".py", ".ts", ".tsx", ".js", ".jsx", ".json", ".md", ".txt", ".toml", ".yaml", ".yml", ".sql")
 CONTENT_BOUNDARY_PREFIXES = (
     "then ",

@@ -111,14 +111,13 @@ class ForgeWorkerHost:
             lease_ttl_seconds=self.settings.lease_ttl_seconds,
         )
         headers = {"Authorization": f"Bearer {self.settings.gateway_token}"} if self.settings.gateway_token else {}
-        async with ClientSession(timeout=ClientTimeout(total=20)) as session:
-            async with session.post(
-                self.settings.gateway_url.rstrip("/") + "/api/workers/heartbeat",
-                headers=headers,
-                json=heartbeat.model_dump(mode="json"),
-            ) as response:
-                if response.status >= 400:
-                    raise RuntimeError(await response.text())
+        async with ClientSession(timeout=ClientTimeout(total=20)) as session, session.post(
+            self.settings.gateway_url.rstrip("/") + "/api/workers/heartbeat",
+            headers=headers,
+            json=heartbeat.model_dump(mode="json"),
+        ) as response:
+            if response.status >= 400:
+                raise RuntimeError(await response.text())
 
     def _create_app(self) -> web.Application:
         app = web.Application()

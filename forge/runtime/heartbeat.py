@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
 import inspect
 import time
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
+from typing import Any
 
 from forge.runtime.contracts import HeartbeatReport
-
 
 HeartbeatCallable = Callable[[], Awaitable[dict[str, Any]] | dict[str, Any]]
 

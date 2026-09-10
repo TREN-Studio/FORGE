@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+
 from cryptography.fernet import Fernet
-from typing import Any
 
 from forge.tools.base import ForgeTool
 

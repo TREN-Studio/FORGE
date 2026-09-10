@@ -7,6 +7,7 @@ Implements Slack message broadcasting and channel queries.
 from __future__ import annotations
 
 from typing import Any
+
 import httpx
 
 from forge.tools.base import ForgeTool, ToolResult
@@ -27,7 +28,7 @@ class SlackTool(ForgeTool):
         token = params.get("token")
         if not token and self._token_resolver:
             token = self._token_resolver("slack_bot_token")
-        
+
         if not token:
             # Fallback mock for demo/testing
             if params.get("mock") or params.get("demo"):

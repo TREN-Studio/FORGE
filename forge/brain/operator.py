@@ -4,11 +4,23 @@ import re
 from typing import Any
 
 from forge.brain.composer import ResponseComposer
-from forge.brain.contracts import CompletionState, ExecutionPlan, IntentKind, OperatorResult, StepExecutionResult, TaskIntent
+from forge.brain.contracts import (
+    CompletionState,
+    ExecutionPlan,
+    IntentKind,
+    OperatorResult,
+    StepExecutionResult,
+    TaskIntent,
+)
+from forge.brain.identity import (
+    FORGE_FILE_CAPABILITY_RESPONSE,
+    FORGE_IDENTITY_RESPONSE,
+    asks_file_capability,
+    asks_identity,
+)
 from forge.brain.identity_guard import get_instant_response, sanitize_response
-from forge.brain.identity import FORGE_FILE_CAPABILITY_RESPONSE, FORGE_IDENTITY_RESPONSE, asks_file_capability, asks_identity
-from forge.brain.mission_store import MissionAuditStore
 from forge.brain.intent import IntentResolver
+from forge.brain.mission_store import MissionAuditStore
 from forge.brain.orchestrator import MissionOrchestrator
 from forge.brain.planner import PlanningEngine
 from forge.brain.prompt import CORE_BRAIN_PROMPT
@@ -697,10 +709,7 @@ class ForgeOperator:
                         lines.append(ForgeOperator._browser_analysis_summary(value))
                         if value.get("research_summary_markdown"):
                             lines.append(str(value["research_summary_markdown"]))
-                    elif "mission_id" in value and "audit_log_path" in value:
-                        lines.pop()
-                        continue
-                    elif "lanes" in value:
+                    elif ("mission_id" in value and "audit_log_path" in value) or "lanes" in value:
                         lines.pop()
                         continue
                     elif "diff" in value and value.get("summary"):

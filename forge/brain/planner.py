@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import re
 import shlex
+from dataclasses import dataclass
 from typing import Any
 
 from forge.brain.contracts import ExecutionPlan, PlanStep, TaskIntent
 from forge.safety.guard import SafetyDecision
 from forge.skills.contracts import RoutingDecision
-
 
 FILE_HINTS = (".py", ".ts", ".tsx", ".js", ".jsx", ".json", ".md", ".txt", ".toml", ".yaml", ".yml", ".sql", ".html", ".htm")
 URL_PATTERN = re.compile(r"(https?://[^\s`\"']+|file://[^\s`\"']+|data:text/html,[^\s`\"']+)", flags=re.IGNORECASE)

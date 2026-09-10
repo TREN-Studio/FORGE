@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 
-
 FORGE_IDENTITY_RESPONSE = "Developed by TREN Studio. Founded by Larbi Aboudi."
 FORGE_FILE_CAPABILITY_RESPONSE = (
     "Yes. I can create, read, and edit files inside your selected FORGE workspace "

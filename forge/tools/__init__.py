@@ -1,17 +1,16 @@
+# New tool integrations registry
+from forge.tools.base import ForgeTool, ToolResult
 from forge.tools.browser import ChromiumSemanticBrowser
 from forge.tools.github import GitHubPublisher
+from forge.tools.implementations.github_tool import GitHubTool
+from forge.tools.implementations.google_workspace import GmailTool, GoogleDocsTool, GoogleSheetsTool
+from forge.tools.implementations.notion_tool import NotionTool
+from forge.tools.implementations.slack_tool import SlackTool
 from forge.tools.publish import ExternalPublisher
+from forge.tools.registry import ToolRegistry
 from forge.tools.shell import GuardedShell
 from forge.tools.wordpress import WordPressPublisher
 from forge.tools.workspace import WorkspaceTools
-
-# New tool integrations registry
-from forge.tools.base import ForgeTool, ToolResult
-from forge.tools.registry import ToolRegistry
-from forge.tools.implementations.google_workspace import GoogleDocsTool, GoogleSheetsTool, GmailTool
-from forge.tools.implementations.slack_tool import SlackTool
-from forge.tools.implementations.notion_tool import NotionTool
-from forge.tools.implementations.github_tool import GitHubTool
 
 
 def create_default_registry() -> ToolRegistry:
@@ -26,14 +25,14 @@ def create_default_registry() -> ToolRegistry:
 
 
 __all__ = [
-    "WorkspaceTools",
-    "GuardedShell",
     "ChromiumSemanticBrowser",
     "ExternalPublisher",
-    "GitHubPublisher",
-    "WordPressPublisher",
     "ForgeTool",
-    "ToolResult",
+    "GitHubPublisher",
+    "GuardedShell",
     "ToolRegistry",
+    "ToolResult",
+    "WordPressPublisher",
+    "WorkspaceTools",
     "create_default_registry",
 ]

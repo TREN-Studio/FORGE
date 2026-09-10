@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from typing import Any
 
-
 INJECTION_PATTERNS: dict[str, re.Pattern[str]] = {
     "override_instructions": re.compile(
         r"\b(ignore|disregard|forget|override)\b.{0,48}\b(previous|earlier|system|developer|instructions?)\b",

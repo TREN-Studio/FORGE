@@ -7,6 +7,7 @@ Implements page creations and database queries inside Notion.
 from __future__ import annotations
 
 from typing import Any
+
 import httpx
 
 from forge.tools.base import ForgeTool, ToolResult

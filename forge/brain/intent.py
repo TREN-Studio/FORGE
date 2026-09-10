@@ -4,7 +4,6 @@ import re
 
 from forge.brain.contracts import ExecutionClass, IntentKind, RiskLevel, TaskIntent
 
-
 INTENT_RULES: dict[IntentKind, tuple[str, ...]] = {
     IntentKind.RESEARCH: (
         "research",

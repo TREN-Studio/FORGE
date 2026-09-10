@@ -9,9 +9,7 @@ skills and descriptions to target behaviors.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
-from typing import Any
 
 # ─────────────────────────────────────────────
 #  Specialized Agent Roles (20+ Definitions)
@@ -135,7 +133,7 @@ class AgentFactory:
             role = "git_manager"
         elif skill == "wordpress-publisher":
             role = "wordpress_expert"
-        
+
         # 2. General skill matching
         elif skill == "file-editor":
             if any(kw in desc for kw in ("python", "test_")):
@@ -172,7 +170,7 @@ class AgentFactory:
             role = "generalist"
 
         spec_data = SPECIALIZED_ROLES.get(role, SPECIALIZED_ROLES["generalist"])
-        
+
         # Build dynamic custom instructions for this specific step
         instructions = [
             f"You are the {spec_data['role_name']}.",

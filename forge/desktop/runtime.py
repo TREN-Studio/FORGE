@@ -1,25 +1,31 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import http.client
 import json
+import mimetypes
 import os
-from pathlib import Path
-from queue import Empty, Queue
 import re
 import threading
 import time
-from typing import Any
-import mimetypes
 import uuid
+from dataclasses import dataclass, field
+from pathlib import Path
+from queue import Empty, Queue
+from typing import Any
 
 from forge import __version__
-from forge.brain.contracts import CompletionState, ExecutionPlan, IntentKind, OperatorResult, TaskIntent
-from forge.core.models import TaskType
+from forge.brain.contracts import (
+    CompletionState,
+    ExecutionPlan,
+    IntentKind,
+    OperatorResult,
+    TaskIntent,
+)
 from forge.brain.identity import enforce_forge_response_guard
 from forge.brain.operator import ForgeOperator
 from forge.config.settings import OperatorSettings
 from forge.core.identity import instant_response
+from forge.core.models import TaskType
 from forge.core.session import ForgeSession
 from forge.skills.runtime import SkillExecutionContext
 from forge.tools.workspace import WorkspaceTools
@@ -568,10 +574,8 @@ def operate_prompt(
     normalized_workspace_root = _resolve_workspace_for_prompt(prompt, base_workspace_root)
     if workspace_root is not None or normalized_workspace_root != base_workspace_root:
         set_workspace_root(normalized_workspace_root)
-    auto_confirmed = False
     if not dry_run and _should_allow_real_changes_for_prompt(prompt):
         confirmed = True
-        auto_confirmed = True
 
     instant = instant_response(prompt)
     if instant is not None:
@@ -638,6 +642,7 @@ def stream_prompt(
         raise ValueError("Prompt is empty.")
 
     attachment_context = build_attachment_context(attachment_ids or [])
+    auto_confirmed = False
     if attachment_context:
         prompt = f"{prompt}\n\n{attachment_context}"
 
@@ -702,10 +707,8 @@ def stream_prompt(
     normalized_workspace_root = _resolve_workspace_for_prompt(prompt, base_workspace_root)
     if workspace_root is not None or normalized_workspace_root != base_workspace_root:
         set_workspace_root(normalized_workspace_root)
-    auto_confirmed = False
     if not dry_run and _should_allow_real_changes_for_prompt(prompt):
         confirmed = True
-        auto_confirmed = True
 
     instant = instant_response(prompt)
     if instant is not None:
@@ -853,8 +856,6 @@ def stream_prompt(
             ):
                 kind = str(event.get("type") or "").strip().lower()
                 if kind == "start":
-                    provider = str(event.get("provider") or "").strip()
-                    display_name = str(event.get("display_name") or event.get("model") or provider).strip()
                     yield {
                         "type": "provider_selected",
                         "message": "Response path ready.",

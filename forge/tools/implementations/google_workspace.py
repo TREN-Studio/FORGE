@@ -7,7 +7,6 @@ Implements Google Docs, Google Sheets, and Gmail integrations.
 from __future__ import annotations
 
 import pickle
-import time
 from pathlib import Path
 from typing import Any
 
@@ -15,10 +14,9 @@ from forge.tools.base import ForgeTool, ToolResult
 
 # Optional Google client imports with fallback
 try:
-    from googleapiclient.discovery import build
-    from google.oauth2.credentials import Credentials
-    from google_auth_oauthlib.flow import InstalledAppFlow
     from google.auth.transport.requests import Request
+    from google_auth_oauthlib.flow import InstalledAppFlow
+    from googleapiclient.discovery import build
     GOOGLE_LIBS_AVAILABLE = True
 except ImportError:
     GOOGLE_LIBS_AVAILABLE = False

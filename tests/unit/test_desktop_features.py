@@ -123,7 +123,7 @@ class TestModelSelector(unittest.TestCase):
     def test_model_hint_accepted_by_router(self):
         from forge.core.router import ForgeRouter
         router = ForgeRouter()
-        ranked = router._rank(TaskType.GENERAL, model_hint="llama-3.3-70b-versatile")
+        ranked = router._rank(TaskType.GENERAL, model_hint="qwen/qwen3.6-27b")
         self.assertIsInstance(ranked, list)
 
 

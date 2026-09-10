@@ -1,12 +1,11 @@
 from __future__ import annotations
 
+import json
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
-import json
 from pathlib import Path
-import re
 from typing import Any
-
 
 MAX_MARKDOWN_CHARS = 6_000
 

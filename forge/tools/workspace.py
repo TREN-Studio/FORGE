@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from collections import Counter
 import difflib
 import fnmatch
-from pathlib import Path
 import re
+from collections import Counter
+from pathlib import Path
 
 from forge.config.settings import OperatorSettings
-
 
 IGNORED_DIRS = {
     ".git",

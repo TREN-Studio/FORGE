@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
 import re
 import shutil
 import socket
 import subprocess
 import tempfile
 import time
+from pathlib import Path
 from typing import Any
 from urllib.error import URLError
 from urllib.request import urlopen
@@ -15,7 +15,6 @@ from urllib.request import urlopen
 import aiohttp
 
 from forge.config.settings import OperatorSettings
-
 
 BROWSER_CANDIDATES = (
     Path(r"C:\Program Files\Google\Chrome\Application\chrome.exe"),

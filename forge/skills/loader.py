@@ -6,7 +6,6 @@ from pathlib import Path
 
 from forge.skills.contracts import SkillDefinition, SkillSource
 
-
 REQUIRED_SECTIONS = {
     "purpose",
     "when to use",

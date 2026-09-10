@@ -7,7 +7,6 @@ from forge.brain.contracts import RiskLevel, TaskIntent
 from forge.config.settings import OperatorSettings
 from forge.skills.contracts import RoutingDecision, SkillDefinition
 
-
 HIGH_RISK_TERMS = {
     "delete",
     "drop",

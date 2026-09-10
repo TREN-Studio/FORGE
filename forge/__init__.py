@@ -17,10 +17,10 @@ __version__ = "1.5.1"
 __author__  = "TREN Studio"
 __license__ = "MIT"
 
-from forge.core.router   import ForgeRouter
-from forge.core.session  import ForgeSession
 from forge.brain.operator import ForgeOperator
-from forge.memory.graph  import MemoryGraph
+from forge.core.router import ForgeRouter
+from forge.core.session import ForgeSession
+from forge.memory.graph import MemoryGraph
 from forge.runtime import ForgeAgentRuntime
 
 # One-line convenience API
@@ -50,12 +50,12 @@ def operate(prompt: str, **kwargs) -> str:
     return operator.handle_as_text(prompt, **kwargs)
 
 __all__ = [
-    "__version__",
+    "ForgeAgentRuntime",
+    "ForgeOperator",
     "ForgeRouter",
     "ForgeSession",
-    "ForgeOperator",
-    "ForgeAgentRuntime",
     "MemoryGraph",
+    "__version__",
     "ask",
     "code",
     "operate",

@@ -9,22 +9,19 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 from pathlib import Path
 from queue import Queue
-import threading
-from typing import Any
 
 from forge.core.conversation_dna import ConversationDNA
+from forge.core.discovery import SelfDiscoveryEngine
 from forge.core.identity import (
     FORGE_FILE_CAPABILITY_RESPONSE,
     FORGE_IDENTITY_RESPONSE,
     FORGE_IDENTITY_SYSTEM_INSTRUCTION,
-    asks_file_capability,
-    asks_identity,
     enforce_forge_response_guard,
     instant_response,
 )
-from forge.core.discovery import SelfDiscoveryEngine
 from forge.core.models import ForgeResponse, Message, TaskType
 from forge.core.quota import QuotaGuardian
 from forge.core.router import ForgeRouter, timeout_for_prompt

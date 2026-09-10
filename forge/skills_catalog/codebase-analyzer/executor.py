@@ -4,7 +4,6 @@ import re
 
 from forge.tools.workspace import WorkspaceTools
 
-
 STOP_WORDS = {
     "the",
     "and",

@@ -4,14 +4,13 @@ import json
 import re
 from typing import Any
 
-from forge.brain.contracts import AgentReview, CompletionState, ExecutionPlan, StepExecutionResult
 from forge.brain.agent_prompt import (
-    RESEARCH_AGENT_LLM_PROMPT,
     CRITIC_AGENT_LLM_PROMPT,
     DYNAMIC_AGENT_SYSTEM_TEMPLATE,
+    RESEARCH_AGENT_LLM_PROMPT,
 )
+from forge.brain.contracts import AgentReview, CompletionState, ExecutionPlan, StepExecutionResult
 from forge.core.session import ForgeSession
-
 
 RESEARCH_TERMS = {
     "research",
@@ -82,7 +81,7 @@ class ResearchAgent:
             page_state = output.get("page_state") or {}
             headings = [self._entry_text(item) for item in page_state.get("headings", []) if isinstance(item, dict)]
             links = [self._entry_text(item) for item in page_state.get("links", []) if isinstance(item, dict)]
-            
+
             prompt = RESEARCH_AGENT_LLM_PROMPT.format(
                 request=request,
                 current_url=output.get("current_url", "unknown"),
@@ -90,14 +89,14 @@ class ResearchAgent:
                 text_content=str(output.get("snapshot_text", ""))[:2000],
                 links=", ".join(links[:10]),
             )
-            
+
             # Send to model
             sys_instruct = DYNAMIC_AGENT_SYSTEM_TEMPLATE.format(
                 role_name="Research Specialist",
                 role_description="Extracts and summarizes key facts from crawled pages.",
                 role_instructions="- Be factual.\n- Provide sources.",
             )
-            
+
             # Temporarily override system prompt
             old_sys = self._session._system
             self._session._system = sys_instruct
@@ -118,7 +117,7 @@ class ResearchAgent:
             enriched["research_summary_markdown"] = llm_reply
             enriched["confidence"] = confidence
             enriched["verification"] = {"verified": True, "source_url": output.get("current_url")}
-            
+
             review = AgentReview(
                 agent="research",
                 status=CompletionState.FINISHED if confidence > 0.6 else CompletionState.PARTIALLY_FINISHED,
@@ -256,13 +255,13 @@ class CriticAgent:
                 output=str(output)[:2000],
                 validation_status=validation_status.value,
             )
-            
+
             sys_instruct = DYNAMIC_AGENT_SYSTEM_TEMPLATE.format(
                 role_name="Critic Auditor",
                 role_description="Audits step execution and validates outcomes.",
                 role_instructions="Always output a valid JSON response with keys: 'agent', 'status', 'notes', 'confidence'.",
             )
-            
+
             old_sys = self._session._system
             self._session._system = sys_instruct
             try:
@@ -372,7 +371,7 @@ class DynamicLLMAgent:
             role_description=self.description,
             role_instructions="\n".join(f"- {inst}" for inst in self.instructions),
         )
-        
+
         old_sys = self._session._system
         self._session._system = sys_instruct
         try:

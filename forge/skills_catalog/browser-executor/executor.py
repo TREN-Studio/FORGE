@@ -4,8 +4,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from forge.tools.browser import ChromiumSemanticBrowser, URL_PATTERN, build_file_url
-
+from forge.tools.browser import URL_PATTERN, ChromiumSemanticBrowser, build_file_url
 
 FILL_PATTERNS = (
     re.compile(r'fill\s+"(?P<target>.+?)"\s+with\s+"(?P<value>.+?)"', flags=re.IGNORECASE | re.DOTALL),

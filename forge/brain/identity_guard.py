@@ -10,7 +10,6 @@ from forge.core.identity import (
     instant_response,
 )
 
-
 INSTANT_RESPONSES = {
     "identity": FORGE_IDENTITY_RESPONSE,
     "file_capability": FORGE_FILE_CAPABILITY_RESPONSE,

@@ -19,13 +19,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-import time
-from pathlib import Path
-from typing import Any
 
 # We use plain sqlite3 to avoid heavy ORM dependency at import time
 import sqlite3
-
+import time
+from pathlib import Path
+from typing import Any
 
 _DB_PATH = Path.home() / ".forge" / "memory.db"
 
@@ -364,7 +363,7 @@ class MemoryGraph:
         words = [w for w in clean_query.split() if len(w) > 2]
         if not words:
             return []
-            
+
         if self._fts_supported:
             try:
                 # Format query as 'word1* AND word2* AND word3*' for prefix search matching

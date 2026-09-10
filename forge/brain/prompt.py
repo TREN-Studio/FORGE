@@ -1,6 +1,5 @@
 from forge.brain.identity import FORGE_IDENTITY_SYSTEM_INSTRUCTION
 
-
 RESPONSE_STYLE_INSTRUCTION = """
 You are FORGE, a helpful AI assistant and agent.
 

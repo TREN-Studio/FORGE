@@ -16,8 +16,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Any
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from forge.core.models import (
     ForgeResponse,
@@ -32,6 +31,8 @@ from forge.providers.registry import (
     MAX_PROGRESSIVE_ATTEMPTS,
     classify_speed,
     progressive_attempt_timeout,
+)
+from forge.providers.registry import (
     timeout_for_prompt as _timeout_for_prompt,
 )
 
@@ -329,7 +330,11 @@ class ForgeRouter:
                 return raw
 
             except asyncio.TimeoutError:
-                latency = (time.monotonic() - t_start) * 1000
+                # wait_for only raises TimeoutError when the attempt blew its
+                # budget, so the overrun is proven even if the Windows clock
+                # granularity (~15.6ms) reports latency as 0.0 — clamp to the
+                # budget so the SLOW demotion reliably fires.
+                latency = max((time.monotonic() - t_start) * 1000, attempt_timeout * 1000)
                 async with self._lock:
                     score.record_failure("timeout")
                     _demote_slow_score(score, latency, attempt_timeout)
@@ -459,7 +464,11 @@ class ForgeRouter:
                 yield {"type": "response", "response": response}
                 return
             except asyncio.TimeoutError:
-                latency = (time.monotonic() - t_start) * 1000
+                # wait_for only raises TimeoutError when the attempt blew its
+                # budget, so the overrun is proven even if the Windows clock
+                # granularity (~15.6ms) reports latency as 0.0 — clamp to the
+                # budget so the SLOW demotion reliably fires.
+                latency = max((time.monotonic() - t_start) * 1000, attempt_timeout * 1000)
                 async with self._lock:
                     score.record_failure("timeout")
                     _demote_slow_score(score, latency, attempt_timeout)

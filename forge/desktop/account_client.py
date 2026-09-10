@@ -6,7 +6,6 @@ from http.cookies import SimpleCookie
 from typing import Any
 from urllib import error, request
 
-
 SESSION_COOKIE_NAME = "forge_portal_session"
 
 

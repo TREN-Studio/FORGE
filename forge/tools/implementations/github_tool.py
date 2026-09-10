@@ -7,9 +7,9 @@ Wraps GitHub Contents API actions inside the ForgeTool interface.
 from __future__ import annotations
 
 import base64
-import urllib.request
-import urllib.error
 import json
+import urllib.error
+import urllib.request
 from typing import Any
 
 from forge.tools.base import ForgeTool, ToolResult
@@ -55,14 +55,14 @@ class GitHubTool(ForgeTool):
                     return ToolResult(success=False, error="owner, repo, and path parameters are required")
 
                 api_url = f"https://api.github.com/repos/{owner}/{repo}/contents/{path}"
-                
+
                 # Check if file exists to get its SHA
                 sha = None
                 req = urllib.request.Request(api_url)
                 req.add_header("Authorization", f"token {token}")
                 req.add_header("Accept", "application/vnd.github.v3+json")
                 req.add_header("User-Agent", "FORGE-Agent")
-                
+
                 try:
                     with urllib.request.urlopen(req) as resp:
                         data = json.loads(resp.read().decode())
@@ -89,7 +89,7 @@ class GitHubTool(ForgeTool):
                     resp_data = json.loads(resp.read().decode())
                     html_url = resp_data.get("content", {}).get("html_url", api_url)
                     return ToolResult(success=True, data=html_url, action_taken=f"Published {path} on GitHub.")
-            
+
             elif action == "get_file":
                 owner = params.get("owner")
                 repo = params.get("repo")

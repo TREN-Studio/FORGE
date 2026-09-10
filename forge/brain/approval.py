@@ -5,7 +5,6 @@ from typing import Any
 
 from forge.runtime.state_store import PersistentStateStore
 
-
 AUTO_APPROVE_CLASSES = {"local_readonly"}
 HUMAN_APPROVAL_CLASSES = {
     "network_post",

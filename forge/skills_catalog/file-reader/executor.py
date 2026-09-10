@@ -4,7 +4,6 @@ import re
 
 from forge.tools.workspace import WorkspaceTools
 
-
 FILE_HINTS = (".py", ".ts", ".tsx", ".js", ".jsx", ".json", ".md", ".toml", ".yaml", ".yml", ".sql", "/")
 
 

@@ -3,14 +3,20 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from forge.brain.contracts import AgentReview, CompletionState, ExecutionPlan, PlanStep, StepExecutionResult
+from forge.brain.contracts import (
+    AgentReview,
+    CompletionState,
+    ExecutionPlan,
+    PlanStep,
+    StepExecutionResult,
+)
 from forge.brain.council import ActionAgent, CriticAgent, ResearchAgent
 from forge.brain.worker_protocol import WorkerTask, WorkerTaskResult
 from forge.config.settings import OperatorSettings
 from forge.core.session import ForgeSession
+from forge.safety.sanitizer import PromptInjectionFirewall
 from forge.skills.registry import SkillRegistry
 from forge.skills.runtime import SkillExecutionContext, SkillRuntime
-from forge.safety.sanitizer import PromptInjectionFirewall
 
 
 def serialize_operator_settings(settings: OperatorSettings) -> dict[str, Any]:
@@ -77,16 +83,15 @@ class WorkerTaskExecutor:
 
     def _execute_dynamic_agent(self, task: WorkerTask) -> Any:
         from forge.brain.council import DynamicLLMAgent
-        from forge.brain.agent_factory import AgentFactory
-        
+
         # Resolve dynamic spec properties
         parts = task.service_name.split(":", 2)
         role_id = parts[1] if len(parts) > 1 else "generalist"
-        
+
         # Build instructions
         from forge.brain.agent_factory import SPECIALIZED_ROLES
         role_data = SPECIALIZED_ROLES.get(role_id, SPECIALIZED_ROLES["generalist"])
-        
+
         agent = DynamicLLMAgent(
             role_name=role_data["role_name"],
             description=role_data["description"],

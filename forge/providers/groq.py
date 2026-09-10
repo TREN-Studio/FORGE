@@ -39,11 +39,14 @@ class GroqProvider(BaseProvider):
 
     @property
     def models(self) -> list[ModelSpec]:
+        # Catalog verified live against GET /openai/v1/models on 2026-09-10.
+        # Groq retired the entire llama-3.x line; current chat lineup:
+        # gpt-oss-120b/20b + qwen3.6/3.8 + groq/compound agentic models.
         return [
             ModelSpec(
-                id="llama-3.3-70b-versatile",
+                id="openai/gpt-oss-120b",
                 provider="groq",
-                display_name="LLaMA 3.3 70B (Groq)",
+                display_name="GPT-OSS 120B (Groq)",
                 tier=ModelTier.ULTRA,
                 context_window=131_072,
                 max_output_tokens=32_768,
@@ -52,37 +55,48 @@ class GroqProvider(BaseProvider):
                 tags=["instruct", "fast", "coding"],
             ),
             ModelSpec(
-                id="llama-3.1-8b-instant",
+                id="qwen/qwen3.8-27b",
                 provider="groq",
-                display_name="LLaMA 3.1 8B Instant (Groq)",
-                tier=ModelTier.FAST,
-                context_window=131_072,
-                max_output_tokens=8_192,
-                supports_tools=True,
-                strong_at=[TaskType.FAST, TaskType.GENERAL],
-                tags=["fast", "instruct"],
-            ),
-            ModelSpec(
-                id="qwen/qwen3-32b",
-                provider="groq",
-                display_name="Qwen 3 32B (Groq)",
+                display_name="Qwen 3.8 27B (Groq)",
                 tier=ModelTier.ULTRA,
                 context_window=131_072,
                 max_output_tokens=32_768,
                 supports_tools=True,
                 strong_at=[TaskType.CODE, TaskType.REASONING, TaskType.GENERAL],
-                tags=["instruct", "coding", "fast"],
+                tags=["instruct", "coding", "fast", "multilingual", "arabic"],
             ),
             ModelSpec(
-                id="meta-llama/llama-4-scout-17b-16e-instruct",
+                id="qwen/qwen3.6-27b",
                 provider="groq",
-                display_name="LLaMA 4 Scout 17B (Groq)",
+                display_name="Qwen 3.6 27B (Groq, preview)",
+                tier=ModelTier.ULTRA,
+                context_window=131_072,
+                max_output_tokens=32_768,
+                supports_tools=True,
+                strong_at=[TaskType.CODE, TaskType.REASONING, TaskType.GENERAL],
+                tags=["instruct", "coding", "fast", "multilingual", "arabic"],
+            ),
+            ModelSpec(
+                id="openai/gpt-oss-20b",
+                provider="groq",
+                display_name="GPT-OSS 20B (Groq)",
                 tier=ModelTier.PRO,
                 context_window=131_072,
                 max_output_tokens=8_192,
                 supports_tools=True,
                 strong_at=[TaskType.GENERAL, TaskType.FAST],
                 tags=["instruct", "fast"],
+            ),
+            ModelSpec(
+                id="groq/compound",
+                provider="groq",
+                display_name="Groq Compound (agentic)",
+                tier=ModelTier.PRO,
+                context_window=131_072,
+                max_output_tokens=32_768,
+                supports_tools=True,
+                strong_at=[TaskType.GENERAL, TaskType.RESEARCH],
+                tags=["instruct", "agentic", "tools"],
             ),
         ]
 

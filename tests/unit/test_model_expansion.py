@@ -34,11 +34,11 @@ class TestModelExpansion(unittest.TestCase):
         provider = GroqProvider()
         models = {m.id: m for m in provider.models}
         
-        self.assertIn("llama-3.3-70b-versatile", models)
-        self.assertIn("qwen/qwen3-32b", models)
-        self.assertIn("meta-llama/llama-4-scout-17b-16e-instruct", models)
-        
-        llama = models["llama-3.3-70b-versatile"]
+        self.assertIn("openai/gpt-oss-120b", models)
+        self.assertIn("qwen/qwen3.6-27b", models)
+        self.assertIn("openai/gpt-oss-20b", models)
+
+        llama = models["openai/gpt-oss-120b"]
         self.assertEqual(llama.tier, ModelTier.ULTRA)
         self.assertIn(TaskType.CODE, llama.strong_at)
         self.assertTrue(llama.free)

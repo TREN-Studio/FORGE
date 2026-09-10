@@ -7,8 +7,7 @@ from tkinter import messagebox
 from tkinter.scrolledtext import ScrolledText
 
 from forge import __version__
-from forge.desktop.runtime import DesktopBootStatus, boot_status, run_prompt
-
+from forge.desktop.runtime import boot_status, run_prompt
 
 BG = "#080808"
 SURFACE = "#101010"

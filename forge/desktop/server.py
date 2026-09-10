@@ -3,34 +3,32 @@ from __future__ import annotations
 import json
 import threading
 import webbrowser
-from http.cookies import SimpleCookie
 from http import HTTPStatus
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from forge.brain.orchestrator import MissionOrchestrator
 from forge import __version__
+from forge.brain.orchestrator import MissionOrchestrator
 from forge.config.settings import OperatorSettings
 from forge.desktop.account_client import (
+    SESSION_COOKIE_NAME,
     PortalAccountClient,
     PortalApiError,
-    SESSION_COOKIE_NAME,
 )
 from forge.desktop.diagnostics import log_event, log_exception
 from forge.desktop.runtime import (
-    boot_status,
     boot_status_for_user,
     choose_workspace_root,
     get_workspace_status,
     operate_prompt,
     prepare_demo_workspace,
-    run_prompt,
+    save_uploaded_attachment,
     set_workspace_root,
     stream_prompt,
 )
 from forge.providers import supported_provider_names
-
 
 DESKTOP_HTML = """<!doctype html>
 <html lang="en">
@@ -2934,7 +2932,7 @@ DESKTOP_HTML = """<!doctype html>
 
 
 class DesktopRequestHandler(BaseHTTPRequestHandler):
-    server: "ForgeDesktopHttpServer"
+    server: ForgeDesktopHttpServer
 
     def do_GET(self) -> None:
         self.server.touch()
@@ -3065,8 +3063,8 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
             return
         if route == "/api/identity":
-            from forge.core.identity import FORGE_IDENTITY_RESPONSE
             from forge import __version__ as _ver
+            from forge.core.identity import FORGE_IDENTITY_RESPONSE
             self._send_json({
                 "identity": FORGE_IDENTITY_RESPONSE,
                 "product": "FORGE",
@@ -3402,7 +3400,7 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
             self._send_json(result)
             return
 
-    def log_message(self, format: str, *args) -> None:  # noqa: A003
+    def log_message(self, format: str, *args) -> None:
         return
 
     def _session_token(self) -> str | None:
@@ -3521,7 +3519,7 @@ class DesktopRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def _send_sse(self, payload: dict[str, object]) -> None:
-        body = f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode("utf-8")
+        body = f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
         self.wfile.write(body)
         self.wfile.flush()
 

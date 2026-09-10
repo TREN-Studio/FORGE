@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
 import inspect
 import time
-from typing import Any, Awaitable, Callable
-
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from typing import Any
 
 JobCallable = Callable[[], Awaitable[Any] | Any]
 

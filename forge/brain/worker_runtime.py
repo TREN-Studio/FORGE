@@ -5,14 +5,19 @@ import ctypes
 import inspect
 import os
 import threading
-import time
+from collections.abc import Callable
 from concurrent.futures import Future
-from typing import Any, Callable
+from typing import Any
 
 from aiohttp import ClientSession, ClientTimeout
 
 from forge.brain.worker_executor import WorkerTaskExecutor
-from forge.brain.worker_protocol import WorkerHeartbeat, WorkerRegistration, WorkerTask, WorkerTaskResult
+from forge.brain.worker_protocol import (
+    WorkerHeartbeat,
+    WorkerRegistration,
+    WorkerTask,
+    WorkerTaskResult,
+)
 from forge.runtime.lanes import LaneQueueManager
 from forge.runtime.state_store import PersistentStateStore
 

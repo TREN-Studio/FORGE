@@ -6,11 +6,10 @@ Terminal commands for FORGE.
 
 from __future__ import annotations
 
-import time
-import sys
 import os
+import sys
+import time
 from pathlib import Path
-from typing import Optional
 
 import typer
 from rich.console import Console
@@ -20,7 +19,9 @@ from rich.prompt import Prompt
 from rich.rule import Rule
 from rich.spinner import Spinner
 from rich.table import Table
+
 from forge import __version__
+
 
 def _configure_stdio() -> None:
     for stream in (sys.stdout, sys.stderr):
@@ -244,7 +245,7 @@ def _bootstrap_keys(quiet: bool = False) -> int:
 
 @cli.command()
 def init(
-    workspace: Optional[str] = typer.Option(
+    workspace: str | None = typer.Option(
         None, "--workspace", "-w", help="Path to initialize as FORGE workspace"
     ),
 ):
@@ -255,21 +256,21 @@ def init(
     config_dir = ws / ".forge"
     config_dir.mkdir(parents=True, exist_ok=True)
 
-    key_count = _bootstrap_keys()
+    _bootstrap_keys()
     console.print(f"[bold #FF6B1A]FORGE[/bold #FF6B1A] workspace initialized at [bold]{ws}[/bold]")
     console.print(f"[dim]Run [bold]forge start -w {ws}[/bold] to begin working[/dim]")
 
 
 @cli.command()
 def start(
-    task: Optional[str] = typer.Option(
+    task: str | None = typer.Option(
         None,
         "--task",
         "-t",
         help="Task type: general|code|math|research|creative|reasoning|fast",
     ),
     no_memory: bool = typer.Option(False, "--no-memory", help="Disable persistent memory"),
-    workspace: Optional[str] = typer.Option(
+    workspace: str | None = typer.Option(
         None,
         "--workspace",
         "-w",
@@ -332,7 +333,7 @@ def start(
                 console.print(
                     f"  [dim]{provider:12}[/dim] "
                     f"{info['utilisation_label']:>8} used  "
-                    f"{str(info.get('tokens_remaining', 'unlimited')):>12} left"
+                    f"{info.get('tokens_remaining', 'unlimited')!s:>12} left"
                 )
             continue
         if command == "/discover":
@@ -446,9 +447,9 @@ def identity(
 
 @cli.command()
 def operate(
-    prompt: Optional[str] = typer.Argument(None, help="Request for the operator brain"),
-    task: Optional[str] = typer.Option(None, "--task", "-t", help="Request for the operator brain"),
-    workspace: Optional[str] = typer.Option(None, "--workspace", help="Workspace root for this operator run"),
+    prompt: str | None = typer.Argument(None, help="Request for the operator brain"),
+    task: str | None = typer.Option(None, "--task", "-t", help="Request for the operator brain"),
+    workspace: str | None = typer.Option(None, "--workspace", help="Workspace root for this operator run"),
     allow_real_changes: bool = typer.Option(False, "--allow-real-changes", help="Alias for --confirm on local file/shell tasks"),
     confirm: bool = typer.Option(False, "--confirm", help="Confirm high-risk execution"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Force dry-run mode"),

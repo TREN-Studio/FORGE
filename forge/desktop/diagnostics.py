@@ -5,7 +5,6 @@ import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
-
 LOG_PATH = Path(tempfile.gettempdir()) / "forge-desktop.log"
 
 

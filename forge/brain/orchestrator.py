@@ -1,21 +1,30 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import hashlib
 import json
-from pathlib import Path
 import re
-from typing import Any, Callable
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
 
-from forge.brain.approval import ApprovalDecision, ApprovalPolicyEngine
-from forge.brain.contracts import AgentReview, CompletionState, ExecutionPlan, PlanStep, StepExecutionResult, TaskIntent
-from forge.brain.council import ActionAgent, CriticAgent, ResearchAgent
 from forge.brain.agent_factory import AgentFactory
+from forge.brain.approval import ApprovalDecision, ApprovalPolicyEngine
+from forge.brain.contracts import (
+    AgentReview,
+    CompletionState,
+    ExecutionPlan,
+    PlanStep,
+    StepExecutionResult,
+    TaskIntent,
+)
+from forge.brain.council import ActionAgent, CriticAgent, ResearchAgent
 from forge.brain.mission_store import MissionAuditStore, MissionResumeState
 from forge.brain.worker_executor import decode_agent_review, serialize_operator_settings
 from forge.brain.worker_protocol import WorkerHeartbeat, WorkerRegistration, WorkerTask
 from forge.brain.worker_runtime import DistributedCouncilRuntime
 from forge.config.settings import OperatorSettings
+from forge.core.session import ForgeSession
 from forge.recovery.manager import RecoveryManager
 from forge.runtime.state_store import PersistentStateStore
 from forge.skills.registry import SkillRegistry
@@ -227,7 +236,7 @@ class MissionOrchestrator:
                         critique_memory=critique_memory,
                         step=step,
                     )
-                    
+
                     # Check credentials (unless in mock/demo mode)
                     if not self._tool_registry.has_credential(tool.name) and not (payload.get("mock") or payload.get("demo")):
                         step_results.append(
@@ -281,7 +290,7 @@ class MissionOrchestrator:
                     try:
                         step_trace = [f"Executing action '{step.action}' on tool '{tool.name}'..."]
                         tool_result = run_async(tool.execute(step.action, payload))
-                        
+
                         if tool_result.success:
                             status = CompletionState.FINISHED
                             output = {"output": tool_result.data, "action_taken": tool_result.action_taken}
@@ -323,7 +332,7 @@ class MissionOrchestrator:
                             )
                             mission_trace.append(f"{step.id}: failed via tool '{tool.name}'.")
                             mission_status = CompletionState.FAILED.value
-                        
+
                         self._persist_progress(
                             mission_id,
                             audit_log_path,
@@ -1147,7 +1156,7 @@ class MissionOrchestrator:
             "requested_output": payload.get("requested_output"),
             "input_spec_keys": sorted(
                 key
-                for key in payload.keys()
+                for key in payload
                 if key
                 not in {
                     "request",

@@ -6,7 +6,6 @@ from pathlib import Path
 
 from forge.config.settings import OperatorSettings
 
-
 KEY_VALUE_PATTERN = re.compile(r"^\s*([A-Za-z0-9_.-]+)\s*(?:=|:)\s*(.+?)\s*$")
 
 

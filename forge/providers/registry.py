@@ -7,8 +7,8 @@ bootstrap logic all agree on the supported integrations.
 
 from __future__ import annotations
 
-from importlib import import_module
 import re
+from importlib import import_module
 
 from forge.providers.base import BaseProvider
 
@@ -34,7 +34,12 @@ SPEED_TIMEOUTS: dict[str, float] = {
 }
 
 MAX_PROGRESSIVE_ATTEMPTS = 8
-PROGRESSIVE_TIMEOUT_WEIGHTS: tuple[float, ...] = (0.5, 0.3, 0.2)
+# 8 weights that sum to 1.0 so the whole fallback chain stays inside the
+# total timeout budget (previously only 3 weights existed while attempts
+# were raised to 8, letting the chain run 2x over budget).
+PROGRESSIVE_TIMEOUT_WEIGHTS: tuple[float, ...] = (
+    0.32, 0.20, 0.14, 0.10, 0.08, 0.06, 0.05, 0.05,
+)
 
 _COMPLEX_PATTERNS = (
     r"\bthen\b",
@@ -91,9 +96,9 @@ def supported_provider_names() -> list[str]:
 
 
 __all__ = [
-    "BaseProvider",
     "MAX_PROGRESSIVE_ATTEMPTS",
     "SPEED_TIMEOUTS",
+    "BaseProvider",
     "classify_speed",
     "iter_provider_classes",
     "progressive_attempt_timeout",

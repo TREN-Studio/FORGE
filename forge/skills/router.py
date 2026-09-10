@@ -7,7 +7,6 @@ from forge.config.settings import OperatorSettings
 from forge.skills.contracts import RoutingDecision, SkillDefinition, SkillMatch
 from forge.skills.registry import SkillRegistry
 
-
 INTENT_TO_CATEGORY: dict[IntentKind, tuple[str, ...]] = {
     IntentKind.RESEARCH: ("research",),
     IntentKind.WRITING: ("content", "writing"),

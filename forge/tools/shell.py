@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from pathlib import Path
 import shlex
 import subprocess
 import time
+from pathlib import Path
 
 from forge.config.settings import OperatorSettings
-
 
 DISALLOWED_TOKENS = {";", "&&", "||", "|", ">", "<", "2>", ">>"}
 DISALLOWED_WORDS = {

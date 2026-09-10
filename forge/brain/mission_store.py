@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -174,7 +174,7 @@ class MissionAuditStore:
 
     @staticmethod
     def _timestamp() -> str:
-        return datetime.now(UTC).isoformat()
+        return datetime.now(timezone.utc).isoformat()
 
     @staticmethod
     def _read_json(path: Path) -> dict:

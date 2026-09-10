@@ -125,7 +125,7 @@ class WordPressPublisher:
 
     @staticmethod
     def _request_json(url: str, *, username: str, app_password: str, payload: dict) -> dict:
-        token = base64.b64encode(f"{username}:{app_password}".encode("utf-8")).decode("ascii")
+        token = base64.b64encode(f"{username}:{app_password}".encode()).decode("ascii")
         req = request.Request(
             url,
             data=json.dumps(payload).encode("utf-8"),
