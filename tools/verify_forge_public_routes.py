@@ -33,6 +33,25 @@ EXPECTED_VERSION = _expected_version()
 EXPECTED_RELEASE_TAG = f"v{EXPECTED_VERSION}"
 
 
+def _latest_pypi_version(timeout: float = 15.0) -> str | None:
+    """Ask PyPI what version of forge-agent is actually published.
+
+    The project page (pypi.org/project/forge-agent/<v>/) 200s for ANY version
+    by redirecting to latest — only the JSON API is truthful about existence.
+    Returns None on any failure so callers fall back to EXPECTED_VERSION.
+    """
+    try:
+        request = urllib.request.Request(
+            "https://pypi.org/pypi/forge-agent/json",
+            headers={"User-Agent": "forge-release-verifier"},
+        )
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        return str(data["info"]["version"])
+    except Exception:
+        return None
+
+
 class TitleParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
@@ -133,7 +152,9 @@ def verify_no_stale_public_markers(html: str, route: str) -> None:
         "1.1.2",
         "v1.1.0",
         "1.1.0",
-        "forge start",
+        # NOTE: "forge start" was previously forbidden as a stale marker, but it
+        # is a live CLI command (forge/cli/main.py:264) shown correctly on the
+        # site. Do not re-forbid it.
         "forge add-key",
         "FORGE-macOS-Starter",
         "FORGE-Linux-Starter",
@@ -163,8 +184,13 @@ def verify_windows_first_download_markup(html: str, route: str) -> None:
         "Includes demo",
         "Press Run Demo",
         "For Developers",
-        f"pip install forge-agent=={EXPECTED_VERSION}",
     ]
+    # PyPI version is NOT guaranteed to equal the release version: the two
+    # workflows are independent (PyPI publishes only when Trusted Publishing
+    # is configured). Pin the marker to the ACTUAL latest PyPI version so the
+    # page stays truthful instead of promising an unpublished version.
+    pypi_expected = _latest_pypi_version() or EXPECTED_VERSION
+    required.append(f"pip install forge-agent=={pypi_expected}")
     for marker in required:
         if marker not in html:
             raise ValueError(f"{route} is missing Windows-first marker: {marker}")
