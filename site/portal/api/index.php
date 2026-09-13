@@ -30,6 +30,9 @@ $backend_root = $domain_root . DIRECTORY_SEPARATOR . 'private' . DIRECTORY_SEPAR
 $script = $backend_root . DIRECTORY_SEPARATOR . 'portal_entry.py';
 
 $python_candidates = [
+    // Hostinger shared hosting: user-local Python is the only real binary.
+    getenv('HOME') . '/bin/python3',
+    '/home/u275893975/bin/python3',
     '/usr/bin/python3',
     '/opt/alt/python39/bin/python3',
     '/usr/local/bin/python3',
