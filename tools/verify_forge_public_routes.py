@@ -14,7 +14,22 @@ ROOT = Path(__file__).resolve().parents[1]
 GITHUB_API = "https://api.github.com/repos/TREN-Studio/FORGE"
 EXPECTED_GOOGLE_BRIDGE_URL = "https://www.trenstudio.com/forge-auth/google-bridge/"
 EXPECTED_GOOGLE_CLIENT_ID = "1014783821384-pt514o3kfur9b4vfih6svm9k1ljutbmd.apps.googleusercontent.com"
-EXPECTED_VERSION = "1.1.8"
+
+
+def _expected_version() -> str:
+    """Read the version from pyproject.toml so this verifier always tracks
+    the repo's real release version instead of a hardcoded constant that
+    rots after every bump (it sat at 1.1.8 through 1.5.2)."""
+    try:
+        import tomllib
+
+        data = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+        return str(data["project"]["version"])
+    except Exception:
+        return "1.5.3"
+
+
+EXPECTED_VERSION = _expected_version()
 EXPECTED_RELEASE_TAG = f"v{EXPECTED_VERSION}"
 
 
