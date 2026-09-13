@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 import re
 import shlex
 from dataclasses import dataclass
 from typing import Any
 
+from forge.brain.agent_prompt import DELIBERATIVE_PLANNER_PROMPT, DELIBERATIVE_PLANNER_SYSTEM
 from forge.brain.contracts import ExecutionPlan, PlanStep, TaskIntent
 from forge.safety.guard import SafetyDecision
 from forge.skills.contracts import RoutingDecision
@@ -122,9 +124,19 @@ class PlanningEngine:
         safety: SafetyDecision,
         request: str | None = None,
         max_steps: int = 5,
+        session: Any = None,
+        skill_lookup: dict[str, Any] | None = None,
     ) -> ExecutionPlan:
         source_request = request or intent.raw_request
         steps = self._decompose_execution_steps(source_request, safety, max_steps=max_steps)
+        if not steps and session is not None and routing.selected_skills:
+            # Deliberative planning: when the deterministic decomposer is inconclusive,
+            # let the model reason about the request and produce an ordered plan.
+            steps = self.deliberate(
+                source_request, safety, routing,
+                session=session, max_steps=max_steps,
+                skill_lookup=skill_lookup,
+            ) or []
         if not steps:
             steps = self._fallback_steps(intent, routing, safety, max_steps=max_steps)
 
@@ -989,3 +1001,87 @@ class PlanningEngine:
             self._word_position(request_lower, PUBLISH_TERMS, fallback=999),
             500,
         )
+
+    def deliberate(
+        self,
+        request: str,
+        safety: SafetyDecision,
+        routing: RoutingDecision,
+        session: Any = None,
+        max_steps: int = 5,
+        skill_lookup: dict[str, Any] | None = None,
+    ) -> list[PlanStep] | None:
+        """LLM deliberative planning fallback.
+
+        When the heuristic decomposer returns no steps for an actionable request,
+        ask the model to *think* and emit an ordered plan. This is the layer that
+        lets FORGE handle novel/ambiguous tasks instead of silently treating them
+        as plain conversation. Returns None when the model is unavailable or
+        produces nothing usable, so callers keep their existing fallback.
+        """
+        if session is None or not routing.selected_skills:
+            return None
+
+        # Build the skill list WITH real descriptions so the model can actually
+        # match skills to sub-tasks — names alone carry zero signal.
+        skill_lines: list[str] = []
+        for name in routing.selected_skills:
+            definition = (skill_lookup or {}).get(name)
+            description = ""
+            if definition is not None:
+                raw_desc = getattr(definition, "description", "") or ""
+                description = str(raw_desc).strip().splitlines()[0] if raw_desc.strip() else ""
+            skill_lines.append(f"- {name} — {description}" if description else f"- {name}")
+        skill_names = "\n".join(skill_lines)
+
+        try:
+            old_sys = getattr(session, "_system", None)
+            session._system = DELIBERATIVE_PLANNER_SYSTEM
+            try:
+                reply = session.ask(
+                    DELIBERATIVE_PLANNER_PROMPT.format(
+                        skills=skill_names, request=request
+                    ),
+                    task_type="reasoning",
+                    allow_instant=False,
+                )
+            finally:
+                if old_sys is not None:
+                    session._system = old_sys
+
+            cleaned = reply.strip()
+            if cleaned.startswith("```"):
+                cleaned = cleaned.split("```", 2)[1]
+                if cleaned.lstrip().startswith("json"):
+                    cleaned = cleaned.lstrip()[4:]
+                cleaned = cleaned.rsplit("```", 1)[0]
+            data = json.loads(cleaned)
+            raw_steps = data.get("steps", [])
+            if not raw_steps:
+                return None
+
+            steps: list[PlanStep] = []
+            for idx, rs in enumerate(raw_steps[:max_steps], start=1):
+                skill = str(rs.get("skill", "")).strip()
+                if not skill:
+                    continue
+                steps.append(
+                    PlanStep(
+                        id=f"step_{idx}",
+                        action=str(rs.get("action", f"Execute `{skill}`.")).strip(),
+                        skill=skill,
+                        tool=skill,
+                        input_spec=rs.get("input_spec") or {},
+                        expected_output="Evidence-backed output for this sub-task.",
+                        validation="Confirm the sub-task produced a verifiable result.",
+                        risk_note="Run in dry-run mode." if safety.use_dry_run else "",
+                        fallback_skill=None,
+                        depends_on=[steps[-1].id] if steps else [],
+                        retry_limit=2,
+                        stop_on_failure=True,
+                        rollback_on_failure=skill == "file-editor",
+                    )
+                )
+            return steps or None
+        except Exception:
+            return None

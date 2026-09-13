@@ -112,14 +112,22 @@ class ForgeSession:
         max_tokens: int = 2048,
         temperature: float = 0.7,
         remember: bool = True,
+        allow_instant: bool = True,
     ) -> str:
-        """Send a message. Returns the response text."""
+        """Send a message and get back just the text content.
+
+        allow_instant: internal engine callers (planner, critic) must pass False
+        so composed system-style prompts are never short-circuited by the
+        identity/greeting instant-response guard, which is designed for raw
+        user text only.
+        """
         return self.ask_response(
             prompt,
             task_type=task_type,
             max_tokens=max_tokens,
             temperature=temperature,
             remember=remember,
+            allow_instant=allow_instant,
         ).content
 
     def ask_response(
@@ -129,10 +137,11 @@ class ForgeSession:
         max_tokens: int = 2048,
         temperature: float = 0.7,
         remember: bool = True,
+        allow_instant: bool = True,
     ) -> ForgeResponse:
         """Send a message and return the full provider response."""
         return self._loop.run_until_complete(
-            self._ask_response_async(prompt, task_type, max_tokens, temperature, remember)
+            self._ask_response_async(prompt, task_type, max_tokens, temperature, remember, allow_instant)
         )
 
     def stream_response(
@@ -229,13 +238,15 @@ class ForgeSession:
         max_tokens: int,
         temperature: float,
         remember: bool,
+        allow_instant: bool = True,
     ) -> ForgeResponse:
         task_type = self._normalize_task_type(task_type)
-        instant = instant_response(prompt)
-        if instant is not None:
-            response = self._instant_response(instant)
-            self._remember_response(prompt, response, remember=remember)
-            return response
+        if allow_instant:
+            instant = instant_response(prompt)
+            if instant is not None:
+                response = self._instant_response(instant)
+                self._remember_response(prompt, response, remember=remember)
+                return response
         messages = self._build_messages(prompt)
 
         response: ForgeResponse = await self._router.route(

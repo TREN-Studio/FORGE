@@ -6,17 +6,20 @@ test.describe.serial('FORGE desktop onboarding', () => {
   test('starts in guest mode without forcing login or provider setup', async ({ page }) => {
     await page.goto('/');
 
+    // The auth state (which sets the guest-mode copy) loads via an async
+    // fetch to the portal backend; on a cold CI runner this can exceed the
+    // default 5s timeout (root cause of the July v1.5.2 release failure).
     await expect(page.getByRole('heading', { name: 'Talk to FORGE' })).toBeVisible();
     await expect(page.locator('#send')).toHaveText('Send');
     await expect(page.locator('#send')).toBeEnabled();
     await expect(page.locator('#prompt')).toBeEnabled();
     await expect(page.locator('#clear')).toHaveText('New Chat');
-    await expect(page.locator('#workspace-subtitle')).toContainText('Guest mode is ready');
+    await expect(page.locator('#workspace-subtitle')).toContainText('Guest mode is ready', { timeout: 20000 });
     await expect(page.locator('#sidebar-toggle')).toHaveText('Settings');
     await expect(page.locator('#auth-gate')).toBeHidden();
     await expect(page.locator('#provider-setup')).toBeHidden();
     await expect(page.locator('#demo-task')).toBeVisible();
-    await expect(page.locator('#demo-task-status')).toContainText('No provider required');
+    await expect(page.locator('#demo-task-status')).toContainText('No provider required', { timeout: 20000 });
 
     await page.locator('#sidebar-toggle').click();
     await expect(page.locator('#auth-logged-out')).toBeVisible();

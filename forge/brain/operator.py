@@ -115,7 +115,15 @@ class ForgeOperator:
             confirmed=confirmed,
             dry_run_requested=dry_run,
         )
-        plan = self.planner.build(intent, routing, safety, request=request, max_steps=self.settings.max_plan_steps)
+        plan = self.planner.build(
+            intent,
+            routing,
+            safety,
+            request=request,
+            max_steps=self.settings.max_plan_steps,
+            session=self.session,
+            skill_lookup=skill_lookup,
+        )
         mission_id, audit_log_path, resume_state = self.audit_store.begin(
             request,
             plan,

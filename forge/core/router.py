@@ -546,6 +546,18 @@ class ForgeRouter:
             if TIER_ORDER.get(spec.tier, 0) < min_tier_rank:
                 continue
 
+            # ── Power Lane gating (cost-aware) ─────────────────────────────
+            # Paid frontier models are for hard problems, not "hello". For FAST /
+            # shallow GENERAL tasks, only allow free models so we never burn a
+            # paid Claude/GPT call on something a free fast model handles equally.
+            # For CODE/REASONING/RESEARCH (quality-heavy), paid models stay
+            # eligible and win via the tier boost in _adjusted_score.
+            shallow_task = task_type in (TaskType.FAST,) or (
+                task_type == TaskType.GENERAL and affinity.get("quality_weight", 0.45) <= 0.45
+            )
+            if shallow_task and not spec.free:
+                continue
+
             # Compute task-adjusted score
             adjusted = self._adjusted_score(score, spec, affinity)
             candidates.append((key, score, adjusted))
@@ -583,10 +595,14 @@ class ForgeRouter:
                 bonus += 0.05
                 break
 
-        # Tier bonus for quality-heavy tasks
+        # Tier bonus for quality-heavy tasks.
+        # This is the "Power Lane" boost: frontier models (ULTRA/PRO) must actually
+        # WIN on reasoning/code/research tasks — not tie with cheap fast models whose
+        # only edge is latency. The previous coefficient (0.015) made the tier spread
+        # ~2.5%, which meant a free fast model could outrank Claude/GPT solely on speed.
         tier_rank = TIER_ORDER.get(spec.tier, 0)
         quality_w = affinity.get("quality_weight", 0.45)
-        bonus += tier_rank * 0.015 * quality_w
+        bonus += tier_rank * 0.06 * quality_w
 
         # Latency adjustment for speed-critical tasks
         latency_w = affinity.get("latency_weight", 0.20)

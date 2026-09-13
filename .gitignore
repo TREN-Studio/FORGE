@@ -30,3 +30,7 @@ site/downloads/
 node_modules/
 playwright-report/
 test-results/
+
+# Local evidence/screenshot dirs (not part of the release)
+artifacts/
+stress-proof/

@@ -101,7 +101,7 @@ class ResearchAgent:
             old_sys = self._session._system
             self._session._system = sys_instruct
             try:
-                llm_reply = self._session.ask(prompt, task_type="research")
+                llm_reply = self._session.ask(prompt, task_type="research", allow_instant=False)
             finally:
                 self._session._system = old_sys
 
@@ -326,33 +326,48 @@ class CriticAgent:
             )
 
         statuses = {step.status for step in step_results}
+        total = len(step_results)
+        finished = sum(1 for s in step_results if s.status == CompletionState.FINISHED)
+        partial = sum(1 for s in step_results if s.status == CompletionState.PARTIALLY_FINISHED)
+        failed = sum(1 for s in step_results if s.status == CompletionState.FAILED)
+
+        # Real confidence is derived from the actual completion ratio — no more
+        # hardcoded 0.85. Each step contributes its own signal, and partial steps
+        # weigh half a success, so the final number is honest, not flattering.
+        confidence = (finished + 0.5 * partial) / total if total > 0 else 0.0
+        confidence = round(min(1.0, max(0.0, confidence)), 3)
+
         if CompletionState.FAILED in statuses:
-            return AgentReview(
-                agent="critic",
-                status=CompletionState.PARTIALLY_FINISHED if CompletionState.FINISHED in statuses else CompletionState.FAILED,
-                notes=["Mission ended with at least one failed step."],
-                confidence=0.45,
+            notes = [
+                f"{failed}/{total} steps failed",
+                f"{finished}/{total} steps finished",
+                f"derived confidence {confidence:.2f}",
+            ]
+            status = (
+                CompletionState.PARTIALLY_FINISHED
+                if CompletionState.FINISHED in statuses
+                else CompletionState.FAILED
             )
-        if CompletionState.PARTIALLY_FINISHED in statuses:
-            return AgentReview(
-                agent="critic",
-                status=CompletionState.PARTIALLY_FINISHED,
-                notes=["Mission completed, but one or more steps remain partial."],
-                confidence=0.65,
-            )
-        if len(step_results) < len(plan.steps):
-            return AgentReview(
-                agent="critic",
-                status=CompletionState.PARTIALLY_FINISHED,
-                notes=["Mission stopped before every planned step executed."],
-                confidence=0.55,
-            )
-        return AgentReview(
-            agent="critic",
-            status=CompletionState.FINISHED,
-            notes=["Mission passed the final critic review."],
-            confidence=0.85,
-        )
+        elif CompletionState.PARTIALLY_FINISHED in statuses:
+            notes = [
+                f"{finished} finished · {partial} partial of {total} steps",
+                f"derived confidence {confidence:.2f}",
+            ]
+            status = CompletionState.PARTIALLY_FINISHED
+        elif len(step_results) < len(plan.steps):
+            notes = [
+                f"Mission stopped early: {total}/{len(plan.steps)} planned steps executed",
+                f"derived confidence {confidence:.2f}",
+            ]
+            status = CompletionState.PARTIALLY_FINISHED
+        else:
+            notes = [
+                f"All {total} steps finished",
+                f"derived confidence {confidence:.2f}",
+            ]
+            status = CompletionState.FINISHED
+
+        return AgentReview(agent="critic", status=status, notes=notes, confidence=confidence)
 
 
 class DynamicLLMAgent:

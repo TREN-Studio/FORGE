@@ -5,7 +5,7 @@ import hashlib
 import os
 import posixpath
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import paramiko
@@ -170,7 +170,7 @@ def maybe_backup_index(sftp: paramiko.SFTPClient, remote_root: str) -> str | Non
         sftp.stat(remote_index)
     except FileNotFoundError:
         return None
-    timestamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
     backup_path = posixpath.join(remote_root, f"index.html.bak-{timestamp}")
     sftp.rename(remote_index, backup_path)
     return backup_path

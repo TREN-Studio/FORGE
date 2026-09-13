@@ -69,3 +69,35 @@ Produce a review report in JSON format matching this schema:
   "confidence": float
 }}
 """
+
+# ─────────────────────────────────────────────
+#  Deliberative Planning (LLM step decomposition)
+# ─────────────────────────────────────────────
+# Used when regex/heuristic decomposition is inconclusive, so FORGE can *think*
+# about an ambiguous request and emit a concrete, ordered execution plan.
+
+DELIBERATIVE_PLANNER_PROMPT = """You are the FORGE planning brain. Analyze the user request and decompose it into an ordered, executable plan.
+
+Available skills (name — what it does):
+{skills}
+
+User request:
+"{request}"
+
+Thinking rules:
+- Identify the single primary objective, then any sub-steps required to reach it in order.
+- Only use skills from the list above. If none fit, leave steps empty.
+- Steps must be ordered by dependency (evidence/reads before writes, writes before publish).
+- Each step needs: skill (exact name), action (1 short sentence), and input_spec (a JSON object of arguments).
+- If the request is purely conversational (no tool needed), return an empty steps array.
+
+Respond with STRICT JSON only, matching this schema:
+{{
+  "objective": "one-sentence objective",
+  "steps": [
+    {{"skill": "<exact skill name>", "action": "<short action>", "input_spec": {{ ... }} }}
+  ]
+}}
+"""
+
+DELIBERATIVE_PLANNER_SYSTEM = """You are FORGE's planning specialist. You decompose ambiguous user requests into ordered, executable skill steps. Output only strict JSON matching the requested schema — no prose, no markdown fences, no commentary. Never invent skills that are not in the provided list. Never answer the request itself; only plan it."""

@@ -1809,10 +1809,27 @@ DESKTOP_HTML = """<!doctype html>
     }
 
     async function loadAuth() {
-      const response = await fetch("/api/auth/me");
-      const data = await response.json();
-      applyAuthState(data);
-      return data;
+      // The auth endpoint proxies to the portal backend, which may still be
+      // booting on a cold start (CI runners, first launch). Retry with
+      // backoff so a single slow/failing request can't freeze the UI in its
+      // initial "Ask in Arabic or English…" state forever.
+      const attempts = 4;
+      let lastError = null;
+      for (let i = 0; i < attempts; i++) {
+        try {
+          const response = await fetch("/api/auth/me");
+          if (!response.ok) {
+            throw new Error("auth status HTTP " + response.status);
+          }
+          const data = await response.json();
+          applyAuthState(data);
+          return data;
+        } catch (error) {
+          lastError = error;
+          await new Promise((resolve) => setTimeout(resolve, 750 * (i + 1)));
+        }
+      }
+      throw lastError || new Error("auth status unavailable");
     }
 
     async function authRequest(path, payload) {
@@ -1953,7 +1970,11 @@ DESKTOP_HTML = """<!doctype html>
     }
 
     function appendInlineText(container, text) {
-      const lines = text.split("\n");
+      // NOTE: this template is a Python string; the escape below must reach
+      // the browser as the two-character JS backslash-n sequence, NOT as a
+      // literal newline (which made the whole inline script a SyntaxError
+      // and silently killed loadAuth() plus every later handler).
+      const lines = text.split("\\n");
       lines.forEach((line, i) => {
         const parts = line.split(/(`[^`]+`)/g);
         parts.forEach(part => {

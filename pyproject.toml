@@ -70,5 +70,71 @@ forge = [
 line-length = 100
 target-version = "py310"
 
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "RUF"]
+ignore = [
+    "E501", "B008", "C401", "C408", "SIM105", "RUF012",
+    # Style/typographic lint (non-functional): unicode chars in docstrings/comments,
+    # and refactor suggestions that don't change behaviour. Gated separately so
+    # `ruff check` stays focused on real correctness issues.
+    "RUF001", "RUF002", "RUF003", "RUF005",
+    "SIM102", "SIM103", "SIM112", "SIM117",
+    "B007", "B904",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B", "UP"]
+"forge/skills_catalog/*" = ["B", "F401", "F403"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.10"
+warn_unused_configs = true
+ignore_missing_imports = true
+disallow_untyped_defs = false
+warn_return_any = false
+no_implicit_optional = true
+# FORGE adopts static typing incrementally. These error codes are the noisiest
+# and do not indicate runtime bugs, so they are downgraded while the team
+# tightens type coverage module-by-module. `arg-type`, `return-value`,
+# `attr-defined` and `str-bytes-safe` remain ON as hard gates.
+disable_error_code = ["union-attr", "no-redef", "misc", "var-annotated", "assignment"]
+exclude = [
+    "forge/skills_catalog/",
+    "node_modules/",
+    ".build-dist/",
+    ".build-work/",
+    "site/",
+    "site_backend/",
+]
+
+[[tool.mypy.overrides]]
+module = "forge.skills_catalog.*"
+ignore_errors = true
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-q --cov=forge --cov-report=term-missing --cov-report=xml"
+
+[tool.coverage.run]
+branch = true
+omit = [
+    "forge/skills_catalog/*",
+    "site_backend/*",
+    "tests/*",
+    "**/__pycache__/*",
+]
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]
