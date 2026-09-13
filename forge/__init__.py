@@ -13,7 +13,7 @@ Website: https://www.trenstudio.com/FORGE
 License: MIT
 """
 
-__version__ = "1.5.2"
+__version__ = "1.5.3"
 __author__  = "TREN Studio"
 __license__ = "MIT"
 
