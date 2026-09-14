@@ -112,6 +112,7 @@ class MissionAuditStore:
         artifacts: dict,
         mission_trace: list[str],
         resumed_from_step: str | None,
+        critic_telemetry: dict | None = None,
     ) -> None:
         payload = {
             "mission_id": mission_id,
@@ -124,6 +125,21 @@ class MissionAuditStore:
             "mission_trace": mission_trace,
             "resumed_from_step": resumed_from_step,
         }
+        # Per-step critic telemetry (drift samples, hallucination flag counts,
+        # preflight blocks, loop detection) persists in the mission audit log
+        # so every routing number is recorded with actual measured values.
+        if critic_telemetry:
+            payload["critic_telemetry"] = critic_telemetry
+        else:
+            prior = None
+            file_path = Path(audit_log_path)
+            if file_path.exists():
+                try:
+                    prior = self._read_json(file_path).get("critic_telemetry")
+                except Exception:
+                    prior = None
+            if prior:
+                payload["critic_telemetry"] = prior
         file_path = Path(audit_log_path)
         if file_path.exists():
             existing = self._read_json(file_path)

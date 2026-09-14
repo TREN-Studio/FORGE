@@ -10,6 +10,11 @@ from forge.brain.agent_prompt import (
     RESEARCH_AGENT_LLM_PROMPT,
 )
 from forge.brain.contracts import AgentReview, CompletionState, ExecutionPlan, StepExecutionResult
+from forge.brain.critic_guards import (
+    HallucinationAudit,
+    drift_score,
+    hallucination_audit,
+)
 from forge.core.session import ForgeSession
 
 RESEARCH_TERMS = {
@@ -245,6 +250,18 @@ class CriticAgent:
         self._session = session or ForgeSession(memory=False)
 
     def review_step(self, request: str, step, output: Any, validation_status: CompletionState) -> AgentReview:
+        # Deterministic guards run FIRST and for free: they produce facts the
+        # LLM path can consume, and they are the only reviewer that cannot be
+        # sweet-talked. Their findings are merged into the final review.
+        audit = hallucination_audit(request, step, output, validation_status)
+        drift = drift_score(request, output)
+        guard_notes: list[str] = [flag.note for flag in audit.flags]
+        recovery_hint = ""
+        if audit.has_critical:
+            recovery_hint = "recover_evidence"
+        elif drift >= 0.85:
+            recovery_hint = "rebind_context"
+
         # Try LLM review first
         try:
             prompt = CRITIC_AGENT_LLM_PROMPT.format(
@@ -265,7 +282,10 @@ class CriticAgent:
             old_sys = self._session._system
             self._session._system = sys_instruct
             try:
-                llm_reply = self._session.ask(prompt, task_type="reasoning")
+                # allow_instant=False is MANDATORY here (Invariant 4): this is
+                # an internal engine prompt; the identity instant-response guard
+                # must never hijack a critic review into a canned answer.
+                llm_reply = self._session.ask(prompt, task_type="reasoning", allow_instant=False)
             finally:
                 self._session._system = old_sys
 
@@ -276,24 +296,75 @@ class CriticAgent:
                 llm_reply = llm_reply.split("```", 1)[1].split("```", 1)[0]
 
             data = json.loads(llm_reply.strip())
+            notes = list(data.get("notes", ["Critic review completed."]))
+            confidence = float(data.get("confidence", 0.8))
+            status = CompletionState(data.get("status", "finished"))
+
+            # Deterministic guard findings override the LLM: the LLM can miss
+            # a drifted path; the disk facts cannot. Critical flags force at
+            # least a downgrade; confidence is capped by evidence.
+            if guard_notes:
+                notes = list(dict.fromkeys(notes + guard_notes))
+            if audit.has_critical and status == CompletionState.FINISHED:
+                status = CompletionState.PARTIALLY_FINISHED
+                notes.append("Critic downgraded the step: deterministic guards found critical evidence issues.")
+            if audit.has_critical:
+                confidence = min(confidence, 0.4)
+            elif drift >= 0.85:
+                notes.append(f"Critic flagged high request/output drift ({drift:.2f}) — output may not answer the request.")
+                confidence = min(confidence, 0.6)
+
             return AgentReview(
                 agent="critic",
-                status=CompletionState(data.get("status", "finished")),
-                notes=list(data.get("notes", ["Critic review completed."])),
-                confidence=float(data.get("confidence", 0.8)),
+                status=status,
+                notes=notes,
+                confidence=confidence,
+                recovery_hint=recovery_hint or None,
             )
         except Exception:
             return self._review_step_fallback(request, step, output, validation_status)
 
-    def _review_step_fallback(self, request: str, step, output: Any, validation_status: CompletionState) -> AgentReview:
+    def _review_step_fallback(
+        self,
+        request: str,
+        step,
+        output: Any,
+        validation_status: CompletionState,
+        audit: HallucinationAudit | None = None,
+        drift: float | None = None,
+    ) -> AgentReview:
         notes: list[str] = []
         confidence: float | None = None
         status = validation_status
+        recovery_hint: str | None = None
+
+        # Deterministic guard findings (hallucination/drift) merge into the
+        # fallback path too — LLM unavailability must not weaken the audit.
+        # When called directly (not via review_step), compute the guards here.
+        if audit is None:
+            audit = hallucination_audit(request, step, output, validation_status)
+        if drift is None:
+            drift = drift_score(request, output)
+        if audit.flags:
+            notes.extend(flag.note for flag in audit.flags)
+            if audit.has_critical:
+                recovery_hint = "recover_evidence"
+                if status == CompletionState.FINISHED:
+                    status = CompletionState.PARTIALLY_FINISHED
+                    notes.append("Critic downgraded this result because deterministic guards found critical evidence issues.")
+                confidence = 0.35 if confidence is None else min(confidence, 0.35)
+        if drift >= 0.85:
+            if recovery_hint is None:
+                recovery_hint = "rebind_context"
+            notes.append(f"Critic flagged high request/output drift ({drift:.2f}) — output may not answer the request.")
+            confidence = 0.6 if confidence is None else min(confidence, 0.6)
 
         if isinstance(output, dict):
             confidence_value = output.get("confidence")
             if isinstance(confidence_value, (int, float)):
-                confidence = float(confidence_value)
+                # Legacy self-reported confidence: respect the guard cap —
+                # an output claiming 0.95 cannot override a critical guard.
+                confidence = float(confidence_value) if confidence is None else min(confidence, float(confidence_value))
                 if confidence < 0.55 and status == CompletionState.FINISHED:
                     status = CompletionState.PARTIALLY_FINISHED
                     notes.append("Critic downgraded this result because confidence is too low.")
@@ -314,7 +385,7 @@ class CriticAgent:
 
         if not notes:
             notes.append("Critic accepted the step output.")
-        return AgentReview(agent="critic", status=status, notes=notes, confidence=confidence)
+        return AgentReview(agent="critic", status=status, notes=notes, confidence=confidence, recovery_hint=recovery_hint)
 
     def review_mission(self, plan: ExecutionPlan, step_results: list[StepExecutionResult]) -> AgentReview:
         if not step_results:

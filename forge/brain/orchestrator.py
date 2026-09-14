@@ -19,6 +19,15 @@ from forge.brain.contracts import (
     TaskIntent,
 )
 from forge.brain.council import ActionAgent, CriticAgent, ResearchAgent
+from forge.brain.critic_guards import (
+    audit_summary_to_dict,
+    drift_score,
+    flags_to_dicts,
+    hallucination_audit,
+    loop_audit,
+    loop_signature,
+    preflight_step,
+)
 from forge.brain.mission_store import MissionAuditStore, MissionResumeState
 from forge.brain.worker_executor import decode_agent_review, serialize_operator_settings
 from forge.brain.worker_protocol import WorkerHeartbeat, WorkerRegistration, WorkerTask
@@ -180,6 +189,10 @@ class MissionOrchestrator:
         agent_reviews: list[AgentReview] = []
         mission_failed = False
         mission_status = "running"
+        # Mission-level critic telemetry: every step's measured numbers
+        # (drift samples, guard flags, preflight blocks, loops, recovery
+        # decisions) are recorded per step id in the mission audit log.
+        mission_critic_telemetry: dict[str, dict[str, Any]] = {}
 
         self._persist_progress(
             mission_id,
@@ -191,6 +204,7 @@ class MissionOrchestrator:
             artifacts,
             mission_trace,
             resumed_from_step,
+            critic_telemetry=mission_critic_telemetry,
         )
 
         for step in plan.steps:
@@ -220,6 +234,7 @@ class MissionOrchestrator:
                     artifacts,
                     mission_trace,
                     resumed_from_step,
+                    critic_telemetry=mission_critic_telemetry,
                 )
                 continue
 
@@ -266,6 +281,7 @@ class MissionOrchestrator:
                             artifacts,
                             mission_trace,
                             resumed_from_step,
+                            critic_telemetry=mission_critic_telemetry,
                         )
                         if step.stop_on_failure:
                             mission_failed = True
@@ -343,6 +359,7 @@ class MissionOrchestrator:
                             artifacts,
                             mission_trace,
                             resumed_from_step,
+                            critic_telemetry=mission_critic_telemetry,
                         )
                         if not tool_result.success and step.stop_on_failure:
                             mission_failed = True
@@ -376,6 +393,7 @@ class MissionOrchestrator:
                             artifacts,
                             mission_trace,
                             resumed_from_step,
+                            critic_telemetry=mission_critic_telemetry,
                         )
                         if step.stop_on_failure:
                             mission_failed = True
@@ -410,6 +428,7 @@ class MissionOrchestrator:
                     artifacts,
                     mission_trace,
                     resumed_from_step,
+                    critic_telemetry=mission_critic_telemetry,
                 )
                 if step.stop_on_failure:
                     mission_failed = True
@@ -423,6 +442,19 @@ class MissionOrchestrator:
             rollback_notes: list[str] = []
             step_trace: list[str] = []
             step_completed = False
+            dispatch_signatures: list[str] = []
+            preflight_recovered = False
+            critic_telemetry: dict[str, Any] = {
+                "preflight_blocks": 0,
+                "hallucination_flags": 0,
+                "drift_samples": [],
+                "loop_detected": False,
+                "recovery_hints": [],
+            }
+            # Live reference: nested under the step id so every mid-step
+            # persist captures the numbers measured so far, and the final
+            # mission log keeps every step's telemetry.
+            mission_critic_telemetry[step.id] = critic_telemetry
 
             while attempt < max(1, step.retry_limit):
                 attempt += 1
@@ -434,6 +466,135 @@ class MissionOrchestrator:
                     critique_memory=critique_memory,
                     step=step,
                 )
+
+                # Pre-flight audit: catch deterministic dispatch errors BEFORE
+                # execution. A file-editor write without content is a
+                # guaranteed ValueError; instead of burning the attempt, insert
+                # a grounded evidence step and re-dispatch with it.
+                preflight = preflight_step(step, payload)
+                if not preflight.allowed:
+                    critic_telemetry["preflight_blocks"] += 1
+                    if preflight.missing_content and attempt < max(1, step.retry_limit) and not preflight_recovered:
+                        step_trace.append("Pre-flight: blocked file-editor dispatch without content.")
+                        mission_trace.append(f"{step.id}: critic pre-flight blocked a content-less dispatch.")
+                        recovery_result = self._execute_content_recovery_step(
+                            request=request,
+                            intent=intent,
+                            memory_context=memory_context,
+                            critique_memory=critique_memory,
+                            failed_step=step,
+                            failed_payload=payload,
+                            runtime_context=runtime_context,
+                            mission_id=mission_id,
+                            attempt=attempt,
+                        )
+                        if recovery_result is not None and recovery_result.status == CompletionState.FINISHED:
+                            preflight_recovered = True
+                            step_results.append(recovery_result)
+                            if recovery_result.skill:
+                                prior_results[recovery_result.skill] = recovery_result.output
+                            artifacts[recovery_result.step_id] = recovery_result.output
+                            mission_trace.append(f"{step.id}: pre-flight inserted grounded evidence via `{recovery_result.skill}`.")
+                            step_trace.append("Pre-flight recovery: evidence gathered, retrying editor with grounded content.")
+                            self._persist_progress(
+                                mission_id,
+                                audit_log_path,
+                                request,
+                                plan,
+                                CompletionState.NEEDS_RETRY.value,
+                                step_results,
+                                artifacts,
+                                mission_trace,
+                                resumed_from_step,
+                            critic_telemetry=critic_telemetry,
+                        )
+                            continue
+                        # Evidence recovery itself failed: the step is genuinely
+                        # unsatisfiable — record it honestly and stop.
+                        step_trace.append("Pre-flight: evidence recovery did not produce grounded content.")
+                        mission_trace.append(f"{step.id}: pre-flight evidence recovery failed; step cannot proceed safely.")
+                        step_results.append(
+                            StepExecutionResult(
+                                step_id=step.id,
+                                skill=current_skill.name,
+                                tool=step.tool or current_skill.name,
+                                status=CompletionState.FAILED,
+                                output=None,
+                                evidence=[],
+                                validation_status=CompletionState.FAILED,
+                                validation_notes=["Critic pre-flight: file-editor content could not be grounded from the workspace."],
+                                attempts=attempt,
+                                input_snapshot=self._input_snapshot(payload),
+                                trace=list(step_trace),
+                                error="preflight_missing_content",
+                            )
+                        )
+                        mission_status = CompletionState.FAILED.value
+                        self._persist_progress(
+                            mission_id,
+                            audit_log_path,
+                            request,
+                            plan,
+                            mission_status,
+                            step_results,
+                            artifacts,
+                            mission_trace,
+                            resumed_from_step,
+                        critic_telemetry=critic_telemetry,
+                    )
+                        if step.stop_on_failure:
+                            mission_failed = True
+                        break
+                    # Non-recoverable preflight block: record honestly.
+                    step_results.append(
+                        StepExecutionResult(
+                            step_id=step.id,
+                            skill=current_skill.name,
+                            tool=step.tool or current_skill.name,
+                            status=CompletionState.FAILED,
+                            output=None,
+                            evidence=[],
+                            validation_status=CompletionState.FAILED,
+                            validation_notes=[f"Critic pre-flight: {preflight.reason}"],
+                            attempts=attempt,
+                            input_snapshot=self._input_snapshot(payload),
+                            trace=list(step_trace),
+                            error="preflight_blocked",
+                        )
+                    )
+                    mission_status = CompletionState.FAILED.value
+                    self._persist_progress(
+                        mission_id,
+                        audit_log_path,
+                        request,
+                        plan,
+                        mission_status,
+                        step_results,
+                        artifacts,
+                        mission_trace,
+                        resumed_from_step,
+                    critic_telemetry=critic_telemetry,
+                )
+                    if step.stop_on_failure:
+                        mission_failed = True
+                    break
+
+                dispatch_signatures.append(
+                    loop_signature(
+                        step.skill,
+                        step.action,
+                        str(step.input_spec.get("target_path") or step.input_spec.get("source_paths") or step.input_spec.get("command") or ""),
+                    )
+                    + "|"
+                    + self._payload_fingerprint(payload)
+                )
+                loops = loop_audit(dispatch_signatures)
+                if loops.is_loop:
+                    critic_telemetry["loop_detected"] = True
+                    step_trace.append(
+                        f"Critic loop guard: identical dispatch repeated ({loops.attempts_seen} attempts, 1 signature)."
+                    )
+
                 step_trace.extend(self._workers.submit_task(self._dispatch_notes_task(step, mission_id=mission_id, attempt=attempt)))
                 step_trace.extend(
                     self._workers.submit_task(
@@ -502,7 +663,8 @@ class MissionOrchestrator:
                         artifacts,
                         mission_trace,
                         resumed_from_step,
-                    )
+                    critic_telemetry=critic_telemetry,
+                )
                     break
 
                 step_trace.append(f"Attempt {attempt}: dispatching `{current_skill.name}`.")
@@ -571,7 +733,29 @@ class MissionOrchestrator:
                     )
                     agent_reviews.append(critic_review)
                     self._remember_critique(mission_id, critique_memory, step.id, current_skill.name, critic_review)
+                    # Deterministic telemetry (pure recomputation, same guards
+                    # the critic ran) so the mission log carries the actual
+                    # numbers even when the review executed on a remote worker.
+                    critic_telemetry["drift_samples"].append(drift_score(request, output))
+                    critic_telemetry["hallucination_flags"] += len(hallucination_audit(request, step, output, validation.status).flags)
+                    if critic_review.recovery_hint:
+                        critic_telemetry["recovery_hints"].append(critic_review.recovery_hint)
                     final_status = self._merge_status(validation.status, critic_review.status)
+                    # Advisory-only critic rule (2026-09-14): the LLM critic is
+                    # a live model whose verdicts vary run to run (proven flaky
+                    # on the reality suite). When the DETERMINISTIC validator
+                    # passed AND the deterministic guards raised no actionable
+                    # hint, the critic's downgrade is recorded as caveats
+                    # (notes + telemetry) but cannot veto validator-passed
+                    # work — no retry burn, no rollback of good writes.
+                    if (
+                        validation.status == CompletionState.FINISHED
+                        and critic_review.recovery_hint is None
+                        and final_status != CompletionState.FINISHED
+                        and critic_review.status != CompletionState.NEEDS_HUMAN_CONFIRMATION
+                    ):
+                        critic_telemetry.setdefault("advisory_downgrades", []).append(critic_review.status.value)
+                        final_status = CompletionState.FINISHED
                     combined_notes = list(dict.fromkeys(combined_notes + critic_review.notes))
 
                     step_trace.append(f"Validation result: {validation.status.value}.")
@@ -617,6 +801,7 @@ class MissionOrchestrator:
                             artifacts,
                             mission_trace,
                             resumed_from_step,
+                            critic_telemetry=critic_telemetry,
                         )
                         step_completed = True
                         break
@@ -626,7 +811,56 @@ class MissionOrchestrator:
                         if rolled_back:
                             step_trace.extend(f"Rollback: {note}" for note in rollback_notes)
 
-                    recovery = self._recovery.for_validation(attempt, final_status, step.fallback_skill)
+                    # Critic-aware recovery: the merged status (critic can
+                    # downgrade) plus the critic's structured recovery hint
+                    # and the loop guard decide retry vs fallback vs abort.
+                    recovery = self._recovery.for_status(
+                        attempt,
+                        validation.status,
+                        critic_review.status,
+                        step.fallback_skill,
+                        recovery_hint=critic_review.recovery_hint,
+                        is_loop=loops.is_loop,
+                    )
+                    critic_telemetry["recovery_action"] = recovery.action
+                    if recovery.action == "proceed":
+                        # Critic downgraded but hints exhausted: accept the partial result honestly.
+                        step_results.append(
+                            StepExecutionResult(
+                                step_id=step.id,
+                                skill=current_skill.name,
+                                tool=step.tool or current_skill.name,
+                                status=final_status,
+                                output=output,
+                                evidence=self._extract_evidence(output),
+                                validation_status=validation.status,
+                                validation_notes=list(dict.fromkeys(combined_notes + [recovery.reason])),
+                                attempts=attempt,
+                                input_snapshot=input_snapshot,
+                                trace=list(step_trace),
+                                rolled_back=rolled_back,
+                                rollback_notes=rollback_notes,
+                                agent_reviews=self._review_lines([review for review in (research_review, critic_review) if review is not None]),
+                            )
+                        )
+                        artifacts[step.id] = output
+                        mission_trace.append(f"{step.id}: accepted as {final_status.value} after critic-aware recovery review.")
+                        mission_status = final_status.value
+                        self._persist_progress(
+                            mission_id,
+                            audit_log_path,
+                            request,
+                            plan,
+                            mission_status,
+                            step_results,
+                            artifacts,
+                            mission_trace,
+                            resumed_from_step,
+                            critic_telemetry=critic_telemetry,
+                        )
+                        if step.stop_on_failure and final_status == CompletionState.FAILED:
+                            mission_failed = True
+                        break
                     if recovery.action == "retry" and attempt < max(1, step.retry_limit):
                         step_trace.append(f"Retrying step: {recovery.reason}")
                         mission_trace.append(f"{step.id}: retry scheduled after critic/validation review.")
@@ -669,7 +903,8 @@ class MissionOrchestrator:
                         artifacts,
                         mission_trace,
                         resumed_from_step,
-                    )
+                    critic_telemetry=critic_telemetry,
+                )
                     if step.stop_on_failure:
                         mission_failed = True
                     break
@@ -717,7 +952,8 @@ class MissionOrchestrator:
                                 artifacts,
                                 mission_trace,
                                 resumed_from_step,
-                            )
+                            critic_telemetry=critic_telemetry,
+                        )
                             continue
                     if recovery.action == "retry" and attempt < max(1, step.retry_limit):
                         step_trace.append(f"Retrying step: {recovery.reason}")
@@ -761,7 +997,8 @@ class MissionOrchestrator:
                         artifacts,
                         mission_trace,
                         resumed_from_step,
-                    )
+                    critic_telemetry=critic_telemetry,
+                )
                     if step.stop_on_failure:
                         mission_failed = True
                     break
@@ -807,6 +1044,7 @@ class MissionOrchestrator:
             artifacts,
             mission_trace,
             resumed_from_step,
+            critic_telemetry=mission_critic_telemetry,
         )
         return MissionExecution(
             step_results=step_results,
@@ -868,6 +1106,7 @@ class MissionOrchestrator:
         artifacts: dict[str, Any],
         mission_trace: list[str],
         resumed_from_step: str | None,
+        critic_telemetry: dict[str, Any] | None = None,
     ) -> None:
         self._audit_store.save_progress(
             mission_id,
@@ -879,6 +1118,7 @@ class MissionOrchestrator:
             artifacts=artifacts,
             mission_trace=mission_trace,
             resumed_from_step=resumed_from_step,
+            critic_telemetry=critic_telemetry,
         )
 
     def _build_step_payload(

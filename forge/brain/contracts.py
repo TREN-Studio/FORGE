@@ -105,6 +105,7 @@ class AgentReview(BaseModel):
     status: CompletionState
     notes: list[str] = Field(default_factory=list)
     confidence: float | None = None
+    recovery_hint: str | None = None
 
 
 class OperatorResult(BaseModel):
