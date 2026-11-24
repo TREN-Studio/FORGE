@@ -1,7 +1,7 @@
-{
+﻿{
   "assets": [
     {
-      "canonical_url": "https://github.com/TREN-Studio/FORGE/releases/download/v1.5.3/FORGE-Desktop.exe",
+      "canonical_url": "https://github.com/TREN-Studio/FORGE/releases/download/v1.6.0/FORGE-Desktop.exe",
       "kind": "executable",
       "label": "Windows Desktop Executable",
       "mirror_url": "https://www.trenstudio.com/FORGE/downloads/FORGE-Desktop.exe",
@@ -11,41 +11,41 @@
       "size": 34348245
     },
     {
-      "canonical_url": "https://github.com/TREN-Studio/FORGE/releases/download/v1.5.3/FORGE-Setup-1.5.3.exe",
+      "canonical_url": "https://github.com/TREN-Studio/FORGE/releases/download/v1.6.0/FORGE-Setup-1.6.0.exe",
       "kind": "installer",
       "label": "Windows Installer",
-      "mirror_url": "https://www.trenstudio.com/FORGE/downloads/FORGE-Setup-1.5.3.exe",
-      "name": "FORGE-Setup-1.5.3.exe",
+      "mirror_url": "https://www.trenstudio.com/FORGE/downloads/FORGE-Setup-1.6.0.exe",
+      "name": "FORGE-Setup-1.6.0.exe",
       "platform": "windows",
       "sha256": "0698a5e720585362c1ff2e0ac71c863323211ba1d1a5e36a26d6117ef12d413e",
       "size": 35869231
     },
     {
-      "canonical_url": "https://github.com/TREN-Studio/FORGE/releases/download/v1.5.3/FORGE-Windows-Portable-1.5.3.zip",
+      "canonical_url": "https://github.com/TREN-Studio/FORGE/releases/download/v1.6.0/FORGE-Windows-Portable-1.6.0.zip",
       "kind": "portable",
       "label": "Windows Portable ZIP",
-      "mirror_url": "https://www.trenstudio.com/FORGE/downloads/FORGE-Windows-Portable-1.5.3.zip",
-      "name": "FORGE-Windows-Portable-1.5.3.zip",
+      "mirror_url": "https://www.trenstudio.com/FORGE/downloads/FORGE-Windows-Portable-1.6.0.zip",
+      "name": "FORGE-Windows-Portable-1.6.0.zip",
       "platform": "windows",
       "sha256": "72eaf10f6bbe4b544578a79b588e3d2ab4b35265db1838ec706ce1a0d14ae8d3",
       "size": 33995044
     },
     {
-      "canonical_url": "https://github.com/TREN-Studio/FORGE/releases/download/v1.5.3/FORGE-Source-v1.5.3.zip",
+      "canonical_url": "https://github.com/TREN-Studio/FORGE/releases/download/v1.6.0/FORGE-Source-v1.6.0.zip",
       "kind": "source",
       "label": "Source Archive",
-      "mirror_url": "https://www.trenstudio.com/FORGE/downloads/FORGE-Source-v1.5.3.zip",
-      "name": "FORGE-Source-v1.5.3.zip",
+      "mirror_url": "https://www.trenstudio.com/FORGE/downloads/FORGE-Source-v1.6.0.zip",
+      "name": "FORGE-Source-v1.6.0.zip",
       "platform": "all",
       "sha256": "5cdede51dc75109c22fc651ce4ae576113ecacbae5c412245e1ff57dbcef1d4b",
       "size": 979991
     },
     {
-      "canonical_url": "https://github.com/TREN-Studio/FORGE/releases/download/v1.5.3/SHA256SUMS-1.5.3.txt",
+      "canonical_url": "https://github.com/TREN-Studio/FORGE/releases/download/v1.6.0/SHA256SUMS-1.6.0.txt",
       "kind": "checksums",
       "label": "SHA256 Checksums",
-      "mirror_url": "https://www.trenstudio.com/FORGE/downloads/SHA256SUMS-1.5.3.txt",
-      "name": "SHA256SUMS-1.5.3.txt",
+      "mirror_url": "https://www.trenstudio.com/FORGE/downloads/SHA256SUMS-1.6.0.txt",
+      "name": "SHA256SUMS-1.6.0.txt",
       "platform": "all",
       "sha256": "1063aa5088d9d956adb2d5476058a8a42c193442ddc032b13df3866881a04c2f",
       "size": 365
@@ -60,8 +60,8 @@
       "status": "enabled"
     }
   },
-  "release_tag": "v1.5.3",
-  "release_url": "https://github.com/TREN-Studio/FORGE/releases/tag/v1.5.3",
+  "release_tag": "v1.6.0",
+  "release_url": "https://github.com/TREN-Studio/FORGE/releases/tag/v1.6.0",
   "schema_version": 1,
-  "version": "1.5.3"
+  "version": "1.6.0"
 }
