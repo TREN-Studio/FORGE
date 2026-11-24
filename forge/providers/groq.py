@@ -66,17 +66,6 @@ class GroqProvider(BaseProvider):
                 tags=["instruct", "coding", "fast", "multilingual", "arabic"],
             ),
             ModelSpec(
-                id="qwen/qwen3.6-27b",
-                provider="groq",
-                display_name="Qwen 3.6 27B (Groq, preview)",
-                tier=ModelTier.ULTRA,
-                context_window=131_072,
-                max_output_tokens=32_768,
-                supports_tools=True,
-                strong_at=[TaskType.CODE, TaskType.REASONING, TaskType.GENERAL],
-                tags=["instruct", "coding", "fast", "multilingual", "arabic"],
-            ),
-            ModelSpec(
                 id="openai/gpt-oss-20b",
                 provider="groq",
                 display_name="GPT-OSS 20B (Groq)",

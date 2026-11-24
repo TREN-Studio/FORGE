@@ -24,6 +24,7 @@ from forge.brain.mission_store import MissionAuditStore
 from forge.brain.orchestrator import MissionOrchestrator
 from forge.brain.planner import PlanningEngine
 from forge.brain.prompt import CORE_BRAIN_PROMPT
+from forge.brain.react_loop import AutonomousReactLoop
 from forge.config.settings import OperatorSettings
 from forge.core.session import ForgeSession
 from forge.memory.context import ContextMemory
@@ -262,6 +263,69 @@ class ForgeOperator:
                 resume_mission_id=resume_mission_id,
                 memory_context_override=memory_context_override,
             )
+        )
+
+    def handle_autonomous(
+        self,
+        request: str,
+        *,
+        confirmed: bool = True,
+        dry_run: bool = False,
+        max_turns: int = 8,
+        memory_context_override: str | None = None,
+    ) -> OperatorResult:
+        """Run a task through the iterative ReAct (think -> tool -> observe -> verify) loop."""
+        memory_context = (
+            memory_context_override
+            if memory_context_override is not None
+            else (self.memory.build_context(request, self.settings.memory_recall_limit) if self.memory else "")
+        )
+        intent = self.intent_resolver.resolve(request, memory_context=memory_context)
+        loop = AutonomousReactLoop(
+            workspace_root=self.settings.workspace_root,
+            max_turns=max_turns,
+            dry_run=dry_run,
+            confirmed=confirmed,
+        )
+
+        from forge.core.models import TaskType
+
+        def _llm_call(prompt: str) -> str:
+            resp = self.session.ask_response(
+                prompt,
+                task_type=TaskType.CODE,
+                temperature=0.1,
+                remember=False,
+                allow_instant=False,
+            )
+            return str(getattr(resp, "content", "") or "")
+
+        run_result = loop.run(request, _llm_call, memory_context=memory_context)
+        plan = ExecutionPlan(
+            objective=intent.objective,
+            task_type=intent.task_type,
+            risk_level=intent.risk_level,
+            steps=[],
+        )
+        return OperatorResult(
+            objective=intent.objective,
+            approach_taken=[
+                "Resolved intent.",
+                f"Executed Autonomous ReAct loop ({len(run_result.steps)} tool step(s)).",
+            ],
+            result=sanitize_response(run_result.final_answer),
+            validation_status=run_result.status,
+            risks_or_limitations=[] if run_result.status == CompletionState.FINISHED else ["Autonomous loop did not fully finish."],
+            best_next_action=self.composer.best_next_action(run_result.status),
+            intent=intent,
+            plan=plan,
+            step_results=run_result.step_results,
+            artifacts={"react_steps": [
+                {"turn": s.turn, "thought": s.thought, "tool": s.tool, "args": s.args, "ok": s.ok}
+                for s in run_result.steps
+            ]},
+            mission_trace=run_result.trace,
+            provider_telemetry=self._provider_telemetry(),
         )
 
     def _clarification_result(

@@ -1183,9 +1183,11 @@ DESKTOP_HTML = """<!doctype html>
           <label for="mode-plan">Plan</label>
           <input type="radio" id="mode-build" name="forge-mode" value="build" checked>
           <label for="mode-build">Build</label>
+          <input type="radio" id="mode-autonomous" name="forge-mode" value="autonomous">
+          <label for="mode-autonomous">Auto</label>
         </div>
         <p class="footnote">
-          Chat: direct conversation, no planning. Plan: view the plan before execution. Build: full autonomous execution.
+          Chat: direct conversation. Plan: preview plan. Build: skill execution. Auto: iterative ReAct agent loop (think, call tools, verify).
         </p>
       </section>
 

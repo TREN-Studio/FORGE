@@ -28,17 +28,6 @@ class NvidiaProvider(BaseProvider):
         # models). Only general chat/reasoning models are listed here.
         return [
             ModelSpec(
-                id="nvidia/nemotron-3-super-120b-a12b",
-                provider="nvidia",
-                display_name="NVIDIA Nemotron 3 Super 120B",
-                tier=ModelTier.ULTRA,
-                context_window=128_000,
-                max_output_tokens=8_192,
-                supports_tools=True,
-                strong_at=[TaskType.REASONING, TaskType.GENERAL, TaskType.RESEARCH],
-                tags=["reasoning", "large-context", "instruct"],
-            ),
-            ModelSpec(
                 id="nvidia/llama-3.1-nemotron-ultra-253b-v1",
                 provider="nvidia",
                 display_name="NVIDIA Nemotron Ultra 253B",
@@ -48,17 +37,6 @@ class NvidiaProvider(BaseProvider):
                 supports_tools=True,
                 strong_at=[TaskType.REASONING, TaskType.RESEARCH],
                 tags=["reasoning", "large-context"],
-            ),
-            ModelSpec(
-                id="deepseek-ai/deepseek-v4-pro-0813",
-                provider="nvidia",
-                display_name="NVIDIA NIM DeepSeek V4 Pro",
-                tier=ModelTier.ULTRA,
-                context_window=128_000,
-                max_output_tokens=8_192,
-                supports_tools=True,
-                strong_at=[TaskType.CODE, TaskType.REASONING, TaskType.GENERAL],
-                tags=["coding", "reasoning", "instruct"],
             ),
             ModelSpec(
                 id="deepseek-ai/deepseek-v4-flash-0731",

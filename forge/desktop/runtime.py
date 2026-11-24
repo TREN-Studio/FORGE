@@ -696,6 +696,36 @@ def stream_prompt(
             yield {"type": "error", "error": str(exc)}
         return
 
+    # ── Autonomous Mode (ReAct Tool-Calling Loop): mode == "autonomous" or "/auto ..." ──
+    if mode == "autonomous" or prompt.lower().startswith("/auto "):
+        clean_objective = prompt[6:].strip() if prompt.lower().startswith("/auto ") else prompt
+        yield {"type": "intent_analyzing", "stage": "intent", "text": "Starting autonomous ReAct agent...", "message": "Starting autonomous ReAct agent..."}
+        base_workspace_root = _normalize_workspace_root(workspace_root)
+        normalized_workspace_root = _resolve_workspace_for_prompt(clean_objective, base_workspace_root)
+        operator = ForgeOperator(
+            settings=OperatorSettings(enable_memory=False, workspace_root=normalized_workspace_root),
+            provider_secrets=provider_secrets,
+        )
+        started = time.monotonic()
+        try:
+            result = operator.handle_autonomous(
+                clean_objective,
+                confirmed=confirmed or True,
+                dry_run=dry_run,
+            )
+            for step in result.step_results:
+                yield {"type": "step_started", "skill": step.skill, "step_id": step.step_id}
+                yield {"type": "step_completed", "skill": step.skill, "step_id": step.step_id, "status": step.status.value}
+            payload = _serialize_operator_result(result, operator, normalized_workspace_root)
+            footer = _stream_footer(payload, elapsed_ms=(time.monotonic() - started) * 1000)
+            payload["stream_footer"] = footer
+            yield {"type": "user_response", "content": payload.get("user_response") or result.result, "has_details": True}
+            yield {"type": "technical_details", "content": payload.get("technical_details") or {}, "hidden": False}
+            yield _done_event(payload, footer=footer)
+        except Exception as exc:
+            yield {"type": "error", "error": str(exc)}
+        return
+
     yield {
         "type": "intent_analyzing",
         "stage": "intent",
